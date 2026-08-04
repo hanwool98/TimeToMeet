@@ -45,7 +45,7 @@ export default function App() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-5 pb-[108px] pt-11">
+      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-3 pb-[108px] pt-11">
         <h1 className="mb-7 text-[40px] font-black leading-none tracking-normal">타임투밋</h1>
         <Calendar
           currentMonth={currentMonth}

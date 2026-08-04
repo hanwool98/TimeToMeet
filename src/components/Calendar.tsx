@@ -60,7 +60,7 @@ export default function Calendar({
   };
 
   return (
-    <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-4 pb-5 pt-6 shadow-calendar sm:px-6">
+    <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-3 pb-5 pt-6 shadow-calendar sm:px-6">
       <div className="mb-7 flex items-center justify-between">
         <button
           aria-label="이전 달 보기"
@@ -100,7 +100,7 @@ export default function Calendar({
 
         {monthCells.map((date, index) => {
           if (!date) {
-            return <div className="h-[76px]" key={`empty-${index}`} />;
+            return <div className="h-[74px]" key={`empty-${index}`} />;
           }
 
           const dateKey = toDateKey(date);
@@ -114,10 +114,10 @@ export default function Calendar({
             <button
               aria-label={`${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 선택`}
               className={[
-                'mx-auto flex flex-col items-center justify-start px-0.5 pt-2 transition',
+                'mx-auto flex w-full max-w-[50px] flex-col items-center justify-start px-0.5 pt-2 transition',
                 selected
-                  ? 'relative z-10 h-[84px] w-[64px] rounded-[23px] bg-meet-blue text-white'
-                  : 'h-[76px] w-full max-w-[52px] rounded-[20px] bg-transparent hover:bg-slate-50',
+                  ? 'h-[74px] rounded-[20px] bg-meet-blue text-white'
+                  : 'h-[74px] rounded-[20px] bg-transparent hover:bg-slate-50',
               ].join(' ')}
               key={dateKey}
               onClick={() => onSelectDate(date)}
@@ -138,7 +138,7 @@ export default function Calendar({
               {event ? (
                 <span
                   className={[
-                    'mt-1 flex min-h-[34px] w-full flex-col items-center justify-center rounded-[12px] px-0.5 text-center text-[8px] font-extrabold leading-[1.12]',
+                    'mt-1 flex min-h-[31px] w-full flex-col items-center justify-center rounded-[12px] px-0.5 text-center text-[8px] font-extrabold leading-[1.08]',
                     selected ? 'bg-white/20 text-white' : 'bg-meet-pinkSoft text-meet-pink',
                   ].join(' ')}
                 >

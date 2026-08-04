@@ -15,24 +15,24 @@ export default function EventDetailPage() {
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-3 py-12 text-black">
+    <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
       <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[430px] flex-col justify-center">
-        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-3 pb-6 pt-16 shadow-calendar">
+        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
             로고
           </div>
           <div className="text-center">
-            <h1 className="text-[27px] font-black leading-tight tracking-normal">
+            <h1 className="text-[25px] font-black leading-tight tracking-normal">
               타임투밋 로테이션소개팅
             </h1>
-            <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-3 py-3 text-[16px] font-black leading-snug">
+            <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-2 py-3 text-[15px] font-black leading-snug">
               26년 8월 16일 (일) 15:00 체험단 소개팅
             </p>
           </div>
 
-          <div className="mt-5 rounded-[26px] bg-meet-blueSoft p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="mt-5 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             {event ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <ParticipantList
                   onAvatarClick={setPreviewParticipant}
                   participants={maleParticipants}
