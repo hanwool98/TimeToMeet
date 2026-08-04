@@ -1,0 +1,81 @@
+import type { ParticipantData } from '../types/participant';
+
+export const participants: ParticipantData[] = [
+  {
+    id: 'male-01',
+    gender: 'male',
+    nickname: '집돌이 강아지',
+    tags: ['97년생', '프로그래머'],
+    avatarIndex: 0,
+  },
+  {
+    id: 'male-02',
+    gender: 'male',
+    nickname: '술에 취한 올빼미',
+    tags: ['00년생', '바텐더'],
+    avatarIndex: 2,
+  },
+  {
+    id: 'male-03',
+    gender: 'male',
+    nickname: '퍼스트 펭귄',
+    tags: ['99년생', '개그맨'],
+    avatarIndex: 5,
+  },
+  {
+    id: 'male-04',
+    gender: 'male',
+    nickname: '요리하는 돌아이',
+    tags: ['96년생', '요리사'],
+    avatarIndex: 7,
+  },
+  {
+    id: 'male-05',
+    gender: 'male',
+    nickname: '비쁘다비빠 현대사회',
+    tags: ['99년생', '중견기업'],
+    avatarIndex: 8,
+  },
+  {
+    id: 'male-06',
+    gender: 'male',
+    nickname: '인천 BTS',
+    tags: ['01년생', '수학 강사'],
+    avatarIndex: 10,
+  },
+  {
+    id: 'female-01',
+    gender: 'female',
+    nickname: '난 아옹이다옹',
+    tags: ['99년생', '웹 디자이너'],
+    avatarIndex: 1,
+  },
+  {
+    id: 'female-02',
+    gender: 'female',
+    nickname: '취얼업 베이비',
+    tags: ['03년생', '치어리더'],
+    avatarIndex: 3,
+  },
+  {
+    id: 'female-03',
+    gender: 'female',
+    nickname: '링크크',
+    tags: ['02년생', '회사원'],
+    avatarIndex: 4,
+  },
+  {
+    id: 'female-04',
+    gender: 'female',
+    nickname: '리센느원이닮음',
+    tags: ['02년생', '회사원'],
+    avatarIndex: 6,
+  },
+  {
+    id: 'female-05',
+    gender: 'female',
+    nickname: '아리까똥스',
+    tags: ['97년생', '통역가'],
+    avatarIndex: 9,
+  },
+];
