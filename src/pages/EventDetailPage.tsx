@@ -50,8 +50,8 @@ export default function EventDetailPage() {
           </div>
 
           <div className="pt-5">
-            <PrimaryButton onClick={() => navigate('/profile-ready')}>
-              프로필 작성완료하고 소개팅 참여하기
+            <PrimaryButton onClick={() => navigate(`/events/${eventId}/info`)}>
+              행사내용 확인하고 나만의 프로필 만들기
             </PrimaryButton>
           </div>
         </section>
