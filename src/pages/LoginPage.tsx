@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import LogoMark from '../components/LogoMark';
 
 const actionLabels = [
   '로그인',
@@ -55,11 +56,11 @@ export default function LoginPage() {
             className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm"
             role="img"
           >
-            로고
+            <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
 
-          <div className="mx-auto text-center text-[31px] font-black leading-none tracking-normal">
-            로고
+          <div className="mx-auto grid h-[58px] w-[170px] place-items-center">
+            <img alt="time2meet" className="h-auto w-full object-contain" src="/assets/time2meet-logo.png" />
           </div>
 
           <form className="mt-16 space-y-7" onSubmit={(event) => event.preventDefault()}>

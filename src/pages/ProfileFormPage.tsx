@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 
 const eventDate = new Date(2026, 7, 16);
@@ -265,7 +266,7 @@ export default function ProfileFormPage() {
             <BackIcon />
           </button>
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black shadow-sm">
-            로고
+            <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           <h1 className="break-keep text-[23px] font-black leading-tight">타임투밋 행사 참여 위한 프로필 작성</h1>
         </header>

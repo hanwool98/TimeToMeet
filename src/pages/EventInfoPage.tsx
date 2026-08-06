@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
+import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 
 const reasons = [
@@ -120,7 +121,7 @@ export default function EventInfoPage() {
           </button>
 
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
-            로고
+            <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
 
           <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">

@@ -4,6 +4,7 @@ import ParticipantList, { avatarSheet, getAvatarPosition } from '../components/P
 import { events } from '../data/events';
 import { participants } from '../data/participants';
 import PrimaryButton from '../components/PrimaryButton';
+import LogoMark from '../components/LogoMark';
 import type { ParticipantData } from '../types/participant';
 
 export default function EventDetailPage() {
@@ -19,7 +20,7 @@ export default function EventDetailPage() {
       <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[430px] flex-col justify-center">
         <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
-            로고
+            <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           <div className="text-center">
             <h1 className="text-[25px] font-black leading-tight tracking-normal">
