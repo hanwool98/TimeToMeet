@@ -113,7 +113,7 @@ export default function LoginPage() {
 
           <button
             className="mx-auto mt-8 block border-b-2 border-black pb-1 text-[17px] font-black leading-none"
-            onClick={showPreparing}
+            onClick={() => navigate('/profile/new')}
             type="button"
           >
             비회원으로 계속하기
