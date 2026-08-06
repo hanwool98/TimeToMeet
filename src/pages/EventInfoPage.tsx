@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import BottomTabs from '../components/BottomTabs';
 import PrimaryButton from '../components/PrimaryButton';
 
 const reasons = [
@@ -102,9 +103,11 @@ function SwipeSection({
 
 export default function EventInfoPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTabEventInfo = location.pathname === '/event-info';
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black">
+    <main className="min-h-screen overflow-x-hidden bg-white px-4 pb-[108px] pt-12 text-black">
       <div className="mx-auto w-full max-w-[430px]">
         <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-5 pb-7 pt-16 shadow-calendar">
           <button
@@ -190,11 +193,14 @@ export default function EventInfoPage() {
             </div>
           </section>
 
-          <div className="sticky bottom-4 mt-10">
-            <PrimaryButton onClick={() => navigate('/login')}>내 프로필 만들기</PrimaryButton>
-          </div>
+          {!isTabEventInfo ? (
+            <div className="sticky bottom-4 mt-10">
+              <PrimaryButton onClick={() => navigate('/login')}>내 프로필 만들기</PrimaryButton>
+            </div>
+          ) : null}
         </section>
       </div>
+      <BottomTabs />
     </main>
   );
 }

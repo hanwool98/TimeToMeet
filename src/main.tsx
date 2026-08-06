@@ -2,10 +2,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import App from './App';
+import AdminPage from './pages/AdminPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
 import LoginPage from './pages/LoginPage';
 import ApplicationCompletePage from './pages/ApplicationCompletePage';
+import MyEventsPage from './pages/MyEventsPage';
+import MyPage from './pages/MyPage';
 import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
 import './styles.css';
@@ -16,6 +19,10 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/event-info" element={<EventInfoPage />} />
+        <Route path="/my-events" element={<MyEventsPage />} />
+        <Route path="/mypage" element={<MyPage />} />
         <Route path="/profile/new" element={<ProfileFormPage />} />
         <Route path="/application-complete" element={<ApplicationCompletePage />} />
         <Route path="/events/:eventId" element={<EventDetailPage />} />

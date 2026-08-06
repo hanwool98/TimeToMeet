@@ -73,6 +73,73 @@ function ErrorText({ children }: { children?: string }) {
   return <p className="mt-2 text-[12px] font-extrabold text-meet-pink">{children}</p>;
 }
 
+function UploadBox({
+  label,
+  multiple = false,
+  onFiles,
+}: {
+  label: string;
+  multiple?: boolean;
+  onFiles: (files: File[]) => void;
+}) {
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [showChoices, setShowChoices] = useState(false);
+
+  const handleChange = (files: FileList | null) => {
+    onFiles(Array.from(files ?? []));
+    setShowChoices(false);
+  };
+
+  return (
+    <div>
+      <button
+        aria-label={label}
+        className="grid aspect-square w-full place-items-center rounded-[22px] bg-meet-blueSoft text-[42px] font-black text-meet-blue"
+        onClick={() => setShowChoices((current) => !current)}
+        type="button"
+      >
+        +
+      </button>
+      {showChoices ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            className="h-11 rounded-[16px] bg-[#f7f7f7] text-[14px] font-black"
+            onClick={() => cameraInputRef.current?.click()}
+            type="button"
+          >
+            촬영
+          </button>
+          <button
+            className="h-11 rounded-[16px] bg-[#f7f7f7] text-[14px] font-black"
+            onClick={() => imageInputRef.current?.click()}
+            type="button"
+          >
+            이미지 선택
+          </button>
+        </div>
+      ) : null}
+      <input
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        multiple={multiple}
+        onChange={(event) => handleChange(event.target.files)}
+        ref={cameraInputRef}
+        type="file"
+      />
+      <input
+        accept="image/*"
+        className="hidden"
+        multiple={multiple}
+        onChange={(event) => handleChange(event.target.files)}
+        ref={imageInputRef}
+        type="file"
+      />
+    </div>
+  );
+}
+
 export default function ProfileFormPage() {
   const navigate = useNavigate();
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -81,6 +148,7 @@ export default function ProfileFormPage() {
   const stopTimerRef = useRef<number | null>(null);
 
   const [guideConfirmed, setGuideConfirmed] = useState(false);
+  const [consentRead, setConsentRead] = useState({ privacy: false, thirdParty: false });
   const [consents, setConsents] = useState({ privacy: false, thirdParty: false });
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState('');
@@ -91,6 +159,7 @@ export default function ProfileFormPage() {
   const [idPhoto, setIdPhoto] = useState<File | null>(null);
   const [nickname, setNickname] = useState('');
   const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [representativeIndex, setRepresentativeIndex] = useState(0);
   const [hasFullBodyPhoto, setHasFullBodyPhoto] = useState(false);
   const [audioUrl, setAudioUrl] = useState('');
@@ -114,6 +183,7 @@ export default function ProfileFormPage() {
   const idPreview = useMemo(() => filePreview(idPhoto ?? undefined), [idPhoto]);
   const employmentPreview = useMemo(() => filePreview(employmentProof ?? undefined), [employmentProof]);
   const photoPreviews = useMemo(() => profilePhotos.map((file) => URL.createObjectURL(file)), [profilePhotos]);
+  const allConsentsRead = consentRead.privacy && consentRead.thirdParty;
 
   const isRequiredComplete = Boolean(
     guideConfirmed &&
@@ -205,15 +275,16 @@ export default function ProfileFormPage() {
             <div className="rounded-[22px] border-4 border-meet-blue bg-[#f8fbff] p-4 text-[13px] font-extrabold leading-relaxed text-[#777]">
               <ol className="list-decimal space-y-2 pl-4">
                 <li>타임투밋은 여러 참가자와 정해진 시간 동안 1:1로 대화하며 새로운 인연을 만나는 로테이션 소개팅입니다.</li>
-                <li className="text-red-500">프로필 작성은 참가 확정을 의미하지 않습니다. 신청 현황과 성비 등을 고려해 선정 결과를 개별 안내드립니다.</li>
-                <li className="text-red-500">최소 참가인원(남 6 : 여 6)이 모집되지 않았을 시 행사가 부득이하게 취소될 수 있으며, 이 경우 전액환불을 보장합니다.</li>
-                <li>원활한 매칭을 위해 프로필에는 사실에 기반한 정보를 입력해주세요.</li>
-                <li className="text-red-500">참가가 확정된 이후에는 안내된 기한 내에 참가비를 결제해야 예약이 완료됩니다.</li>
-                <li>행사에서는 모든 참가자와 정해진 순서에 따라 대화합니다.</li>
-                <li>프로필은 행사 종료 최종 매칭된 상대에게만 전달되며 전화번호는 매칭 전까지 전달되지 않습니다.</li>
-                <li>행사 당일에는 안내된 시간까지 도착해주세요.</li>
+                <li className="text-red-500">프로필 작성은 참가 확정을 의미하지 않습니다. 신청 현황과 성비 등을 고려해 참가자가 선정되며, 선정 결과는 개별적으로 안내드립니다.</li>
+                <li className="text-red-500">최소 참가인원 (남 6 : 여 6)이 모집되지 않았을 시, 행사가 부득이하게 취소될 수 있으며, 이 경우에는 전액환불을 보장해드립니다.</li>
+                <li>원활한 매칭을 위해 프로필에는 사실에 기반한 정보를 입력해주세요. 허위 정보나 타인의 사진을 사용한 경우 참가가 취소될 수 있습니다.</li>
+                <li className="text-red-500">참가가 확정된 이후에는 안내된 기한 내에 참가비를 결제해야 예약이 완료됩니다. 취소 및 환불 기준은 결제 전 반드시 확인해주세요.</li>
+                <li>행사에서는 모든 참가자와 정해진 순서에 따라 대화합니다. 상대방을 불편하게 하는 언행, 과도한 신체 접촉, 연락처 요구 등은 제한됩니다.</li>
+                <li>프로필은 행사 종료 최종 매칭된 상대에게만 전달됩니다, 이 때 전화번호는 전달되지 않습니다.</li>
+                <li>행사 당일에는 안내된 시간까지 도착해주세요. 지각하거나 사전 연락 없이 불참할 경우 행사 참여가 제한되며, 향후 신청이 어려울 수 있습니다.</li>
                 <li>다른 참가자의 프로필과 행사 중 알게 된 개인정보를 촬영·저장하거나 외부에 공유할 수 없습니다.</li>
               </ol>
+              <p className="mt-6">위 내용을 모두 확인하신 후 프로필을 작성해주세요.</p>
               <label className="mt-6 flex items-center gap-2 text-black">
                 <input checked={guideConfirmed} onChange={(event) => setGuideConfirmed(event.target.checked)} type="checkbox" />
                 참가 안내 및 운영 규정을 확인했습니다.
@@ -226,26 +297,40 @@ export default function ProfileFormPage() {
             <p className="mb-4 break-keep text-[14px] font-extrabold leading-relaxed text-[#777]">동의를 거부할 수 있으나, 거부 시 행사 신청 및 참가가 제한됩니다.</p>
             <div className="rounded-[22px] bg-meet-blueSoft p-4">
               {requiredConsentText.map((consent) => (
-                <details className="border-b border-white/80 py-3 last:border-b-0" key={consent.id}>
-                  <summary className="cursor-pointer text-[14px] font-black">{consent.title}</summary>
+                <details
+                  className="border-b border-white/80 py-3 last:border-b-0"
+                  key={consent.id}
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) {
+                      setConsentRead((current) => ({ ...current, [consent.id]: true }));
+                    }
+                  }}
+                >
+                  <summary className="cursor-pointer text-[14px] font-black">
+                    <span className="inline-flex items-center gap-2">
+                      {consent.title}
+                      {consentRead[consent.id as keyof typeof consentRead] ? (
+                        <span aria-label="읽음" className="h-3 w-3 rounded-full bg-green-500" />
+                      ) : null}
+                    </span>
+                  </summary>
                   <div className="mt-3 space-y-2 text-[12px] font-extrabold leading-relaxed text-[#666]">
                     {consent.body.map((line) => (
                       <p key={line}>{line}</p>
                     ))}
                   </div>
-                  <label className="mt-3 flex items-center gap-2 text-[13px] font-black">
-                    <input
-                      checked={consents[consent.id as keyof typeof consents]}
-                      onChange={(event) => setConsents((current) => ({ ...current, [consent.id]: event.target.checked }))}
-                      type="checkbox"
-                    />
-                    동의합니다.
-                  </label>
                 </details>
               ))}
-              <button className="mt-4 border-b-2 border-black text-[14px] font-black" onClick={() => setConsents({ privacy: true, thirdParty: true })} type="button">
+              <label className={`mt-4 flex items-center gap-2 text-[14px] font-black ${allConsentsRead ? 'text-black' : 'text-[#999]'}`}>
+                <input
+                  checked={consents.privacy && consents.thirdParty}
+                  disabled={!allConsentsRead}
+                  onChange={(event) => setConsents({ privacy: event.target.checked, thirdParty: event.target.checked })}
+                  type="checkbox"
+                />
                 전체 동의하기
-              </button>
+              </label>
+              {!allConsentsRead ? <p className="mt-2 text-[12px] font-extrabold text-[#888]">필수 동의 내용을 모두 열람하면 전체 동의가 가능합니다.</p> : null}
             </div>
             <ErrorText>{touched && (!consents.privacy || !consents.thirdParty) ? '필수 동의가 필요합니다.' : ''}</ErrorText>
           </Section>
@@ -255,7 +340,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !name.trim() ? '이름을 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="4. 나이">
+          <Section title="4. 생년월일">
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setBirthDate(event.target.value)} type="date" value={birthDate} />
             {age !== null && !ageError ? <p className="mt-3 text-[13px] font-extrabold text-[#777]">행사일 기준 만 {age}세입니다.</p> : null}
             <ErrorText>{ageError || (touched && !birthDate ? '생년월일을 선택해주세요.' : '')}</ErrorText>
@@ -293,7 +378,7 @@ export default function ProfileFormPage() {
 
           <Section title="9. 본인확인용 신분증 사진 첨부">
             <p className="mb-4 break-keep text-[13px] font-extrabold leading-relaxed text-[#777]">민감한 정보는 가려도 되며 이름과 생년월일만 확인되면 됩니다.</p>
-            <input accept="image/*" onChange={(event) => setIdPhoto(event.target.files?.[0] ?? null)} type="file" />
+            <UploadBox label="본인확인용 신분증 사진 첨부" onFiles={(files) => setIdPhoto(files[0] ?? null)} />
             {idPreview ? <img alt="신분증 미리보기" className="mt-4 max-h-52 w-full rounded-[18px] object-cover" src={idPreview} /> : null}
             <ErrorText>{touched && !idPhoto ? '신분증 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
@@ -304,17 +389,30 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !nickname.trim() ? '닉네임을 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="11. 본인 사진">
+          <Section title="11. 프로필 사진">
             <p className="mb-4 break-keep text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
-            <input accept="image/*" multiple onChange={(event) => setProfilePhotos(Array.from(event.target.files ?? []).slice(0, 3))} type="file" />
+            <UploadBox
+              label="프로필 사진 첨부"
+              multiple
+              onFiles={(files) => {
+                setProfilePhotos(files.slice(0, 3));
+                setSelectedPhotoIndex(0);
+                setRepresentativeIndex(0);
+              }}
+            />
             <div className="mt-4 grid grid-cols-3 gap-2">
               {photoPreviews.map((preview, index) => (
-                <button className={`rounded-[16px] border-4 ${representativeIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview} onClick={() => setRepresentativeIndex(index)} type="button">
+                <button className={`rounded-[16px] border-4 ${selectedPhotoIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview} onClick={() => setSelectedPhotoIndex(index)} type="button">
                   <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
-                  <span className="block py-1 text-[11px] font-black">{representativeIndex === index ? '대표사진' : '대표 선택'}</span>
+                  <span className="block py-1 text-[11px] font-black">{representativeIndex === index ? '대표사진' : '사진 선택'}</span>
                 </button>
               ))}
             </div>
+            {profilePhotos.length > 0 ? (
+              <button className="mt-3 h-11 w-full rounded-[16px] bg-meet-blue text-[14px] font-black text-white" onClick={() => setRepresentativeIndex(selectedPhotoIndex)} type="button">
+                대표사진 설정
+              </button>
+            ) : null}
             <label className="mt-4 flex items-center gap-2 text-[13px] font-black">
               <input checked={hasFullBodyPhoto} onChange={(event) => setHasFullBodyPhoto(event.target.checked)} type="checkbox" />
               전신 사진이 포함되어 있습니다.
@@ -322,8 +420,8 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && (profilePhotos.length === 0 || !hasFullBodyPhoto) ? '사진 첨부와 전신 사진 포함 확인이 필요합니다.' : ''}</ErrorText>
           </Section>
 
-          <Section title="12. 5초 자기소개">
-            <p className="mb-4 break-keep text-[13px] font-extrabold text-[#777]">너의 목소리를 들려줘. 최대 5초 동안 녹음됩니다.</p>
+          <Section title="12. 너의 목소리가 보여">
+            <p className="mb-4 break-keep text-[13px] font-extrabold text-[#777]">본인을 간단히 소개해주세요! 최대 5초까지 녹음할 수 있습니다.</p>
             {recordingState === 'recording' ? (
               <PrimaryButton onClick={stopRecording}>녹음 중 {countdown}초</PrimaryButton>
             ) : (
@@ -345,7 +443,7 @@ export default function ProfileFormPage() {
 
           <Section title="15. 재직 증명">
             <p className="mb-4 break-keep text-[13px] font-extrabold text-[#777]">사원증, 명함 등 본인의 재직사실을 증명할 수 있는 사진을 첨부해주세요.</p>
-            <input accept="image/*" onChange={(event) => setEmploymentProof(event.target.files?.[0] ?? null)} type="file" />
+            <UploadBox label="재직 증명 사진 첨부" onFiles={(files) => setEmploymentProof(files[0] ?? null)} />
             {employmentPreview ? <img alt="재직 증명 미리보기" className="mt-4 max-h-52 w-full rounded-[18px] object-cover" src={employmentPreview} /> : null}
             <ErrorText>{touched && !employmentProof ? '재직 증명 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
@@ -372,7 +470,7 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="18. 인터뷰 여부">
-            <p className="mb-4 break-keep text-[13px] font-extrabold text-[#777]">원하면 모자이크 제공 또는 얼굴 아래로 촬영합니다.</p>
+            <p className="mb-4 break-keep text-[13px] font-extrabold text-[#777]">더 나은 소개팅, 고객 경험 개선을 위해서 행사 종료 후에 짧은 인터뷰를 진행합니다. 원하시면 모자이크 또는 얼굴 아래로 촬영을 할 예정입니다.</p>
             <div className="grid grid-cols-2 gap-3">
               {['참여', '미참여'].map((option) => (
                 <button className={`h-12 rounded-[18px] text-[16px] font-black ${interview === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setInterview(option)} type="button">
@@ -402,7 +500,10 @@ export default function ProfileFormPage() {
 
           <Section title="21. 심사 후 개별 연락 안내">
             <p className="break-keep text-[14px] font-extrabold leading-relaxed text-[#666]">
-              프로필에 누락된 내용이 있을 시 참여가 제한될 수 있으며, 신청 현황과 성비 등을 종합적으로 고려해 참가자를 선정합니다. 일부 신청자는 대기 명단으로 안내될 수 있습니다. 심사결과는 12시간 이내에 메시지, 앱을 통해 확인하실 수 있으며, 참가자로 선정된 후 안내 시점으로부터 24시간 이내에 결제를 완료해야 참가가 최종 확정됩니다.
+              프로필에 누락된 내용이 있을 시 참여가 제한될 수 있으며, 신청 현황과 성비 등을 종합적으로 고려해 일부 신청자는 대기 명단으로 안내될 수 있습니다.
+            </p>
+            <p className="mt-4 break-keep text-[14px] font-extrabold leading-relaxed text-[#666]">
+              심사결과는 12시간 이내에 메시지, 앱을 통해 확인하실 수 있으며, 참가자로 선정된 후 안내 시점으로부터 24시간 이내에 결제를 완료해야 참가가 최종 확정됩니다.
             </p>
             <label className="mt-4 flex items-center gap-2 text-[14px] font-black">
               <input checked={finalNoticeConfirmed} onChange={(event) => setFinalNoticeConfirmed(event.target.checked)} type="checkbox" />
