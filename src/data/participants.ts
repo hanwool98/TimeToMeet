@@ -1,5 +1,39 @@
 import type { ParticipantData } from '../types/participant';
 
+function createSampleProfile(
+  name: string,
+  genderLabel: string,
+  birthDate: string,
+  residence: string,
+  phone: string,
+  nickname: string,
+  height: string,
+  job: string,
+  accessRoute: string,
+) {
+  return {
+    name,
+    birthDate,
+    genderLabel,
+    residence,
+    phone,
+    relationshipStatus: '동의',
+    idPhotoStatus: '첨부',
+    nickname,
+    profilePhotos: '사진 3장 업로드 · 대표사진 지정 완료',
+    voiceIntro: '녹음 완료',
+    height,
+    job,
+    employmentProof: '첨부',
+    accessRoute,
+    shootingConsent: '동의',
+    interviewConsent: '참여',
+    refundAgreement: '동의',
+    inquiry: '특이사항 없음',
+    reviewNotice: '확인',
+  };
+}
+
 export const participants: ParticipantData[] = [
   {
     id: 'male-01',
@@ -7,6 +41,7 @@ export const participants: ParticipantData[] = [
     nickname: '집돌이 강아지',
     tags: ['97년생', '프로그래머'],
     avatarIndex: 0,
+    profile: createSampleProfile('김도윤', '남성', '1997-04-12', '성남시 수정구', '010-4321-7788', '집돌이 강아지', '176cm', '프로그래머', '인스타그램'),
   },
   {
     id: 'male-02',
@@ -14,6 +49,7 @@ export const participants: ParticipantData[] = [
     nickname: '술에 취한 올빼미',
     tags: ['00년생', '바텐더'],
     avatarIndex: 2,
+    profile: createSampleProfile('이하준', '남성', '2000-11-03', '서울시 송파구', '010-2451-9012', '술에 취한 올빼미', '178cm', '바텐더', '지인'),
   },
   {
     id: 'male-03',
@@ -21,6 +57,7 @@ export const participants: ParticipantData[] = [
     nickname: '퍼스트 펭귄',
     tags: ['99년생', '개그맨'],
     avatarIndex: 5,
+    profile: createSampleProfile('박민재', '남성', '1999-02-19', '성남시 분당구', '010-7782-3341', '퍼스트 펭귄', '173cm', '공연 기획자', '검색'),
   },
   {
     id: 'male-04',
@@ -28,6 +65,7 @@ export const participants: ParticipantData[] = [
     nickname: '요리하는 돌아이',
     tags: ['96년생', '요리사'],
     avatarIndex: 7,
+    profile: createSampleProfile('정시우', '남성', '1996-08-25', '용인시 수지구', '010-6510-2983', '요리하는 돌아이', '181cm', '요리사', '네이버 블로그'),
   },
   {
     id: 'male-05',
@@ -35,6 +73,7 @@ export const participants: ParticipantData[] = [
     nickname: '비쁘다비빠 현대사회',
     tags: ['99년생', '중견기업'],
     avatarIndex: 8,
+    profile: createSampleProfile('최유찬', '남성', '1999-06-07', '수원시 영통구', '010-9044-1835', '비쁘다비빠 현대사회', '175cm', '중견기업 마케터', '유튜브'),
   },
   {
     id: 'male-06',
@@ -42,6 +81,7 @@ export const participants: ParticipantData[] = [
     nickname: '인천 BTS',
     tags: ['01년생', '수학 강사'],
     avatarIndex: 10,
+    profile: createSampleProfile('한서준', '남성', '2001-01-16', '인천시 연수구', '010-3197-6204', '인천 BTS', '180cm', '수학 강사', '인스타그램'),
   },
   {
     id: 'female-01',
@@ -49,6 +89,7 @@ export const participants: ParticipantData[] = [
     nickname: '난 아옹이다옹',
     tags: ['99년생', '웹 디자이너'],
     avatarIndex: 1,
+    profile: createSampleProfile('윤서연', '여성', '1999-09-14', '성남시 분당구', '010-8821-4567', '난 아옹이다옹', '164cm', '웹 디자이너', '인스타그램'),
   },
   {
     id: 'female-02',
@@ -56,6 +97,7 @@ export const participants: ParticipantData[] = [
     nickname: '취얼업 베이비',
     tags: ['03년생', '치어리더'],
     avatarIndex: 3,
+    profile: createSampleProfile('강지우', '여성', '2003-05-22', '서울시 강남구', '010-5173-8901', '취얼업 베이비', '168cm', '치어리더', '지인'),
   },
   {
     id: 'female-03',
@@ -63,6 +105,7 @@ export const participants: ParticipantData[] = [
     nickname: '링크크',
     tags: ['02년생', '회사원'],
     avatarIndex: 4,
+    profile: createSampleProfile('문하린', '여성', '2002-12-01', '성남시 중원구', '010-7630-5529', '링크크', '162cm', '회사원', '검색'),
   },
   {
     id: 'female-04',
@@ -70,6 +113,7 @@ export const participants: ParticipantData[] = [
     nickname: '리센느원이닮음',
     tags: ['02년생', '회사원'],
     avatarIndex: 6,
+    profile: createSampleProfile('오채원', '여성', '2002-03-18', '용인시 기흥구', '010-3391-2408', '리센느원이닮음', '165cm', '회사원', '네이버 블로그'),
   },
   {
     id: 'female-05',
@@ -77,5 +121,6 @@ export const participants: ParticipantData[] = [
     nickname: '아리까똥스',
     tags: ['97년생', '통역가'],
     avatarIndex: 9,
+    profile: createSampleProfile('신아린', '여성', '1997-07-29', '수원시 팔달구', '010-6902-7154', '아리까똥스', '167cm', '통역가', '유튜브'),
   },
 ];

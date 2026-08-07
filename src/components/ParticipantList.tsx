@@ -3,7 +3,7 @@ import type { ParticipantData } from '../types/participant';
 interface ParticipantListProps {
   title: string;
   participants: ParticipantData[];
-  onAvatarClick: (participant: ParticipantData) => void;
+  onProfileClick?: (participant: ParticipantData) => void;
 }
 
 export const avatarSheet = '/assets/mosaic-participants.png';
@@ -18,7 +18,7 @@ export function getAvatarPosition(index: number) {
   return `${x}% ${y}%`;
 }
 
-export default function ParticipantList({ title, participants, onAvatarClick }: ParticipantListProps) {
+export default function ParticipantList({ title, participants, onProfileClick }: ParticipantListProps) {
   const recruitingRows = Array.from({ length: Math.max(0, 10 - participants.length) });
 
   return (
@@ -33,24 +33,33 @@ export default function ParticipantList({ title, participants, onAvatarClick }: 
             key={participant.id}
           >
             <button
-              aria-label={`${participant.nickname} 대표 사진`}
-              className="h-[30px] w-[30px] rounded-full bg-cover bg-center bg-no-repeat ring-1 ring-black/5 blur-[1.6px] saturate-[0.9] transition hover:scale-105"
-              onClick={() => onAvatarClick(participant)}
+              aria-label={`${participant.nickname} 프로필 보기`}
+              className={[
+                'contents text-left',
+                onProfileClick ? 'cursor-pointer' : 'cursor-default',
+              ].join(' ')}
+              disabled={!onProfileClick}
+              onClick={() => onProfileClick?.(participant)}
               type="button"
-              style={{
-                backgroundImage: `url(${avatarSheet})`,
-                backgroundPosition: getAvatarPosition(participant.avatarIndex),
-                backgroundSize: '440% 330%',
-              }}
-            />
-            <div className="min-w-0">
-              <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-black leading-[1.1] text-black">
-                {participant.nickname}
-              </p>
-              <p className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[8px] font-extrabold leading-[1.1] text-[#8c8c8c]">
-                {participant.tags.map((tag) => `#${tag}`).join(' ')}
-              </p>
-            </div>
+            >
+              <span
+                aria-hidden="true"
+                className="h-[30px] w-[30px] rounded-full bg-cover bg-center bg-no-repeat ring-1 ring-black/5 blur-[1.6px] saturate-[0.9]"
+                style={{
+                  backgroundImage: `url(${avatarSheet})`,
+                  backgroundPosition: getAvatarPosition(participant.avatarIndex),
+                  backgroundSize: '440% 330%',
+                }}
+              />
+              <span className="min-w-0">
+                <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-black leading-[1.1] text-black">
+                  {participant.nickname}
+                </span>
+                <span className="mt-0.5 block overflow-hidden text-ellipsis whitespace-nowrap text-[8px] font-extrabold leading-[1.1] text-[#8c8c8c]">
+                  {participant.tags.map((tag) => `#${tag}`).join(' ')}
+                </span>
+              </span>
+            </button>
             <button
               aria-label={`${participant.nickname} 자기소개 재생`}
               className="grid h-7 w-[22px] place-items-center rounded-full bg-meet-pinkSoft text-meet-pink transition hover:bg-[#ffdce8]"

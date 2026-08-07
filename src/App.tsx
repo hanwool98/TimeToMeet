@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import Calendar from './components/Calendar';
 import EventCard from './components/EventCard';
-import { events } from './data/events';
+import { getEventsWithParticipantCounts } from './utils/adminApplications';
 
 const initialSelectedDate = new Date(2026, 7, 16);
 const today = new Date(2026, 7, 3);
@@ -28,6 +28,7 @@ export default function App() {
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const events = getEventsWithParticipantCounts();
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.date === toDateKey(selectedDate)),

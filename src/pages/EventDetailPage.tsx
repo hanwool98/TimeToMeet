@@ -1,16 +1,14 @@
-import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import ParticipantList, { avatarSheet, getAvatarPosition } from '../components/ParticipantList';
-import { events } from '../data/events';
-import { participants } from '../data/participants';
+import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
-import type { ParticipantData } from '../types/participant';
+import { getEventsWithParticipantCounts, getParticipantsForEvent } from '../utils/adminApplications';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const [previewParticipant, setPreviewParticipant] = useState<ParticipantData | null>(null);
+  const events = getEventsWithParticipantCounts();
+  const participants = getParticipantsForEvent(eventId);
   const event = events.find((item) => item.id === eventId);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
@@ -27,7 +25,7 @@ export default function EventDetailPage() {
               타임투밋 로테이션소개팅
             </h1>
             <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-2 py-3 text-[15px] font-black leading-snug">
-              26년 8월 16일 (일) 15:00 체험단 소개팅
+              {event ? `${formatShortKoreanDate(event.date)} ${event.startTime} 체험단 소개팅` : '행사 정보를 불러올 수 없습니다'}
             </p>
           </div>
 
@@ -35,12 +33,10 @@ export default function EventDetailPage() {
             {event ? (
               <div className="grid grid-cols-2 gap-1.5">
                 <ParticipantList
-                  onAvatarClick={setPreviewParticipant}
                   participants={maleParticipants}
                   title="남"
                 />
                 <ParticipantList
-                  onAvatarClick={setPreviewParticipant}
                   participants={femaleParticipants}
                   title="여"
                 />
@@ -60,34 +56,13 @@ export default function EventDetailPage() {
           캘린더로 돌아가기
         </Link>
       </div>
-      {previewParticipant ? (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-30 grid place-items-center bg-black/35 px-8"
-          role="dialog"
-        >
-          <div className="w-full max-w-[320px] rounded-[30px] bg-white p-5 shadow-calendar">
-            <div
-              aria-label={`${previewParticipant.nickname} 확대 대표 사진`}
-              className="aspect-square w-full rounded-[24px] bg-cover bg-center bg-no-repeat blur-[1.8px]"
-              role="img"
-              style={{
-                backgroundImage: `url(${avatarSheet})`,
-                backgroundPosition: getAvatarPosition(previewParticipant.avatarIndex),
-                backgroundSize: '440% 330%',
-              }}
-            />
-            <p className="mt-4 text-center text-[18px] font-black">{previewParticipant.nickname}</p>
-            <button
-              className="mt-4 h-12 w-full rounded-[18px] bg-meet-blue text-[15px] font-extrabold text-white"
-              onClick={() => setPreviewParticipant(null)}
-              type="button"
-            >
-              닫기
-            </button>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
+}
+
+function formatShortKoreanDate(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const date = new Date(year, month - 1, day);
+  return `${String(year).slice(2)}년 ${month}월 ${day}일 (${dayNames[date.getDay()]})`;
 }

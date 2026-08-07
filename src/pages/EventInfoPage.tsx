@@ -1,7 +1,8 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
+import { getEventGenderCounts, getEventsWithParticipantCounts } from '../utils/adminApplications';
 
 const reasons = [
   {
@@ -105,7 +106,15 @@ function SwipeSection({
 export default function EventInfoPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { eventId } = useParams();
   const isTabEventInfo = location.pathname === '/event-info';
+  const events = getEventsWithParticipantCounts();
+  const event =
+    events.find((item) => item.id === eventId) ??
+    events
+      .filter((item) => getDaysUntilEvent(item.date) >= 0)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  const counts = event ? getEventGenderCounts(event.id) : { male: 0, female: 0 };
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-4 pb-[108px] pt-12 text-black">
@@ -158,15 +167,15 @@ export default function EventInfoPage() {
             <h2 className="px-1 text-[20px] font-black">핵심정보</h2>
             <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-5 text-[14px] font-extrabold leading-relaxed text-[#555]">
               <p className="font-black text-black">일시</p>
-              <p>토요일 오후 3시~6시</p>
+              <p>{event ? `${formatKoreanWeekday(event.date)} ${event.startTime}~${event.endTime}` : '행사 일정 미정'}</p>
               <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
               <p className="mt-5 font-black text-black">장소</p>
-              <p>성남시 분당구 내 프라이빗 카페</p>
+              <p>{event ? `${event.location} 내 프라이빗 카페` : '장소 미정'}</p>
               <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
               <p className="mt-5 font-black text-black">모집 대상</p>
               <p>25~35세 미혼 남녀</p>
               <p className="mt-5 font-black text-black">모집 인원</p>
-              <p>남녀 각 10명</p>
+              <p>남성 {counts.male}/10 · 여성 {counts.female}/10</p>
               <p>※ 최소 6:6부터 진행됩니다.</p>
             </div>
           </section>
@@ -204,4 +213,17 @@ export default function EventInfoPage() {
       <BottomTabs />
     </main>
   );
+}
+
+function getDaysUntilEvent(dateValue: string) {
+  const today = new Date(2026, 7, 7);
+  const eventDate = new Date(`${dateValue}T00:00:00`);
+  return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
+}
+
+function formatKoreanWeekday(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const dayNames = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+  const date = new Date(year, month - 1, day);
+  return `${month}월 ${day}일 ${dayNames[date.getDay()]}`;
 }

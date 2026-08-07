@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { type PointerEvent, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
@@ -162,7 +162,13 @@ export default function ProfileFormPage() {
   const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [representativeIndex, setRepresentativeIndex] = useState(0);
-  const [hasFullBodyPhoto, setHasFullBodyPhoto] = useState(false);
+  const [representativeScale, setRepresentativeScale] = useState(1);
+  const [representativeOffsetX, setRepresentativeOffsetX] = useState(0);
+  const [representativeOffsetY, setRepresentativeOffsetY] = useState(0);
+  const [showRepresentativeEditor, setShowRepresentativeEditor] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const [pinchStart, setPinchStart] = useState<{ distance: number; scale: number } | null>(null);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const [audioUrl, setAudioUrl] = useState('');
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saved'>('idle');
   const [countdown, setCountdown] = useState(5);
@@ -201,7 +207,6 @@ export default function ProfileFormPage() {
       nickname.trim() &&
       profilePhotos.length > 0 &&
       profilePhotos.length <= 3 &&
-      hasFullBodyPhoto &&
       audioUrl &&
       height.trim() &&
       job.trim() &&
@@ -256,6 +261,79 @@ export default function ProfileFormPage() {
     setTouched(true);
     if (!isRequiredComplete) return;
     navigate('/application-complete');
+  };
+
+  const resetRepresentativeAdjustment = () => {
+    setRepresentativeScale(1);
+    setRepresentativeOffsetX(0);
+    setRepresentativeOffsetY(0);
+  };
+
+  const addProfilePhotos = (files: File[]) => {
+    if (files.length === 0) return;
+    const nextSelectedIndex = Math.min(profilePhotos.length, 2);
+    setProfilePhotos((current) => [...current, ...files].slice(0, 3));
+    setSelectedPhotoIndex(nextSelectedIndex);
+    if (profilePhotos.length === 0) {
+      setRepresentativeIndex(0);
+      resetRepresentativeAdjustment();
+    }
+  };
+
+  const removeProfilePhoto = (index: number) => {
+    setProfilePhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
+    setSelectedPhotoIndex((current) => Math.max(0, Math.min(current >= index ? current - 1 : current, profilePhotos.length - 2)));
+    if (representativeIndex === index) {
+      setRepresentativeIndex(0);
+      resetRepresentativeAdjustment();
+      return;
+    }
+    if (representativeIndex > index) {
+      setRepresentativeIndex((current) => current - 1);
+    }
+  };
+
+  const getPointerDistance = () => {
+    const pointers = Array.from(activePointersRef.current.values());
+    if (pointers.length < 2) return 0;
+    return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+  };
+
+  const handleRepresentativePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointersRef.current.size === 2) {
+      setPinchStart({ distance: getPointerDistance(), scale: representativeScale });
+      setDragStart(null);
+      return;
+    }
+    setDragStart({ x: event.clientX, y: event.clientY, offsetX: representativeOffsetX, offsetY: representativeOffsetY });
+  };
+
+  const handleRepresentativePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!activePointersRef.current.has(event.pointerId)) return;
+    activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointersRef.current.size >= 2 && pinchStart) {
+      const distance = getPointerDistance();
+      if (pinchStart.distance > 0) {
+        setRepresentativeScale(Math.min(2.6, Math.max(1, Number((pinchStart.scale * (distance / pinchStart.distance)).toFixed(2)))));
+      }
+      return;
+    }
+    if (!dragStart) return;
+    setRepresentativeOffsetX(dragStart.offsetX + event.clientX - dragStart.x);
+    setRepresentativeOffsetY(dragStart.offsetY + event.clientY - dragStart.y);
+  };
+
+  const handleRepresentativePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(event.pointerId);
+    setDragStart(null);
+    setPinchStart(null);
+  };
+
+  const handleRepresentativeWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setRepresentativeScale((current) => Math.min(2.6, Math.max(1, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))));
   };
 
   return (
@@ -391,34 +469,43 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="11. 프로필 사진">
-            <p className="mb-4 break-keep text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
+            <p className="mb-4 break-keep text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진으로 지정한 사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
             <UploadBox
               label="프로필 사진 첨부"
               multiple
-              onFiles={(files) => {
-                setProfilePhotos(files.slice(0, 3));
-                setSelectedPhotoIndex(0);
-                setRepresentativeIndex(0);
-              }}
+              onFiles={addProfilePhotos}
             />
             <div className="mt-4 grid grid-cols-3 gap-2">
               {photoPreviews.map((preview, index) => (
-                <button className={`rounded-[16px] border-4 ${selectedPhotoIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview} onClick={() => setSelectedPhotoIndex(index)} type="button">
-                  <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
-                  <span className="block py-1 text-[11px] font-black">{representativeIndex === index ? '대표사진' : '사진 선택'}</span>
-                </button>
+                <div className={`relative rounded-[16px] border-4 ${selectedPhotoIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview}>
+                  <button className="block w-full" onClick={() => setSelectedPhotoIndex(index)} type="button">
+                    <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
+                    <span className="block py-1 text-[11px] font-black">{representativeIndex === index ? '대표사진' : '사진 선택'}</span>
+                  </button>
+                  <button
+                    aria-label={`본인 사진 ${index + 1} 삭제`}
+                    className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/65 text-[14px] font-black leading-none text-white"
+                    onClick={() => removeProfilePhoto(index)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
             </div>
             {profilePhotos.length > 0 ? (
-              <button className="mt-3 h-11 w-full rounded-[16px] bg-meet-blue text-[14px] font-black text-white" onClick={() => setRepresentativeIndex(selectedPhotoIndex)} type="button">
+              <button
+                className="mt-3 h-11 w-full rounded-[16px] bg-meet-blue text-[14px] font-black text-white"
+                onClick={() => {
+                  setRepresentativeIndex(selectedPhotoIndex);
+                  setShowRepresentativeEditor(true);
+                }}
+                type="button"
+              >
                 대표사진 설정
               </button>
             ) : null}
-            <label className="mt-4 flex items-center gap-2 text-[13px] font-black">
-              <input checked={hasFullBodyPhoto} onChange={(event) => setHasFullBodyPhoto(event.target.checked)} type="checkbox" />
-              전신 사진이 포함되어 있습니다.
-            </label>
-            <ErrorText>{touched && (profilePhotos.length === 0 || !hasFullBodyPhoto) ? '사진 첨부와 전신 사진 포함 확인이 필요합니다.' : ''}</ErrorText>
+            <ErrorText>{touched && profilePhotos.length === 0 ? '프로필 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
           <Section title="12. 너의 목소리가 보여">
@@ -521,6 +608,51 @@ export default function ProfileFormPage() {
           </div>
         </form>
       </div>
+      {showRepresentativeEditor && photoPreviews[representativeIndex] ? (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#080d13] text-white">
+          <div className="flex h-[86px] shrink-0 items-center justify-between px-5">
+            <button
+              aria-label="대표사진 조정 닫기"
+              className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/10 text-[34px] font-light leading-none"
+              onClick={() => setShowRepresentativeEditor(false)}
+              type="button"
+            >
+              ×
+            </button>
+            <h2 className="text-[20px] font-black">대표사진 조정</h2>
+            <button
+              aria-label="대표사진 조정 완료"
+              className="grid h-12 w-12 place-items-center rounded-full bg-[#4f63ff] text-[28px] font-black leading-none"
+              onClick={() => setShowRepresentativeEditor(false)}
+              type="button"
+            >
+              ✓
+            </button>
+          </div>
+          <div
+            className="relative min-h-0 flex-1 touch-none overflow-hidden bg-black"
+            onPointerCancel={handleRepresentativePointerUp}
+            onPointerDown={handleRepresentativePointerDown}
+            onPointerMove={handleRepresentativePointerMove}
+            onPointerUp={handleRepresentativePointerUp}
+            onWheel={handleRepresentativeWheel}
+          >
+            <img
+              alt="대표사진 조정"
+              className="absolute left-1/2 top-1/2 max-w-none select-none"
+              draggable={false}
+              src={photoPreviews[representativeIndex]}
+              style={{
+                height: '100%',
+                transform: `translate(calc(-50% + ${representativeOffsetX}px), calc(-50% + ${representativeOffsetY}px)) scale(${representativeScale})`,
+                touchAction: 'none',
+              }}
+            />
+            <div className="pointer-events-none absolute inset-0 bg-black/45" />
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-[96vw] max-h-[430px] w-[96vw] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.38)]" />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
