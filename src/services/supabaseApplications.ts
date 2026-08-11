@@ -82,6 +82,10 @@ interface PublicEventSummaryRow {
   venue_booked: boolean;
   current_participants: number;
   target_participants: number;
+  male_applications: number;
+  female_applications: number;
+  male_confirmed: number;
+  female_confirmed: number;
 }
 
 export async function ensureApplicationSession() {
@@ -253,6 +257,10 @@ export async function fetchPublicEventsFromSupabase() {
     endTime: event.end_time.slice(0, 5),
     id: event.id,
     location: event.location,
+    femaleApplications: event.female_applications,
+    femaleConfirmed: event.female_confirmed,
+    maleApplications: event.male_applications,
+    maleConfirmed: event.male_confirmed,
     shortName: event.short_name,
     startTime: event.start_time.slice(0, 5),
     targetParticipants: event.target_participants,

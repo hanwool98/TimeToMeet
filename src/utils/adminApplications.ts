@@ -81,6 +81,8 @@ export async function syncSharedAdminState() {
     }
   }
 
+  if (isSupabaseConfigured) return changed;
+
   try {
     const response = await fetch('/api/admin-state', { cache: 'no-store' });
     if (!response.ok) return false;
@@ -167,6 +169,14 @@ export function getParticipantsForEvent(eventId = 'seongnam-rotation-2026-08-16'
 }
 
 export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16'): { male: number; female: number } {
+  if (isSupabaseConfigured) {
+    const event = getStoredEvents().find((item) => item.id === eventId);
+    return {
+      male: event?.maleConfirmed ?? 0,
+      female: event?.femaleConfirmed ?? 0,
+    };
+  }
+
   const eventParticipants = getParticipantsForEvent(eventId);
   return {
     male: eventParticipants.filter((participant) => participant.gender === 'male').length,
@@ -175,6 +185,8 @@ export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16'): 
 }
 
 export function getEventsWithParticipantCounts(): EventData[] {
+  if (isSupabaseConfigured) return getStoredEvents();
+
   return getStoredEvents().map((event) => {
     const counts = getEventGenderCounts(event.id);
     return {

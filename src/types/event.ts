@@ -9,4 +9,8 @@ export interface EventData {
   venueBooked: boolean;
   currentParticipants: number;
   targetParticipants: number;
+  maleApplications?: number;
+  femaleApplications?: number;
+  maleConfirmed?: number;
+  femaleConfirmed?: number;
 }
