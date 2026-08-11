@@ -169,8 +169,8 @@ export function getParticipantsForEvent(eventId = 'seongnam-rotation-2026-08-16'
 }
 
 export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16'): { male: number; female: number } {
+  const event = getStoredEvents().find((item) => item.id === eventId);
   if (isSupabaseConfigured) {
-    const event = getStoredEvents().find((item) => item.id === eventId);
     return {
       male: event?.maleConfirmed ?? 0,
       female: event?.femaleConfirmed ?? 0,
@@ -185,7 +185,9 @@ export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16'): 
 }
 
 export function getEventsWithParticipantCounts(): EventData[] {
-  if (isSupabaseConfigured) return getStoredEvents();
+  if (isSupabaseConfigured) {
+    return getStoredEvents();
+  }
 
   return getStoredEvents().map((event) => {
     const counts = getEventGenderCounts(event.id);

@@ -10,7 +10,7 @@ export const events: EventData[] = [
     endTime: '18:00',
     location: '성남',
     venueBooked: false,
-    currentParticipants: 0,
+    currentParticipants: 11,
     targetParticipants: 20,
   },
 ];
