@@ -44,7 +44,7 @@ export default function ParticipantList({ title, participants, onProfileClick }:
             >
               <span
                 aria-hidden="true"
-                className="h-[30px] w-[30px] rounded-full bg-cover bg-center bg-no-repeat ring-1 ring-black/5 blur-[1.6px] saturate-[0.9]"
+                className="h-[30px] w-[30px] shrink-0 rounded-full bg-cover bg-center bg-no-repeat ring-1 ring-black/5 blur-[1.6px] saturate-[0.9]"
                 style={{
                   backgroundImage: `url(${avatarSheet})`,
                   backgroundPosition: getAvatarPosition(participant.avatarIndex),
@@ -52,10 +52,10 @@ export default function ParticipantList({ title, participants, onProfileClick }:
                 }}
               />
               <span className="min-w-0">
-                <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-black leading-[1.1] text-black">
+                <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-black leading-[1.1] text-black min-[390px]:text-[11px]">
                   {participant.nickname}
                 </span>
-                <span className="mt-0.5 block overflow-hidden text-ellipsis whitespace-nowrap text-[8px] font-extrabold leading-[1.1] text-[#8c8c8c]">
+                <span className="mt-0.5 block overflow-hidden text-ellipsis whitespace-nowrap text-[8px] font-extrabold leading-[1.1] text-[#8c8c8c] min-[390px]:text-[9px]">
                   {participant.tags.map((tag) => `#${tag}`).join(' ')}
                 </span>
               </span>

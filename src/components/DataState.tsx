@@ -6,7 +6,7 @@ interface DataErrorStateProps {
 export function DataLoadingState() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto grid min-h-screen w-full max-w-[430px] place-items-center px-5">
+      <div className="mobile-container mx-auto grid min-h-screen place-items-center px-5">
         <section className="w-full rounded-[28px] border border-[#f0f3f6] bg-white px-5 py-8 text-center shadow-calendar">
           <p className="text-[18px] font-black">데이터를 불러오는 중입니다</p>
         </section>
@@ -18,7 +18,7 @@ export function DataLoadingState() {
 export function DataErrorState({ message, onRetry }: DataErrorStateProps) {
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto grid min-h-screen w-full max-w-[430px] place-items-center px-5">
+      <div className="mobile-container mx-auto grid min-h-screen place-items-center px-5">
         <section className="w-full rounded-[28px] border border-[#f0f3f6] bg-white px-5 py-8 text-center shadow-calendar">
           <p className="text-[19px] font-black">운영 데이터를 불러올 수 없습니다</p>
           <p className="mx-auto mt-3 max-w-[300px] break-keep text-[14px] font-extrabold leading-relaxed text-[#777]">

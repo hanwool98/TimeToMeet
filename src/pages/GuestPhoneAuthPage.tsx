@@ -72,8 +72,8 @@ export default function GuestPhoneAuthPage() {
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-5 py-12 text-black">
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[430px] flex-col justify-center">
+    <main className="min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black min-[380px]:px-5">
+      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
         <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-7 pb-9 pt-28 shadow-calendar">
           <button
             aria-label="뒤로 가기"
@@ -114,10 +114,10 @@ export default function GuestPhoneAuthPage() {
           <div className="mt-7 space-y-5">
             <div>
               <h1 className="text-center text-[24px] font-black">{mode === 'signup' ? '비회원 임시 계정 만들기' : '비회원 로그인'}</h1>
-              <p className="mt-4 break-keep text-center text-[13px] font-extrabold leading-relaxed text-[#777]">
+              <p className="mt-4 text-fluid-safe text-center text-[13px] font-extrabold leading-relaxed text-[#777]">
                 설정한 PIN 번호는 비회원 로그인과 신청 내역 확인에 사용됩니다. 별도의 본인인증을 진행하지 않으므로 PIN 번호를 분실하면 직접 재설정할 수 없습니다. 반드시 기억해 주세요.
               </p>
-              <p className="mt-3 break-keep text-center text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
+              <p className="mt-3 text-fluid-safe text-center text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
                 PIN 번호를 잊으셨나요? DM으로 문의해 주세요.
               </p>
             </div>
@@ -161,7 +161,7 @@ export default function GuestPhoneAuthPage() {
               </label>
             ) : null}
 
-            {error ? <p className="break-keep rounded-[16px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">{error}</p> : null}
+            {error ? <p className="text-fluid-safe rounded-[16px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">{error}</p> : null}
 
             <PrimaryButton disabled={submitting} onClick={submit}>
               {submitting ? '처리 중' : mode === 'signup' ? '비회원 임시 계정 만들고 계속하기' : '비회원 로그인하기'}

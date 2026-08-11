@@ -8,12 +8,15 @@
 
 html {
   background: #ffffff;
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  overflow-x: hidden;
+  min-height: 100dvh;
+  overflow-x: clip;
   font-family:
     Pretendard,
     Inter,
@@ -24,6 +27,41 @@ body {
     sans-serif;
 }
 
+#root {
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+img,
+video,
+canvas,
+audio {
+  max-width: 100%;
+}
+
 button {
   font: inherit;
+}
+
+.min-h-screen {
+  min-height: 100dvh !important;
+}
+
+.h-screen {
+  height: 100dvh !important;
+}
+
+.mobile-container {
+  width: min(100%, 430px);
+  max-width: 430px;
+  overflow-x: clip;
+}
+
+.with-bottom-tabs {
+  padding-bottom: calc(108px + env(safe-area-inset-bottom));
+}
+
+.text-fluid-safe {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }

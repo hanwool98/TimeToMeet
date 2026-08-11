@@ -13,13 +13,13 @@ export default function EventCard({ selectedDateLabel, event, onApply }: EventCa
   const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
 
   return (
-    <section className="rounded-[28px] bg-meet-blueSoft px-5 py-6">
-      <div className="mb-2 flex items-center gap-3 text-[15px] font-extrabold text-[#8a8a8a]">
-        <span>{hasEvent ? selectedDateLabel : '선택된 날짜'}</span>
+    <section className="w-full rounded-[28px] bg-meet-blueSoft px-4 py-6 min-[380px]:px-5">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px] font-extrabold text-[#8a8a8a] min-[380px]:text-[15px]">
+        <span className="min-w-0 text-fluid-safe">{hasEvent ? selectedDateLabel : '선택된 날짜'}</span>
         {event ? <span>{event.startTime}</span> : null}
-        {event ? <span className="ml-auto">{event.location}</span> : null}
+        {event ? <span className="ml-auto shrink-0">{event.location}</span> : null}
       </div>
-      <h3 className="min-h-[36px] break-keep text-[25px] font-black leading-tight text-black">
+      <h3 className="min-h-[36px] text-fluid-safe text-[22px] font-black leading-tight text-black min-[380px]:text-[25px]">
         {hasEvent ? event!.title : '행사없음'}
       </h3>
       {event ? (

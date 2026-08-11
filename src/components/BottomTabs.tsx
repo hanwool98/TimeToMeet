@@ -57,7 +57,7 @@ export default function BottomTabs() {
   return (
     <nav
       aria-label="주요 메뉴"
-      className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-[430px] border-t border-black bg-meet-tab"
+      className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[430px] border-t border-black bg-meet-tab pb-[env(safe-area-inset-bottom)]"
     >
       <div className="grid grid-cols-4">
         {tabs.map((tab) => {
@@ -67,7 +67,7 @@ export default function BottomTabs() {
           <button
             aria-label={`${tab.label} 메뉴`}
             className={[
-              'flex h-[74px] min-w-0 items-center justify-center border-r border-white/80 text-white/95 last:border-r-0',
+              'flex h-[72px] min-w-0 items-center justify-center border-r border-white/80 text-white/95 last:border-r-0',
               active ? 'bg-white/45' : '',
             ].join(' ')}
             key={tab.path}

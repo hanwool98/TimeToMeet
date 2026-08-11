@@ -27,13 +27,13 @@ export default function AdminEventParticipantsPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[430px] flex-col justify-center">
+      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
         <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-[25px] font-black leading-tight tracking-normal">타임투밋 로테이션소개팅</h1>
+            <h1 className="text-fluid-safe text-[25px] font-black leading-tight tracking-normal">타임투밋 로테이션소개팅</h1>
             <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-2 py-3 text-[15px] font-black leading-snug">
               {event ? `${formatShortKoreanDate(event.date)} ${event.startTime} 체험단 소개팅` : '행사 정보를 불러올 수 없습니다'}
             </p>
@@ -62,7 +62,7 @@ export default function AdminEventParticipantsPage() {
       </div>
       {previewParticipant ? (
         <div aria-modal="true" className="fixed inset-0 z-30 grid place-items-center bg-black/35 px-4" role="dialog">
-          <div className="max-h-[86vh] w-full max-w-[390px] overflow-y-auto rounded-[30px] bg-white p-5 shadow-calendar">
+          <div className="max-h-[86dvh] w-full max-w-[390px] overflow-y-auto rounded-[30px] bg-white p-4 shadow-calendar min-[380px]:p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[14px] font-extrabold text-[#8a8a8a]">{previewParticipant.nickname}</p>
@@ -200,7 +200,7 @@ function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
     <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">{label}</p>
-      <p className="mt-1 break-keep text-[16px] font-black leading-snug text-black">{value}</p>
+      <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
     </section>
   );
 }
@@ -219,7 +219,7 @@ function ProfileImageSection({
   return (
     <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">{label}</p>
-      <p className="mt-1 break-keep text-[16px] font-black leading-snug text-black">{value}</p>
+      <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
       <div className="mt-3 overflow-hidden rounded-[18px] bg-white shadow-sm">
         <div
           className="h-[160px] bg-cover bg-center"
@@ -240,7 +240,7 @@ function ProfilePhotoGallery({ participant, value }: { participant: ParticipantD
   return (
     <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">11. 프로필 사진</p>
-      <p className="mt-1 break-keep text-[16px] font-black leading-snug text-black">{value}</p>
+      <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
       <div className="mt-3 space-y-3">
         {labels.map((label, index) => (
           <div className="overflow-hidden rounded-[20px] bg-white shadow-sm" key={label}>

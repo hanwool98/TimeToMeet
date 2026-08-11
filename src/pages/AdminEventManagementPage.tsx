@@ -46,7 +46,7 @@ export default function AdminEventManagementPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-3 pb-8 pt-2">
+      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 pb-8 pt-2">
         <header className="mb-1 flex items-center gap-1">
           <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
           <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
@@ -62,8 +62,8 @@ export default function AdminEventManagementPage() {
         />
 
         <section className="mt-8 rounded-[28px] bg-meet-blueSoft px-5 py-6">
-          <div className="mb-2 flex items-center gap-3 text-[15px] font-extrabold text-[#8a8a8a]">
-            <span className="min-w-0">{formatKoreanDate(selectedDate)}</span>
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] font-extrabold text-[#8a8a8a]">
+            <span className="min-w-0 text-fluid-safe">{formatKoreanDate(selectedDate)}</span>
             {selectedEvent ? (
               <>
                 <span>{selectedEvent.startTime}</span>
@@ -72,7 +72,7 @@ export default function AdminEventManagementPage() {
             ) : null}
           </div>
           <div className="flex min-h-[36px] items-start gap-3">
-            <h1 className="min-w-0 flex-1 break-keep text-[25px] font-black leading-tight text-black">
+            <h1 className="min-w-0 flex-1 text-fluid-safe text-[25px] font-black leading-tight text-black">
               {selectedEvent ? selectedEvent.title : '행사없음'}
             </h1>
             {selectedEvent ? (

@@ -79,10 +79,10 @@ function SwipeSection({
   return (
     <section className="mt-10">
       <h2 className="px-1 text-[20px] font-black text-black">{title}</h2>
-      <div className="mt-4 flex snap-x gap-3 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
+      <div className="mt-4 flex max-w-full snap-x gap-3 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
         {items.map((item) => (
           <article
-            className="grid min-h-[146px] min-w-[32%] snap-start place-items-center rounded-none bg-[#d9d9d9] p-3 text-center"
+            className="grid min-h-[146px] min-w-[128px] snap-start place-items-center rounded-none bg-[#d9d9d9] p-3 text-center"
             key={typeof item === 'string' ? item : item.title}
           >
             {typeof item === 'string' ? (
@@ -121,9 +121,9 @@ export default function EventInfoPage() {
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-4 pb-[108px] pt-12 text-black">
-      <div className="mx-auto w-full max-w-[430px]">
-        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-5 pb-7 pt-16 shadow-calendar">
+    <main className="min-h-screen overflow-x-hidden bg-white px-3 with-bottom-tabs pt-12 text-black min-[380px]:px-4">
+      <div className="mobile-container mx-auto">
+        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-4 pb-7 pt-16 shadow-calendar min-[380px]:px-5">
           <button
             aria-label="뒤로 가기"
             className="absolute left-5 top-5 grid h-10 w-10 place-items-center text-black transition hover:opacity-70"
@@ -146,7 +146,7 @@ export default function EventInfoPage() {
 
           <section className="mt-9 space-y-6 px-1">
             <h2 className="text-[20px] font-black">새로운 만남이 가장 기대되는 시간</h2>
-            <div className="space-y-5 break-keep text-[15px] font-extrabold leading-relaxed text-black">
+            <div className="space-y-5 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-black">
               <p>
                 미혼남녀가 가장 선호하는 소개팅 시간대는
                 <br />
@@ -169,7 +169,7 @@ export default function EventInfoPage() {
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">핵심정보</h2>
-            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-5 text-[14px] font-extrabold leading-relaxed text-[#555]">
+            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
               <p className="font-black text-black">일시</p>
               <p>{event ? `${formatKoreanWeekday(event.date)} ${event.startTime}~${event.endTime}` : '행사 일정 미정'}</p>
               <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
@@ -190,7 +190,7 @@ export default function EventInfoPage() {
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
-            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-5 text-[15px] font-extrabold leading-relaxed text-[#555]">
+            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
               <p>남성 50,000원</p>
               <p>여성 40,000원</p>
               <p className="mt-5">얼리버드 신청 시 5,000원 할인</p>
@@ -199,7 +199,7 @@ export default function EventInfoPage() {
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">콘텐츠 참여 혜택</h2>
-            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-5 text-[14px] font-extrabold leading-relaxed text-[#555]">
+            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
               <p>
                 행사 후기 콘텐츠 제작(유튜브, 릴스, 블로그 등)에 참여하고 싶으시다면 타임투밋 공식 DM으로 문의해주세요.
               </p>

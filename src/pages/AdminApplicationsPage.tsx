@@ -105,7 +105,7 @@ export default function AdminApplicationsPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto min-h-screen w-full max-w-[430px] px-3 pb-8 pt-2">
+      <div className="mobile-container mx-auto min-h-screen px-3 pb-8 pt-2">
         <header className="mb-1 flex items-center gap-1">
           <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
           <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
@@ -114,7 +114,7 @@ export default function AdminApplicationsPage() {
         <section className="rounded-[22px] border border-[#f0f3f6] bg-white px-4 py-5 shadow-calendar">
           <h1 className="text-center text-[22px] font-black">참가 신청 관리</h1>
 
-          <label className="mx-auto mt-5 flex h-12 w-[210px] items-center gap-3 rounded-[18px] border border-[#edf1f5] bg-white px-4 shadow-sm">
+          <label className="mx-auto mt-5 flex h-12 w-full max-w-[210px] items-center gap-3 rounded-[18px] border border-[#edf1f5] bg-white px-4 shadow-sm">
             <span aria-hidden="true" className="text-[18px]">📅</span>
             <select className="min-w-0 flex-1 bg-transparent text-center text-[17px] font-black outline-none" onChange={(event) => setDateFilter(event.target.value)} value={dateFilter}>
               {dateOptions.map((option) => (
@@ -125,7 +125,7 @@ export default function AdminApplicationsPage() {
             </select>
           </label>
 
-          <div className="mt-5 grid grid-cols-4 gap-2">
+          <div className="mt-5 grid grid-cols-2 gap-2 min-[390px]:grid-cols-4">
             <SummaryCard count={reviewCount} label="심사 대기" newCount={newReviewCount} />
             <SummaryCard count={waitingCount} label="참여 대기" />
             <SummaryCard count={paymentCount} label="결제·환불" />
@@ -136,7 +136,7 @@ export default function AdminApplicationsPage() {
             {tabs.map((tab) => (
               <button
                 className={[
-                  'relative pb-3 text-[14px] font-black',
+                  'relative min-w-0 break-keep pb-3 text-[11px] font-black min-[390px]:text-[14px]',
                   activeTab === tab.id ? 'text-meet-blue' : 'text-[#555]',
                 ].join(' ')}
                 key={tab.id}
@@ -150,7 +150,7 @@ export default function AdminApplicationsPage() {
             ))}
           </div>
 
-          <div className="mt-5 grid grid-cols-[1fr_54px] gap-3">
+          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_54px] gap-2 min-[380px]:gap-3">
             <label className="flex h-12 items-center gap-2 rounded-[16px] border border-[#edf1f5] bg-white px-4 shadow-sm">
               <span className="text-[18px] text-[#9aa3ad]">⌕</span>
               <input
@@ -202,9 +202,9 @@ export default function AdminApplicationsPage() {
 
 function SummaryCard({ count, label, newCount = 0 }: { count: number; label: string; newCount?: number }) {
   return (
-    <section className="rounded-[14px] border border-[#edf1f5] bg-white px-3 py-4 shadow-sm">
+    <section className="min-w-0 rounded-[14px] border border-[#edf1f5] bg-white px-3 py-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] font-black text-[#555]">{label}</p>
+        <p className="text-fluid-safe text-[13px] font-black text-[#555]">{label}</p>
         {newCount > 0 ? <span className="text-[18px] font-black italic text-meet-pink">N</span> : null}
       </div>
       <p className="mt-3 text-[30px] font-black leading-none text-[#23314d]">{count}</p>
@@ -224,18 +224,18 @@ function ApplicationCard({
   onReview: () => void;
 }) {
   return (
-    <article className={['rounded-[14px] border bg-white px-4 py-4 shadow-sm', highlighted ? 'border-meet-blue' : 'border-[#edf1f5]'].join(' ')}>
+    <article className={['min-w-0 rounded-[14px] border bg-white px-4 py-4 shadow-sm', highlighted ? 'border-meet-blue' : 'border-[#edf1f5]'].join(' ')}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-[17px] font-black text-[#263149]">{application.id}</h2>
-            <p className="text-[13px] font-extrabold text-[#5e6878]">{application.userId}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="shrink-0 text-[17px] font-black text-[#263149]">{application.id}</h2>
+            <p className="min-w-0 text-fluid-safe text-[13px] font-extrabold text-[#5e6878]">{application.userId}</p>
           </div>
-          <p className="mt-3 text-[13px] font-extrabold leading-snug text-[#263149]">
+          <p className="mt-3 text-fluid-safe text-[13px] font-extrabold leading-snug text-[#263149]">
             {application.gender} · {application.age}세 <span className="mx-2 text-[#ccd3dc]">|</span>
             {application.eventDate} {application.eventType}
           </p>
-          <p className="mt-2 text-[13px] font-extrabold leading-snug text-[#263149]">
+          <p className="mt-2 text-fluid-safe text-[13px] font-extrabold leading-snug text-[#263149]">
             {application.appliedAt}
             <span className="ml-3 rounded-[8px] bg-[#f1f3f5] px-2 py-1 text-[11px] font-black text-[#555]">{application.returning}</span>
           </p>
@@ -249,7 +249,7 @@ function ApplicationCard({
         <StatusBadge status={application.status} />
       </div>
       {application.status === '결제 대기' ? (
-        <div className="mt-4 flex items-end justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <DecisionTime application={application} />
           <button
             className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white"
@@ -260,7 +260,7 @@ function ApplicationCard({
           </button>
         </div>
       ) : (
-        <div className="mt-4 flex items-end justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <DecisionTime application={application} />
           <button
             className="h-10 rounded-[12px] border border-meet-blue px-4 text-[13px] font-black text-meet-blue"
@@ -278,7 +278,7 @@ function ApplicationCard({
 function DecisionTime({ application }: { application: StoredApplication }) {
   if (!application.reviewedAt) return <span />;
   return (
-    <p className="min-w-0 break-keep text-[12px] font-black leading-snug text-meet-pink">
+    <p className="min-w-0 text-fluid-safe text-[12px] font-black leading-snug text-meet-pink">
       {application.status} {formatDateTime(application.reviewedAt)}
     </p>
   );
@@ -317,7 +317,7 @@ function ReviewProfileModal({
       role="dialog"
     >
       <section
-        className="max-h-[88vh] w-full max-w-[390px] overflow-y-auto rounded-[22px] bg-white p-5 shadow-calendar"
+        className="max-h-[88dvh] w-full max-w-[390px] overflow-y-auto rounded-[22px] bg-white p-4 shadow-calendar min-[380px]:p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -390,9 +390,9 @@ function ReviewProfileModal({
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <section className="rounded-[16px] bg-meet-blueSoft px-4 py-3">
+    <section className="min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[12px] font-black text-[#8a8a8a]">{label}</p>
-      <p className="mt-1 break-keep text-[15px] font-black leading-snug text-black">{value}</p>
+      <p className="mt-1 text-fluid-safe text-[15px] font-black leading-snug text-black">{value}</p>
     </section>
   );
 }

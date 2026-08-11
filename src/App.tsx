@@ -59,14 +59,20 @@ export default function App() {
     });
   };
 
+  const resetAdminLogin = () => {
+    setShowAdminPrompt(false);
+    setAdminPassword('');
+  };
+
   const handleAdminSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (adminPassword === '19980618') {
-      setShowAdminPrompt(false);
-      setAdminPassword('');
+      resetAdminLogin();
       navigate('/admin');
       return;
     }
+
     window.alert('비밀번호가 올바르지 않습니다.');
   };
 
@@ -75,11 +81,11 @@ export default function App() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-3 pb-[108px] pt-2">
+      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 with-bottom-tabs pt-2">
         <div className="relative mb-1 w-[150px]">
           <img alt="time2meet" className="h-auto w-full object-contain" src="/assets/time2meet-logo.png" />
           <button
-            aria-label="관리자 비밀번호 입력 열기"
+            aria-label="관리자 로그인 열기"
             className="absolute left-[43%] top-0 h-full w-[16%]"
             onClick={handleLogoSecretTap}
             type="button"
@@ -120,10 +126,7 @@ export default function App() {
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button
                 className="h-12 rounded-[16px] bg-[#e8e8e8] text-[15px] font-black text-black"
-                onClick={() => {
-                  setShowAdminPrompt(false);
-                  setAdminPassword('');
-                }}
+                onClick={resetAdminLogin}
                 type="button"
               >
                 취소

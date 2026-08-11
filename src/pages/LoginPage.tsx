@@ -7,7 +7,7 @@ import { formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGue
 const actionLabels = [
   '로그인',
   '카카오로 로그인하기',
-  '이메일로 로그인하기',
+  '아이디로 로그인하기',
   '회원가입',
   '아이디 찾기',
   '비밀번호 찾기',
@@ -20,7 +20,7 @@ function showPreparing() {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestPin, setGuestPin] = useState('');
@@ -37,7 +37,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: loginId,
         password,
       });
       if (error) throw error;
@@ -77,8 +77,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-5 py-12 text-black">
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[430px] flex-col justify-center">
+    <main className="min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black min-[380px]:px-5">
+      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
         <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-7 pb-9 pt-28 shadow-calendar">
           <button
             aria-label="뒤로 가기"
@@ -145,9 +145,9 @@ export default function LoginPage() {
                 <input
                   aria-label="아이디"
                   className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
-                  onChange={(event) => setEmail(event.target.value)}
-                  type="email"
-                  value={email}
+                  onChange={(event) => setLoginId(event.target.value)}
+                  type="text"
+                  value={loginId}
                 />
               </label>
 
@@ -190,7 +190,7 @@ export default function LoginPage() {
                   value={guestPin}
                 />
               </label>
-              {guestError ? <p className="break-keep text-[12px] font-black text-meet-pink">{guestError}</p> : null}
+              {guestError ? <p className="text-fluid-safe text-[12px] font-black text-meet-pink">{guestError}</p> : null}
             </form>
           ) : null}
 
@@ -243,7 +243,7 @@ export default function LoginPage() {
           >
             비회원으로 계속하기
           </button>
-          <p className="mx-auto mt-7 max-w-[310px] break-keep text-center text-[17px] font-black leading-snug">
+          <p className="mx-auto mt-7 max-w-[310px] text-fluid-safe text-center text-[17px] font-black leading-snug">
             타임투밋 회원이 되시면 프로필 저장/쿠폰 등 다양한 혜택을 받으실 수 있습니다!
           </p>
         </section>

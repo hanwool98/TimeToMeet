@@ -54,7 +54,7 @@ function Field({
 }
 
 const inputClassName =
-  'h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold text-black outline-none focus:ring-2 focus:ring-meet-blue';
+  'h-12 min-w-0 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold text-black outline-none focus:ring-2 focus:ring-meet-blue';
 
 export default function AdminEventCreatePage() {
   const navigate = useNavigate();
@@ -120,7 +120,7 @@ export default function AdminEventCreatePage() {
       await upsertEventToSupabase(nextEvent);
       navigate(editingEvent ? `/admin/events/${nextEvent.id}` : '/admin/events');
     } catch (caughtError) {
-      setSaveError(caughtError instanceof Error ? caughtError.message : '행사를 저장하지 못했습니다.');
+      setSaveError(getEventSaveErrorMessage(caughtError));
     } finally {
       setSaving(false);
     }
@@ -135,14 +135,14 @@ export default function AdminEventCreatePage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-3 pb-8 pt-2">
+      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 pb-8 pt-2">
         <header className="mb-1 flex items-center gap-1">
           <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
           <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
-        <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
-          <h1 className="text-[25px] font-black leading-tight">{pageTitle}</h1>
+        <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-4 py-6 shadow-calendar min-[380px]:px-5">
+          <h1 className="text-fluid-safe text-[25px] font-black leading-tight">{pageTitle}</h1>
           <p className="mt-3 text-[18px] font-black text-meet-blue">{formatKoreanDate(eventDate)}</p>
 
           <form className="mt-7 space-y-5" onSubmit={(event) => event.preventDefault()}>
@@ -166,7 +166,7 @@ export default function AdminEventCreatePage() {
 
             <div>
               <span className="mb-2 block text-[15px] font-black text-black">진행 시간</span>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                 <input className={inputClassName} onChange={(event) => setStartTime(event.target.value)} type="time" value={startTime} />
                 <span className="text-[18px] font-black text-[#777]">~</span>
                 <input className={inputClassName} onChange={(event) => setEndTime(event.target.value)} type="time" value={endTime} />
@@ -179,9 +179,9 @@ export default function AdminEventCreatePage() {
 
             <div className="rounded-[24px] bg-meet-blueSoft p-4">
               <h2 className="text-[17px] font-black">모집 인원</h2>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-2 min-[380px]:gap-3">
                 <Field label="남성">
-                  <select className="h-12 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setMaleCapacity(event.target.value)} value={maleCapacity}>
+                  <select className="h-12 min-w-0 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setMaleCapacity(event.target.value)} value={maleCapacity}>
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
@@ -190,7 +190,7 @@ export default function AdminEventCreatePage() {
                   </select>
                 </Field>
                 <Field label="여성">
-                  <select className="h-12 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setFemaleCapacity(event.target.value)} value={femaleCapacity}>
+                  <select className="h-12 min-w-0 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setFemaleCapacity(event.target.value)} value={femaleCapacity}>
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
@@ -251,7 +251,7 @@ export default function AdminEventCreatePage() {
               </button>
               <PrimaryButton disabled={saving} onClick={handleCreate}>{saving ? '저장 중' : submitLabel}</PrimaryButton>
             </div>
-            {saveError ? <p className="text-center text-[13px] font-black text-meet-pink">{saveError}</p> : null}
+            {saveError ? <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">{saveError}</p> : null}
           </form>
         </section>
       </div>
@@ -262,4 +262,13 @@ export default function AdminEventCreatePage() {
 function createEventId(dateValue: string, eventName: string) {
   const slug = eventName.trim() ? eventName.trim().replace(/\s+/g, '-').toLowerCase() : 'time2meet-event';
   return `${slug}-${dateValue}`;
+}
+
+function getEventSaveErrorMessage(caughtError: unknown) {
+  const message = caughtError instanceof Error ? caughtError.message : '';
+  if (message.includes('row-level security') || message.includes('permission') || message.includes('policy')) {
+    return '행사를 저장하지 못했습니다. Supabase 관리자 권한 또는 RLS 정책을 확인해주세요.';
+  }
+  if (message) return `행사를 저장하지 못했습니다. ${message}`;
+  return '행사를 저장하지 못했습니다. Supabase 연결 상태를 확인해주세요.';
 }
