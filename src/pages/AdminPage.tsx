@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import type { EventData } from '../types/event';
 import { getEventGenderCounts, getEventsWithParticipantCounts, loadApplications } from '../utils/adminApplications';
 
@@ -6,6 +7,7 @@ const adminActions = ['행사모드', '회원·신고 관리', '콘텐츠 관리
 
 export default function AdminPage() {
   const navigate = useNavigate();
+  useSharedAdminData();
   const events = getEventsWithParticipantCounts();
   const upcomingEvents = events
     .filter((event) => {

@@ -1,11 +1,14 @@
 import { events } from '../data/events';
 import { participants } from '../data/participants';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { fetchAdminApplicationsFromSupabase, fetchPublicEventsFromSupabase, upsertEventToSupabase } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 
 export type ApplicationStatus = '심사 대기' | '결제 대기' | '참가 확정' | '반려' | '참여 보류' | '환불 완료' | '자동 취소';
 
 export interface StoredApplication {
+  dbId?: string;
   id: string;
   userId: string;
   gender: '남성' | '여성';
@@ -19,6 +22,7 @@ export interface StoredApplication {
   paymentDeadline?: string;
   paymentNoticeSentAt?: string;
   reviewedAt?: string;
+  profile?: ParticipantProfile;
 }
 
 export const applicationsStorageKey = 'time2meet-admin-applications';
@@ -28,7 +32,7 @@ export const initialApplications: StoredApplication[] = [
   { id: 'TTM_000', userId: 'test_woman', gender: '여성', age: 28, eventDate: '8월 16일', eventType: '로테이션', returning: '첫 참여', appliedAt: '08.07 15:05', status: '심사 대기', isNew: true },
 ];
 
-export function loadApplications() {
+export function loadApplications(): StoredApplication[] {
   if (typeof window === 'undefined') return initialApplications;
 
   const savedApplications = window.localStorage.getItem(applicationsStorageKey);
@@ -41,14 +45,74 @@ export function loadApplications() {
   }
 }
 
-export function saveApplications(applications: StoredApplication[]) {
+export function saveApplications(applications: StoredApplication[]): StoredApplication[] {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(applicationsStorageKey, JSON.stringify(applications));
+    void saveSharedAdminState({ applications });
   }
   return applications;
 }
 
-export function loadEventOverrides() {
+export async function syncSharedAdminState() {
+  if (typeof window === 'undefined') return false;
+
+  let changed = false;
+
+  try {
+    const publicEvents = await fetchPublicEventsFromSupabase();
+    if (publicEvents) {
+      window.localStorage.setItem(eventOverridesStorageKey, JSON.stringify(publicEvents));
+      changed = true;
+    }
+  } catch {
+    // The local mock state remains visible until Supabase is ready or permissions are fixed.
+  }
+
+  if (window.location.pathname.startsWith('/admin')) {
+    try {
+      const adminApplications = await fetchAdminApplicationsFromSupabase();
+      if (adminApplications) {
+        window.localStorage.setItem(applicationsStorageKey, JSON.stringify(adminApplications));
+        changed = true;
+      }
+    } catch {
+      // Admin RLS may reject this until the signed-in user is registered in admin_users.
+    }
+  }
+
+  try {
+    const response = await fetch('/api/admin-state', { cache: 'no-store' });
+    if (!response.ok) return false;
+
+    const state = (await response.json()) as { applications?: StoredApplication[] | null; eventOverrides?: EventData[] };
+    if (state.applications) {
+      window.localStorage.setItem(applicationsStorageKey, JSON.stringify(state.applications));
+      changed = true;
+    }
+    if (state.eventOverrides) {
+      window.localStorage.setItem(eventOverridesStorageKey, JSON.stringify(state.eventOverrides));
+      changed = true;
+    }
+  } catch {
+    // The Vite mock endpoint only exists in local development.
+  }
+
+  return changed;
+}
+
+async function saveSharedAdminState(patch: { applications?: StoredApplication[]; eventOverrides?: EventData[] }) {
+  try {
+    await fetch('/api/admin-state', {
+      body: JSON.stringify(patch),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    });
+  } catch {
+    // localStorage remains the fallback while a real database is not connected.
+  }
+}
+
+export function loadEventOverrides(): EventData[] {
   if (typeof window === 'undefined') return [];
 
   const savedEvents = window.localStorage.getItem(eventOverridesStorageKey);
@@ -67,16 +131,18 @@ export function saveEventOverride(event: EventData) {
   const currentEvents = loadEventOverrides();
   const nextEvents = [...currentEvents.filter((item) => item.id !== event.id), event];
   window.localStorage.setItem(eventOverridesStorageKey, JSON.stringify(nextEvents));
+  void upsertEventToSupabase(event);
+  void saveSharedAdminState({ eventOverrides: nextEvents });
 }
 
-export function getStoredEvents() {
+export function getStoredEvents(): EventData[] {
   const overrides = loadEventOverrides();
   const baseEvents = events.map((event) => overrides.find((item) => item.id === event.id) ?? event);
   const newEvents = overrides.filter((event) => !events.some((baseEvent) => baseEvent.id === event.id));
   return [...baseEvents, ...newEvents];
 }
 
-export function getConfirmedApplicationParticipants(eventId = 'seongnam-rotation-2026-08-16') {
+export function getConfirmedApplicationParticipants(eventId = 'seongnam-rotation-2026-08-16'): ParticipantData[] {
   const event = getStoredEvents().find((item) => item.id === eventId);
   if (!event) return [];
 
@@ -90,12 +156,12 @@ export function getConfirmedApplicationParticipants(eventId = 'seongnam-rotation
     .map((application, index) => createParticipantFromApplication(application, index));
 }
 
-export function getParticipantsForEvent(eventId = 'seongnam-rotation-2026-08-16') {
+export function getParticipantsForEvent(eventId = 'seongnam-rotation-2026-08-16'): ParticipantData[] {
   const confirmedApplications = getConfirmedApplicationParticipants(eventId);
   return [...participants, ...confirmedApplications];
 }
 
-export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16') {
+export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16'): { male: number; female: number } {
   const eventParticipants = getParticipantsForEvent(eventId);
   return {
     male: eventParticipants.filter((participant) => participant.gender === 'male').length,
@@ -103,7 +169,7 @@ export function getEventGenderCounts(eventId = 'seongnam-rotation-2026-08-16') {
   };
 }
 
-export function getEventsWithParticipantCounts() {
+export function getEventsWithParticipantCounts(): EventData[] {
   return getStoredEvents().map((event) => {
     const counts = getEventGenderCounts(event.id);
     return {

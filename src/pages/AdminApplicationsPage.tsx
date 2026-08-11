@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAvatarPosition } from '../components/ParticipantList';
 import { participants } from '../data/participants';
+import useSharedAdminData from '../hooks/useSharedAdminData';
+import { updateApplicationReviewInSupabase } from '../services/supabaseApplications';
 import type { ParticipantProfile } from '../types/participant';
 import { loadApplications, saveApplications, type StoredApplication } from '../utils/adminApplications';
 
@@ -21,12 +23,17 @@ const adminProfileSheet = '/assets/admin-profile-photos.svg';
 export default function AdminApplicationsPage() {
   const navigate = useNavigate();
   const [applications, setApplications] = useState(loadApplications);
+  const sharedDataVersion = useSharedAdminData();
   const [activeTab, setActiveTab] = useState<ApplicationTab>('review');
   const [dateFilter, setDateFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('성별');
   const [reviewingApplication, setReviewingApplication] = useState<StoredApplication | null>(null);
   const reviewProfile = participants.find((participant) => participant.id === 'female-01')?.profile;
+
+  useEffect(() => {
+    setApplications(loadApplications());
+  }, [sharedDataVersion]);
 
   const applicationsWithAutoCancel = useMemo(
     () =>
@@ -76,6 +83,9 @@ export default function AdminApplicationsPage() {
     if (!reviewingApplication) return;
     const now = new Date();
     const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const reviewedAt = now.toISOString();
+    const paymentDeadline = status === '결제 대기' ? deadline.toISOString() : reviewingApplication.paymentDeadline;
+    const paymentNoticeSentAt = status === '결제 대기' ? now.toISOString() : reviewingApplication.paymentNoticeSentAt;
     setApplications((current) =>
       saveApplications(current.map((application) =>
         application.id === reviewingApplication.id
@@ -83,26 +93,36 @@ export default function AdminApplicationsPage() {
               ...application,
               status,
               isNew: false,
-              paymentDeadline: status === '결제 대기' ? deadline.toISOString() : application.paymentDeadline,
-              paymentNoticeSentAt: status === '결제 대기' ? now.toISOString() : application.paymentNoticeSentAt,
-              reviewedAt: now.toISOString(),
+              paymentDeadline,
+              paymentNoticeSentAt,
+              reviewedAt,
             }
           : application,
       )),
     );
+    void updateApplicationReviewInSupabase(reviewingApplication, status, {
+      paymentDeadline,
+      paymentNoticeSentAt,
+      reviewedAt,
+    });
     setReviewingApplication(null);
     if (status === '참여 보류') setActiveTab('waiting');
     if (status === '결제 대기') setActiveTab('payment');
   };
 
   const completePayment = (applicationId: string) => {
+    const applicationToUpdate = applications.find((application) => application.id === applicationId);
+    const reviewedAt = new Date().toISOString();
     setApplications((current) =>
       saveApplications(current.map((application) =>
         application.id === applicationId
-          ? { ...application, status: '참가 확정', isNew: false, reviewedAt: new Date().toISOString() }
+          ? { ...application, status: '참가 확정', isNew: false, reviewedAt }
           : application,
       )),
     );
+    if (applicationToUpdate) {
+      void updateApplicationReviewInSupabase(applicationToUpdate, '참가 확정', { reviewedAt });
+    }
   };
 
   return (
@@ -195,7 +215,7 @@ export default function AdminApplicationsPage() {
           application={reviewingApplication}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
-          profile={reviewProfile}
+          profile={reviewingApplication.profile ?? reviewProfile}
         />
       ) : null}
     </main>

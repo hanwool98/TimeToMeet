@@ -2,8 +2,10 @@ import { type PointerEvent, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
+import { submitApplicationToSupabase } from '../services/supabaseApplications';
 
 const eventDate = new Date(2026, 7, 16);
+const defaultEventId = 'seongnam-rotation-2026-08-16';
 const requiredConsentText = [
   {
     id: 'privacy',
@@ -170,6 +172,7 @@ export default function ProfileFormPage() {
   const [pinchStart, setPinchStart] = useState<{ distance: number; scale: number } | null>(null);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const [audioUrl, setAudioUrl] = useState('');
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saved'>('idle');
   const [countdown, setCountdown] = useState(5);
   const [micError, setMicError] = useState('');
@@ -184,6 +187,7 @@ export default function ProfileFormPage() {
   const [inquiry, setInquiry] = useState('');
   const [finalNoticeConfirmed, setFinalNoticeConfirmed] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const age = useMemo(() => getAgeOnEventDate(birthDate), [birthDate]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
@@ -236,6 +240,7 @@ export default function ProfileFormPage() {
       recorder.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         setRecordingState('saved');
         if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
@@ -257,10 +262,47 @@ export default function ProfileFormPage() {
     recorderRef.current?.stop();
   };
 
-  const submit = () => {
+  const submit = async () => {
     setTouched(true);
-    if (!isRequiredComplete) return;
-    navigate('/application-complete');
+    if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
+
+    setSubmitting(true);
+    try {
+      await submitApplicationToSupabase({
+        accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
+        birthDate,
+        consents,
+        employmentProof,
+        eventId: defaultEventId,
+        filmingConsent,
+        gender,
+        height,
+        idPhoto,
+        inquiry,
+        interviewConsent: interview,
+        job,
+        name,
+        nickname,
+        phone,
+        profilePhotos,
+        refundAgreement: refundConsent,
+        relationshipStatus: '미혼이며 교제하는 인원 없음',
+        representativeCrop: {
+          offsetX: representativeOffsetX,
+          offsetY: representativeOffsetY,
+          scale: representativeScale,
+        },
+        representativeIndex,
+        residence: location,
+        returning: false,
+        voiceIntro: audioBlob,
+      });
+      navigate('/application-complete');
+    } catch {
+      window.alert('신청서 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const resetRepresentativeAdjustment = () => {
@@ -601,8 +643,8 @@ export default function ProfileFormPage() {
           </Section>
 
           <div className="sticky bottom-4 z-10">
-            <PrimaryButton disabled={!isRequiredComplete} onClick={submit}>
-              프로필 제출
+            <PrimaryButton disabled={!isRequiredComplete || submitting} onClick={submit}>
+              {submitting ? '제출 중' : '프로필 제출'}
             </PrimaryButton>
             {!isRequiredComplete ? <p className="mt-2 text-center text-[12px] font-extrabold text-[#888]">필수 항목을 모두 입력하면 제출할 수 있습니다.</p> : null}
           </div>

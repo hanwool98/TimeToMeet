@@ -1,6 +1,7 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import PrimaryButton from '../components/PrimaryButton';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import { getStoredEvents, saveEventOverride } from '../utils/adminApplications';
 import type { EventData } from '../types/event';
 
@@ -58,6 +59,7 @@ export default function AdminEventCreatePage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [searchParams] = useSearchParams();
+  useSharedAdminData();
   const events = getStoredEvents();
   const editingEvent = events.find((event) => event.id === eventId);
   const selectedDate = useMemo(

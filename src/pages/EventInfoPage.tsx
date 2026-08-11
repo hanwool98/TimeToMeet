@@ -2,6 +2,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import { getEventGenderCounts, getEventsWithParticipantCounts } from '../utils/adminApplications';
 
 const reasons = [
@@ -107,6 +108,7 @@ export default function EventInfoPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { eventId } = useParams();
+  useSharedAdminData();
   const isTabEventInfo = location.pathname === '/event-info';
   const events = getEventsWithParticipantCounts();
   const event =

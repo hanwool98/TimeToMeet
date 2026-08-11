@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import ParticipantList, { getAvatarPosition } from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import type { ParticipantData } from '../types/participant';
 import { getEventsWithParticipantCounts, getParticipantsForEvent } from '../utils/adminApplications';
 
@@ -12,6 +13,7 @@ export default function AdminEventParticipantsPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [previewParticipant, setPreviewParticipant] = useState<ParticipantData | null>(null);
+  useSharedAdminData();
   const events = getEventsWithParticipantCounts();
   const participants = getParticipantsForEvent(eventId);
   const event = events.find((item) => item.id === eventId);

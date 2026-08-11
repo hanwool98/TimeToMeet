@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Calendar from '../components/Calendar';
 import PrimaryButton from '../components/PrimaryButton';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import { getEventsWithParticipantCounts } from '../utils/adminApplications';
 
 const initialSelectedDate = new Date(2026, 7, 16);
@@ -23,6 +24,7 @@ export default function AdminEventManagementPage() {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
   const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+  useSharedAdminData();
   const events = getEventsWithParticipantCounts();
 
   const selectedEvent = useMemo(

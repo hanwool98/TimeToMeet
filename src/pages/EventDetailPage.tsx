@@ -2,11 +2,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
+import useSharedAdminData from '../hooks/useSharedAdminData';
 import { getEventsWithParticipantCounts, getParticipantsForEvent } from '../utils/adminApplications';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
+  useSharedAdminData();
   const events = getEventsWithParticipantCounts();
   const participants = getParticipantsForEvent(eventId);
   const event = events.find((item) => item.id === eventId);

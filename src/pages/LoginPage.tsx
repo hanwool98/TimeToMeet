@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
+import { supabase } from '../lib/supabase';
 
 const actionLabels = [
   '로그인',
@@ -17,6 +19,30 @@ function showPreparing() {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleLogin = async () => {
+    if (!supabase) {
+      window.alert('Supabase 연결 설정이 필요합니다.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+      navigate(-1);
+    } catch {
+      window.alert('로그인 정보를 확인해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-5 py-12 text-black">
@@ -69,7 +95,9 @@ export default function LoginPage() {
               <input
                 aria-label="아이디"
                 className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
-                type="text"
+                onChange={(event) => setEmail(event.target.value)}
+                type="email"
+                value={email}
               />
             </label>
 
@@ -78,7 +106,9 @@ export default function LoginPage() {
               <input
                 aria-label="비밀번호"
                 className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
+                onChange={(event) => setPassword(event.target.value)}
                 type="password"
+                value={password}
               />
             </label>
           </form>
@@ -93,10 +123,10 @@ export default function LoginPage() {
                   index === 2 ? 'bg-[#d9d9d9] text-black hover:bg-[#d0d0d0]' : '',
                 ].join(' ')}
                 key={label}
-                onClick={showPreparing}
+                onClick={index === 0 ? handleLogin : showPreparing}
                 type="button"
               >
-                {label}
+                {index === 0 && submitting ? '로그인 중' : label}
               </button>
             ))}
           </div>
