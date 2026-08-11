@@ -1,19 +1,20 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
-import useSharedAdminData from '../hooks/useSharedAdminData';
-import { getEventsWithParticipantCounts, getParticipantsForEvent } from '../utils/adminApplications';
+import useOperationalData from '../hooks/useOperationalData';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  useSharedAdminData();
-  const events = getEventsWithParticipantCounts();
-  const participants = getParticipantsForEvent(eventId);
+  const { error, events, loading, participants, reload } = useOperationalData({ eventId });
   const event = events.find((item) => item.id === eventId);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">

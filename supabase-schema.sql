@@ -572,6 +572,36 @@ $$;
 
 grant execute on function public.get_admin_applications() to authenticated;
 
+create or replace function public.get_public_participant_previews(target_event_id text)
+returns table (
+  id text,
+  gender text,
+  nickname text,
+  age integer,
+  job text,
+  avatar_index integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    a.id::text as id,
+    a.gender,
+    a.nickname,
+    extract(year from age(e.event_date, a.birth_date))::integer as age,
+    a.job,
+    (row_number() over (partition by a.gender order by a.reviewed_at nulls last, a.submitted_at) - 1)::integer as avatar_index
+  from public.applications a
+  join public.events e on e.id = a.event_id
+  where a.event_id = target_event_id
+    and a.status = '참가 확정'
+  order by a.gender, a.reviewed_at nulls last, a.submitted_at;
+$$;
+
+grant execute on function public.get_public_participant_previews(text) to anon, authenticated;
+
 create or replace function public.get_guest_cleanup_candidates()
 returns table (
   user_id uuid,

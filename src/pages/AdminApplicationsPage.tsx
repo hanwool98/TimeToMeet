@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import { getAvatarPosition } from '../components/ParticipantList';
-import { participants } from '../data/participants';
-import useSharedAdminData from '../hooks/useSharedAdminData';
+import useOperationalData from '../hooks/useOperationalData';
 import { updateApplicationReviewInSupabase } from '../services/supabaseApplications';
 import type { ParticipantProfile } from '../types/participant';
-import { loadApplications, saveApplications, type StoredApplication } from '../utils/adminApplications';
+import type { StoredApplication } from '../utils/adminApplications';
 
 type ApplicationTab = 'review' | 'waiting' | 'payment' | 'completed';
 
@@ -22,18 +22,12 @@ const adminProfileSheet = '/assets/admin-profile-photos.svg';
 
 export default function AdminApplicationsPage() {
   const navigate = useNavigate();
-  const [applications, setApplications] = useState(loadApplications);
-  const sharedDataVersion = useSharedAdminData();
+  const { applications, error, loading, reload } = useOperationalData({ admin: true });
   const [activeTab, setActiveTab] = useState<ApplicationTab>('review');
   const [dateFilter, setDateFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('성별');
   const [reviewingApplication, setReviewingApplication] = useState<StoredApplication | null>(null);
-  const reviewProfile = participants.find((participant) => participant.id === 'female-01')?.profile;
-
-  useEffect(() => {
-    setApplications(loadApplications());
-  }, [sharedDataVersion]);
 
   const applicationsWithAutoCancel = useMemo(
     () =>
@@ -79,51 +73,35 @@ export default function AdminApplicationsPage() {
   const completedCount = applicationsWithAutoCancel.filter((item) => item.status === '참가 확정' || item.status === '반려').length;
   const newReviewCount = applicationsWithAutoCancel.filter((item) => item.status === '심사 대기' && item.isNew).length;
 
-  const decideReview = (status: '결제 대기' | '참여 보류' | '반려') => {
+  const decideReview = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!reviewingApplication) return;
     const now = new Date();
     const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const reviewedAt = now.toISOString();
     const paymentDeadline = status === '결제 대기' ? deadline.toISOString() : reviewingApplication.paymentDeadline;
     const paymentNoticeSentAt = status === '결제 대기' ? now.toISOString() : reviewingApplication.paymentNoticeSentAt;
-    setApplications((current) =>
-      saveApplications(current.map((application) =>
-        application.id === reviewingApplication.id
-          ? {
-              ...application,
-              status,
-              isNew: false,
-              paymentDeadline,
-              paymentNoticeSentAt,
-              reviewedAt,
-            }
-          : application,
-      )),
-    );
-    void updateApplicationReviewInSupabase(reviewingApplication, status, {
+    await updateApplicationReviewInSupabase(reviewingApplication, status, {
       paymentDeadline,
       paymentNoticeSentAt,
       reviewedAt,
     });
+    await reload();
     setReviewingApplication(null);
     if (status === '참여 보류') setActiveTab('waiting');
     if (status === '결제 대기') setActiveTab('payment');
   };
 
-  const completePayment = (applicationId: string) => {
+  const completePayment = async (applicationId: string) => {
     const applicationToUpdate = applications.find((application) => application.id === applicationId);
     const reviewedAt = new Date().toISOString();
-    setApplications((current) =>
-      saveApplications(current.map((application) =>
-        application.id === applicationId
-          ? { ...application, status: '참가 확정', isNew: false, reviewedAt }
-          : application,
-      )),
-    );
     if (applicationToUpdate) {
-      void updateApplicationReviewInSupabase(applicationToUpdate, '참가 확정', { reviewedAt });
+      await updateApplicationReviewInSupabase(applicationToUpdate, '참가 확정', { reviewedAt });
+      await reload();
     }
   };
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
@@ -200,7 +178,7 @@ export default function AdminApplicationsPage() {
                 highlighted={index === 0 && activeTab === 'review'}
                 key={application.id}
                 onReview={() => setReviewingApplication(application)}
-                onPaymentComplete={() => completePayment(application.id)}
+                onPaymentComplete={() => void completePayment(application.id)}
               />
             ))}
           </div>
@@ -210,12 +188,12 @@ export default function AdminApplicationsPage() {
           </button>
         </section>
       </div>
-      {reviewingApplication && reviewProfile ? (
+      {reviewingApplication && reviewingApplication.profile ? (
         <ReviewProfileModal
           application={reviewingApplication}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
-          profile={reviewingApplication.profile ?? reviewProfile}
+          profile={reviewingApplication.profile}
         />
       ) : null}
     </main>
@@ -328,7 +306,7 @@ function ReviewProfileModal({
 }: {
   application: StoredApplication;
   onClose: () => void;
-  onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void;
+  onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
   profile: ParticipantProfile;
 }) {
   return (

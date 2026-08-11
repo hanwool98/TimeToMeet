@@ -1,14 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import useSharedAdminData from '../hooks/useSharedAdminData';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
+import useOperationalData from '../hooks/useOperationalData';
 import type { EventData } from '../types/event';
-import { getEventGenderCounts, getEventsWithParticipantCounts, loadApplications } from '../utils/adminApplications';
+import type { StoredApplication } from '../utils/adminApplications';
 
 const adminActions = ['행사모드', '회원·신고 관리', '콘텐츠 관리'];
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  useSharedAdminData();
-  const events = getEventsWithParticipantCounts();
+  const { applications, error, events, loading, reload } = useOperationalData({ admin: true });
   const upcomingEvents = events
     .filter((event) => {
       const daysUntil = getDaysUntilEvent(event.date);
@@ -19,6 +19,9 @@ export default function AdminPage() {
   const showPreparing = () => {
     window.alert('준비중!');
   };
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
@@ -32,7 +35,7 @@ export default function AdminPage() {
           <div className="overflow-x-auto rounded-[28px] bg-meet-blueSoft p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <div className="flex snap-x snap-mandatory gap-3">
               {upcomingEvents.map((event) => (
-                <DashboardEventCard event={event} key={event.id} />
+                <DashboardEventCard applications={applications} event={event} key={event.id} />
               ))}
             </div>
           </div>
@@ -76,12 +79,11 @@ export default function AdminPage() {
   );
 }
 
-function DashboardEventCard({ event }: { event: EventData }) {
-  const counts = getEventGenderCounts(event.id);
-  const applications = loadApplications().filter((application) => application.eventDate === '8월 16일' && application.eventType === event.shortName);
-  const reviewCount = applications.filter((application) => application.status === '심사 대기').length;
-  const waitingCount = applications.filter((application) => application.status === '참여 보류').length;
-  const paymentCount = applications.filter((application) => application.status === '결제 대기').length;
+function DashboardEventCard({ applications, event }: { applications: StoredApplication[]; event: EventData }) {
+  const eventApplications = applications.filter((application) => application.eventDate === formatApplicationEventDate(event.date) && application.eventType === event.shortName);
+  const reviewCount = eventApplications.filter((application) => application.status === '심사 대기').length;
+  const waitingCount = eventApplications.filter((application) => application.status === '참여 보류').length;
+  const paymentCount = eventApplications.filter((application) => application.status === '결제 대기').length;
 
   return (
     <div className="w-full min-w-full snap-center rounded-[24px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
@@ -99,8 +101,8 @@ function DashboardEventCard({ event }: { event: EventData }) {
         />
       </div>
       <div className="mt-6 grid grid-cols-2 gap-4 text-[15px] font-black leading-none">
-        <p>남성&nbsp; {counts.male}/10</p>
-        <p>여성&nbsp; {counts.female}/10</p>
+        <p>남성&nbsp; {event.maleConfirmed ?? 0}/10</p>
+        <p>여성&nbsp; {event.femaleConfirmed ?? 0}/10</p>
       </div>
       <p className="mt-6 break-keep text-[15px] font-extrabold leading-snug text-[#555]">
         심사 대기 {reviewCount} · 대기자 리스트 {waitingCount} · 결제 대기 {paymentCount}
@@ -118,4 +120,9 @@ function getDaysUntilEvent(dateValue: string) {
 function formatShortDate(dateValue: string) {
   const [, month, day] = dateValue.split('-');
   return `${month}.${day}`;
+}
+
+function formatApplicationEventDate(dateValue: string) {
+  const [, month, day] = dateValue.split('-').map(Number);
+  return `${month}월 ${day}일`;
 }

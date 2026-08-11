@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Calendar from '../components/Calendar';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import PrimaryButton from '../components/PrimaryButton';
-import useSharedAdminData from '../hooks/useSharedAdminData';
-import { getEventsWithParticipantCounts } from '../utils/adminApplications';
+import useOperationalData from '../hooks/useOperationalData';
 
 const initialSelectedDate = new Date(2026, 7, 16);
 const today = new Date(2026, 7, 3);
@@ -24,8 +24,7 @@ export default function AdminEventManagementPage() {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
   const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
-  useSharedAdminData();
-  const events = getEventsWithParticipantCounts();
+  const { error, events, loading, reload } = useOperationalData();
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.date === toDateKey(selectedDate)),
@@ -41,6 +40,9 @@ export default function AdminEventManagementPage() {
     }
     navigate(`/admin/events/new?date=${toDateKey(selectedDate)}`);
   };
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">

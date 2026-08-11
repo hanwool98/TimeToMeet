@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import ParticipantList, { getAvatarPosition } from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
-import useSharedAdminData from '../hooks/useSharedAdminData';
-import type { ParticipantData } from '../types/participant';
-import { getEventsWithParticipantCounts, getParticipantsForEvent } from '../utils/adminApplications';
+import useOperationalData from '../hooks/useOperationalData';
+import type { ParticipantData, ParticipantProfile } from '../types/participant';
+import type { StoredApplication } from '../utils/adminApplications';
 
 const adminProfileSheet = '/assets/admin-profile-photos.svg';
 
@@ -13,12 +14,16 @@ export default function AdminEventParticipantsPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [previewParticipant, setPreviewParticipant] = useState<ParticipantData | null>(null);
-  useSharedAdminData();
-  const events = getEventsWithParticipantCounts();
-  const participants = getParticipantsForEvent(eventId);
+  const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
+  const participants = applications
+    .filter((application) => event && application.status === '참가 확정' && application.eventDate === formatApplicationEventDate(event.date) && application.eventType === event.shortName)
+    .map(applicationToParticipant);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
@@ -147,6 +152,48 @@ function formatShortKoreanDate(dateValue: string) {
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
   const date = new Date(year, month - 1, day);
   return `${String(year).slice(2)}년 ${month}월 ${day}일 (${dayNames[date.getDay()]})`;
+}
+
+function formatApplicationEventDate(dateValue: string) {
+  const [, month, day] = dateValue.split('-').map(Number);
+  return `${month}월 ${day}일`;
+}
+
+function applicationToParticipant(application: StoredApplication, index: number): ParticipantData {
+  const profile = application.profile ?? createEmptyProfile(application);
+
+  return {
+    avatarIndex: index,
+    gender: application.gender === '여성' ? 'female' : 'male',
+    id: application.dbId ?? application.id,
+    nickname: profile.nickname,
+    profile,
+    tags: [`${application.age}세`, profile.job],
+  };
+}
+
+function createEmptyProfile(application: StoredApplication): ParticipantProfile {
+  return {
+    accessRoute: '',
+    birthDate: '',
+    employmentProof: '',
+    genderLabel: application.gender,
+    height: '',
+    idPhotoStatus: '',
+    inquiry: '',
+    interviewConsent: '',
+    job: '',
+    name: '',
+    nickname: application.userId,
+    phone: '',
+    profilePhotos: '',
+    refundAgreement: '',
+    relationshipStatus: '',
+    residence: '',
+    reviewNotice: '',
+    shootingConsent: '',
+    voiceIntro: '',
+  };
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {

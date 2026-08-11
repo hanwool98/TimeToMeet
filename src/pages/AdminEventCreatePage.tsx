@@ -1,8 +1,9 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import PrimaryButton from '../components/PrimaryButton';
-import useSharedAdminData from '../hooks/useSharedAdminData';
-import { getStoredEvents, saveEventOverride } from '../utils/adminApplications';
+import useOperationalData from '../hooks/useOperationalData';
+import { upsertEventToSupabase } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
 const eventTypes = ['타임투밋 로테이션 소개팅'];
@@ -59,8 +60,7 @@ export default function AdminEventCreatePage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [searchParams] = useSearchParams();
-  useSharedAdminData();
-  const events = getStoredEvents();
+  const { error, events, loading, reload } = useOperationalData();
   const editingEvent = events.find((event) => event.id === eventId);
   const selectedDate = useMemo(
     () => (editingEvent ? parseDateParam(editingEvent.date) : parseDateParam(searchParams.get('date'))),
@@ -84,8 +84,23 @@ export default function AdminEventCreatePage() {
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const handleCreate = () => {
+  useEffect(() => {
+    if (!editingEvent) return;
+    setEventType(editingEvent.shortName.includes('로테이션') ? eventTypes[0] : editingEvent.shortName);
+    setEventName(editingEvent.title);
+    setEventDate(editingEvent.date);
+    setStartTime(editingEvent.startTime);
+    setEndTime(editingEvent.endTime);
+    setMaleCapacity(String(editingEvent.targetParticipants / 2));
+    setFemaleCapacity(String(editingEvent.targetParticipants / 2));
+    setRegion(`${editingEvent.location}시`);
+    setVenueBooked(editingEvent.venueBooked);
+  }, [editingEvent]);
+
+  const handleCreate = async () => {
     const nextEvent: EventData = {
       id: editingEvent?.id ?? createEventId(eventDate, eventName),
       title: eventName.trim() || '타임투밋 로테이션 소개팅',
@@ -99,13 +114,24 @@ export default function AdminEventCreatePage() {
       targetParticipants: Number(maleCapacity) + Number(femaleCapacity),
     };
 
-    saveEventOverride(nextEvent);
-    navigate(editingEvent ? `/admin/events/${nextEvent.id}` : '/admin/events');
+    setSaving(true);
+    setSaveError('');
+    try {
+      await upsertEventToSupabase(nextEvent);
+      navigate(editingEvent ? `/admin/events/${nextEvent.id}` : '/admin/events');
+    } catch (caughtError) {
+      setSaveError(caughtError instanceof Error ? caughtError.message : '행사를 저장하지 못했습니다.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const pageTitle = editingEvent ? '행사 수정' : '새 행사 만들기';
   const submitLabel = editingEvent ? '행사 수정' : '행사 만들기';
   const cancelPath = editingEvent ? `/admin/events/${editingEvent.id}` : '/admin/events';
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
@@ -223,8 +249,9 @@ export default function AdminEventCreatePage() {
               >
                 취소
               </button>
-              <PrimaryButton onClick={handleCreate}>{submitLabel}</PrimaryButton>
+              <PrimaryButton disabled={saving} onClick={handleCreate}>{saving ? '저장 중' : submitLabel}</PrimaryButton>
             </div>
+            {saveError ? <p className="text-center text-[13px] font-black text-meet-pink">{saveError}</p> : null}
           </form>
         </section>
       </div>

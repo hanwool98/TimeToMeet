@@ -2,9 +2,9 @@ import { type FormEvent, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import Calendar from './components/Calendar';
+import { DataErrorState, DataLoadingState } from './components/DataState';
 import EventCard from './components/EventCard';
-import useSharedAdminData from './hooks/useSharedAdminData';
-import { getEventsWithParticipantCounts } from './utils/adminApplications';
+import useOperationalData from './hooks/useOperationalData';
 
 const initialSelectedDate = new Date(2026, 7, 16);
 const today = new Date(2026, 7, 3);
@@ -29,12 +29,11 @@ export default function App() {
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
-  useSharedAdminData();
-  const events = getEventsWithParticipantCounts();
+  const { error, events, loading, reload } = useOperationalData();
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.date === toDateKey(selectedDate)),
-    [selectedDate],
+    [events, selectedDate],
   );
 
   const handleApply = () => {
@@ -70,6 +69,9 @@ export default function App() {
     }
     window.alert('비밀번호가 올바르지 않습니다.');
   };
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">

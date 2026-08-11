@@ -16,7 +16,10 @@ import MyEventsPage from './pages/MyEventsPage';
 import MyPage from './pages/MyPage';
 import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
+import { getSupabaseDiagnostics } from './lib/supabase';
 import './styles.css';
+
+window.time2meetDiagnostics = getSupabaseDiagnostics;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

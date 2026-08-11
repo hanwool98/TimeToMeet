@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { EventData } from '../types/event';
-import type { ParticipantProfile } from '../types/participant';
+import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
 
 interface SubmitApplicationInput {
@@ -88,6 +88,15 @@ interface PublicEventSummaryRow {
   female_confirmed: number;
 }
 
+interface PublicParticipantPreviewRow {
+  id: string;
+  gender: '남성' | '여성';
+  nickname: string;
+  age: number;
+  job: string;
+  avatar_index: number;
+}
+
 export async function ensureApplicationSession() {
   if (!supabase) throw new Error('Supabase is not configured.');
 
@@ -145,7 +154,7 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
 }
 
 export async function fetchOwnApplicationForEvent(eventId: string) {
-  if (!supabase) return null;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const { data, error } = await supabase
     .from('applications')
@@ -158,7 +167,7 @@ export async function fetchOwnApplicationForEvent(eventId: string) {
 }
 
 export async function fetchApplicationDraft(eventId: string) {
-  if (!supabase) return null;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const { data, error } = await supabase
     .from('application_drafts')
@@ -171,7 +180,7 @@ export async function fetchApplicationDraft(eventId: string) {
 }
 
 export async function saveApplicationDraft(eventId: string, draftData: Record<string, unknown>) {
-  if (!supabase) return;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const user = await ensureApplicationSession();
   const { error } = await supabase.from('application_drafts').upsert({
@@ -209,7 +218,7 @@ async function getCurrentAccountType(userId: string): Promise<'member' | 'guest'
 }
 
 export async function fetchAdminApplicationsFromSupabase() {
-  if (!supabase) return null;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const { data, error } = await supabase
     .rpc('get_admin_applications');
@@ -229,7 +238,8 @@ export async function updateApplicationReviewInSupabase(
     reviewedAt?: string;
   } = {},
 ) {
-  if (!supabase || !application.dbId) return;
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
 
   const { error } = await supabase
     .from('applications')
@@ -246,7 +256,7 @@ export async function updateApplicationReviewInSupabase(
 }
 
 export async function fetchPublicEventsFromSupabase() {
-  if (!supabase) return null;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const { data, error } = await supabase.rpc('get_public_event_summaries');
   if (error) throw error;
@@ -269,8 +279,26 @@ export async function fetchPublicEventsFromSupabase() {
   })) satisfies EventData[];
 }
 
+export async function fetchPublicParticipantsFromSupabase(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_public_participant_previews', {
+    target_event_id: eventId,
+  });
+
+  if (error) throw error;
+
+  return (data as PublicParticipantPreviewRow[]).map((participant) => ({
+    avatarIndex: participant.avatar_index,
+    gender: participant.gender === '여성' ? 'female' : 'male',
+    id: participant.id,
+    nickname: participant.nickname,
+    tags: [`${participant.age}세`, participant.job],
+  })) satisfies ParticipantData[];
+}
+
 export async function upsertEventToSupabase(event: EventData) {
-  if (!supabase) return;
+  if (!supabase) throw new Error('Supabase is not configured.');
 
   const { error } = await supabase.from('events').upsert({
     end_time: event.endTime,
@@ -296,7 +324,9 @@ export function subscribeToSupabaseChanges(onChange: () => void) {
     .channel('time2meet-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, onChange)
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') onChange();
+    });
 
   return () => {
     void client.removeChannel(channel);

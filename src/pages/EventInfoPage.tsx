@@ -1,9 +1,9 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
-import useSharedAdminData from '../hooks/useSharedAdminData';
-import { getEventGenderCounts, getEventsWithParticipantCounts } from '../utils/adminApplications';
+import useOperationalData from '../hooks/useOperationalData';
 
 const reasons = [
   {
@@ -108,15 +108,17 @@ export default function EventInfoPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { eventId } = useParams();
-  useSharedAdminData();
+  const { error, events, loading, reload } = useOperationalData();
   const isTabEventInfo = location.pathname === '/event-info';
-  const events = getEventsWithParticipantCounts();
   const event =
     events.find((item) => item.id === eventId) ??
     events
       .filter((item) => getDaysUntilEvent(item.date) >= 0)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-  const counts = event ? getEventGenderCounts(event.id) : { male: 0, female: 0 };
+  const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
+
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-4 pb-[108px] pt-12 text-black">
