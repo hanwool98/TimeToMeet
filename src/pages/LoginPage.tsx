@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
-import { supabase } from '../lib/supabase';
 import { formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGuestPin } from '../services/guestPinAuth';
 
 const actionLabels = [
@@ -29,24 +28,9 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
-    if (!supabase) {
-      window.alert('Supabase 연결 설정이 필요합니다.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: loginId,
-        password,
-      });
-      if (error) throw error;
-      navigate(-1);
-    } catch {
-      window.alert('로그인 정보를 확인해주세요.');
-    } finally {
-      setSubmitting(false);
-    }
+    void loginId;
+    void password;
+    showPreparing();
   };
 
   const handleGuestLogin = async () => {

@@ -1,7 +1,5 @@
 import { supabase } from '../lib/supabase';
 
-const guestEmailDomain = 'guest.time2meet.local';
-
 export function normalizeKoreanPhone(value: string) {
   const digits = value.replace(/\D/g, '');
   if (!/^01[016789]\d{7,8}$/.test(digits)) {
@@ -28,10 +26,10 @@ export function validateGuestPin(pin: string, phoneNormalized: string) {
 
 export async function createGuestAccount(phoneNormalized: string, pin: string) {
   if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
-  const email = toGuestEmail(phoneNormalized);
+  const phone = toSupabasePhone(phoneNormalized);
 
   const { data, error } = await supabase.auth.signUp({
-    email,
+    phone,
     password: pin,
     options: {
       data: {
@@ -44,7 +42,7 @@ export async function createGuestAccount(phoneNormalized: string, pin: string) {
 
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) {
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password: pin });
+    const { error: signInError } = await supabase.auth.signInWithPassword({ phone, password: pin });
     if (signInError) throw signInError;
   }
 
@@ -63,7 +61,7 @@ export async function loginGuestAccount(phoneNormalized: string, pin: string) {
   if (allowed === false) throw new Error('잠시 후 다시 시도해주세요.');
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: toGuestEmail(phoneNormalized),
+    phone: toSupabasePhone(phoneNormalized),
     password: pin,
   });
 
@@ -92,8 +90,8 @@ async function upsertGuestRows(userId: string, phoneNormalized: string) {
   if (guestError) throw guestError;
 }
 
-function toGuestEmail(phoneNormalized: string) {
-  return `guest-${phoneNormalized}@${guestEmailDomain}`;
+function toSupabasePhone(phoneNormalized: string) {
+  return `+82${phoneNormalized.slice(1)}`;
 }
 
 function isSequentialPin(pin: string) {
