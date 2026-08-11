@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
+import { loginMemberSession } from '../services/appAuth';
 import { formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGuestPin } from '../services/guestPinAuth';
 
 const actionLabels = [
@@ -28,9 +29,15 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
-    void loginId;
-    void password;
-    showPreparing();
+    setSubmitting(true);
+    try {
+      await loginMemberSession(loginId, password);
+      navigate(-1);
+    } catch {
+      window.alert('아이디 또는 비밀번호를 확인해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleGuestLogin = async () => {

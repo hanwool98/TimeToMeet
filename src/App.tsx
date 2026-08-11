@@ -5,6 +5,7 @@ import Calendar from './components/Calendar';
 import { DataErrorState, DataLoadingState } from './components/DataState';
 import EventCard from './components/EventCard';
 import useOperationalData from './hooks/useOperationalData';
+import { loginAdminSession } from './services/adminAuth';
 
 const initialSelectedDate = new Date(2026, 7, 16);
 const today = new Date(2026, 7, 3);
@@ -29,6 +30,7 @@ export default function App() {
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
   const { error, events, loading, reload } = useOperationalData();
 
   const selectedEvent = useMemo(
@@ -62,18 +64,23 @@ export default function App() {
   const resetAdminLogin = () => {
     setShowAdminPrompt(false);
     setAdminPassword('');
+    setAdminSubmitting(false);
   };
 
-  const handleAdminSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleAdminSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (adminPassword === '19980618') {
+    setAdminSubmitting(true);
+    try {
+      await loginAdminSession(adminPassword);
       resetAdminLogin();
       navigate('/admin');
       return;
+    } catch {
+      window.alert('관리자 코드가 올바르지 않습니다.');
+    } finally {
+      setAdminSubmitting(false);
     }
-
-    window.alert('비밀번호가 올바르지 않습니다.');
   };
 
   if (loading) return <DataLoadingState />;
@@ -114,7 +121,7 @@ export default function App() {
             onSubmit={handleAdminSubmit}
           >
             <label className="block">
-              <span className="text-[17px] font-black">관리자 비밀번호</span>
+              <span className="text-[17px] font-black">관리자 코드</span>
               <input
                 autoFocus
                 className="mt-4 h-12 w-full rounded-[16px] bg-meet-blueSoft px-4 text-[18px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
@@ -131,8 +138,8 @@ export default function App() {
               >
                 취소
               </button>
-              <button className="h-12 rounded-[16px] bg-meet-blue text-[15px] font-black text-white" type="submit">
-                확인
+              <button className="h-12 rounded-[16px] bg-meet-blue text-[15px] font-black text-white disabled:opacity-50" disabled={adminSubmitting} type="submit">
+                {adminSubmitting ? '확인 중' : '확인'}
               </button>
             </div>
           </form>

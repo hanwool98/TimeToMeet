@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { createGuestSession, loginGuestSession } from './appAuth';
 
 export function normalizeKoreanPhone(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -25,73 +25,11 @@ export function validateGuestPin(pin: string, phoneNormalized: string) {
 }
 
 export async function createGuestAccount(phoneNormalized: string, pin: string) {
-  if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
-  const phone = toSupabasePhone(phoneNormalized);
-
-  const { data, error } = await supabase.auth.signUp({
-    phone,
-    password: pin,
-    options: {
-      data: {
-        account_type: 'guest',
-      },
-    },
-  });
-
-  if (error || !data.user) throw error ?? new Error('비회원 계정을 만들 수 없습니다.');
-
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData.session) {
-    const { error: signInError } = await supabase.auth.signInWithPassword({ phone, password: pin });
-    if (signInError) throw signInError;
-  }
-
-  const { data: currentUser } = await supabase.auth.getUser();
-  await upsertGuestRows(currentUser.user?.id ?? data.user.id, phoneNormalized);
+  await createGuestSession(phoneNormalized, pin);
 }
 
 export async function loginGuestAccount(phoneNormalized: string, pin: string) {
-  if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
-
-  const { data: allowed, error: allowedError } = await supabase.rpc('can_attempt_guest_login', {
-    phone_value: phoneNormalized,
-  });
-
-  if (allowedError) throw allowedError;
-  if (allowed === false) throw new Error('잠시 후 다시 시도해주세요.');
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    phone: toSupabasePhone(phoneNormalized),
-    password: pin,
-  });
-
-  if (error || !data.user) {
-    await supabase.rpc('record_guest_login_failure', { phone_value: phoneNormalized });
-    throw error ?? new Error('비회원 로그인에 실패했습니다.');
-  }
-
-  await supabase.rpc('clear_guest_login_failures', { phone_value: phoneNormalized });
-  await upsertGuestRows(data.user.id, phoneNormalized);
-}
-
-async function upsertGuestRows(userId: string, phoneNormalized: string) {
-  if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
-
-  const { error: accountError } = await supabase.from('user_accounts').upsert({
-    account_type: 'guest',
-    user_id: userId,
-  });
-  if (accountError) throw accountError;
-
-  const { error: guestError } = await supabase.from('guest_accounts').upsert({
-    phone_normalized: phoneNormalized,
-    user_id: userId,
-  });
-  if (guestError) throw guestError;
-}
-
-function toSupabasePhone(phoneNormalized: string) {
-  return `+82${phoneNormalized.slice(1)}`;
+  await loginGuestSession(phoneNormalized, pin);
 }
 
 function isSequentialPin(pin: string) {

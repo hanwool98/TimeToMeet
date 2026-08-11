@@ -5,6 +5,7 @@ import LogoMark from '../components/LogoMark';
 import ParticipantList, { getAvatarPosition } from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
+import { deleteEventFromSupabase } from '../services/supabaseApplications';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -14,6 +15,7 @@ export default function AdminEventParticipantsPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [previewParticipant, setPreviewParticipant] = useState<ParticipantData | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
   const participants = applications
@@ -24,6 +26,22 @@ export default function AdminEventParticipantsPage() {
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
+
+  const handleDeleteEvent = async () => {
+    if (!event || !eventId) return;
+    if (!window.confirm('행사를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+
+    setDeleting(true);
+    try {
+      await deleteEventFromSupabase(eventId);
+      navigate('/admin/events');
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : '관리자 인증 또는 Supabase 상태를 확인해주세요.';
+      window.alert(`행사를 삭제하지 못했습니다. ${message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
@@ -50,10 +68,18 @@ export default function AdminEventParticipantsPage() {
             )}
           </div>
 
-          <div className="pt-5">
+          <div className="grid grid-cols-2 gap-3 pt-5">
             <PrimaryButton disabled={!event} onClick={() => navigate(`/admin/events/${eventId}/edit`)}>
               행사 수정
             </PrimaryButton>
+            <button
+              className="h-14 rounded-[18px] bg-meet-pink px-5 text-[16px] font-extrabold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!event || deleting}
+              onClick={handleDeleteEvent}
+              type="button"
+            >
+              {deleting ? '삭제 중' : '행사 삭제'}
+            </button>
           </div>
         </section>
         <Link className="mx-auto mt-5 text-sm font-extrabold text-meet-blue" to="/admin/events">

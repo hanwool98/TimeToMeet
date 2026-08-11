@@ -1,0 +1,5 @@
+[functions.admin-login]
+verify_jwt = false
+
+[functions.admin-delete-event]
+verify_jwt = false

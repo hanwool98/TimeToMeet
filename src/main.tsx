@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import App from './App';
+import AdminRoute from './components/AdminRoute';
 import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
@@ -28,12 +29,14 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/" element={<App />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/guest-phone" element={<GuestPhoneAuthPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/admin/applications" element={<AdminApplicationsPage />} />
-        <Route path="/admin/events" element={<AdminEventManagementPage />} />
-        <Route path="/admin/events/new" element={<AdminEventCreatePage />} />
-        <Route path="/admin/events/:eventId" element={<AdminEventParticipantsPage />} />
-        <Route path="/admin/events/:eventId/edit" element={<AdminEventCreatePage />} />
+        <Route element={<AdminRoute />}>
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/applications" element={<AdminApplicationsPage />} />
+          <Route path="/admin/events" element={<AdminEventManagementPage />} />
+          <Route path="/admin/events/new" element={<AdminEventCreatePage />} />
+          <Route path="/admin/events/:eventId" element={<AdminEventParticipantsPage />} />
+          <Route path="/admin/events/:eventId/edit" element={<AdminEventCreatePage />} />
+        </Route>
         <Route path="/event-info" element={<EventInfoPage />} />
         <Route path="/my-events" element={<MyEventsPage />} />
         <Route path="/mypage" element={<MyPage />} />

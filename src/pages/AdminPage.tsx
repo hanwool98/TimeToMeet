@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import useOperationalData from '../hooks/useOperationalData';
-import { supabase } from '../lib/supabase';
+import { clearAdminSession } from '../services/adminAuth';
 import type { EventData } from '../types/event';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -21,8 +21,8 @@ export default function AdminPage() {
     window.alert('준비중!');
   };
 
-  const leaveAdmin = async () => {
-    await supabase?.auth.signOut();
+  const leaveAdmin = () => {
+    clearAdminSession();
     navigate('/');
   };
 
@@ -73,7 +73,7 @@ export default function AdminPage() {
             ))}
             <button
               className="min-h-[68px] w-full rounded-[22px] bg-meet-blue px-3 py-4 text-fluid-safe text-[19px] font-black text-white shadow-calendar transition active:scale-[0.99]"
-              onClick={() => void leaveAdmin()}
+              onClick={leaveAdmin}
               type="button"
             >
               관리자페이지 나가기

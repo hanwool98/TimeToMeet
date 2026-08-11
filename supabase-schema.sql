@@ -44,6 +44,49 @@ create table if not exists public.guest_login_attempts (
   last_failed_at timestamptz not null default now()
 );
 
+create table if not exists public.app_users (
+  user_id uuid primary key default gen_random_uuid(),
+  account_type text not null check (account_type in ('member', 'guest', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.member_accounts (
+  user_id uuid primary key references public.app_users(user_id) on delete cascade,
+  login_id text not null unique,
+  password_hash text not null,
+  linked_auth_providers jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.app_sessions (
+  token_hash text primary key,
+  user_id uuid references public.app_users(user_id) on delete cascade,
+  role text not null check (role in ('member', 'guest', 'admin')),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.admin_login_attempts (
+  request_hash text primary key,
+  failed_count integer not null default 0,
+  locked_until timestamptz,
+  last_failed_at timestamptz not null default now()
+);
+
+alter table public.guest_accounts
+add column if not exists pin_hash text;
+
+do $$
+begin
+  alter table public.guest_accounts drop constraint if exists guest_accounts_user_id_fkey;
+  alter table public.user_accounts drop constraint if exists user_accounts_user_id_fkey;
+  alter table public.admin_users drop constraint if exists admin_users_user_id_fkey;
+exception
+  when undefined_table then null;
+end $$;
+
 create table if not exists public.events (
   id text primary key,
   title text not null,
@@ -173,6 +216,10 @@ alter table public.admin_users enable row level security;
 alter table public.user_accounts enable row level security;
 alter table public.guest_accounts enable row level security;
 alter table public.guest_login_attempts enable row level security;
+alter table public.app_users enable row level security;
+alter table public.member_accounts enable row level security;
+alter table public.app_sessions enable row level security;
+alter table public.admin_login_attempts enable row level security;
 alter table public.events enable row level security;
 alter table public.applications enable row level security;
 alter table public.application_drafts enable row level security;
@@ -498,6 +545,180 @@ grant execute on function public.can_attempt_guest_login(text) to anon, authenti
 grant execute on function public.record_guest_login_failure(text) to anon, authenticated;
 grant execute on function public.clear_guest_login_failures(text) to anon, authenticated;
 
+create or replace function public.hash_app_session_token(session_token text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select encode(extensions.digest(session_token::text, 'sha256'::text), 'hex');
+$$;
+
+create or replace function public.issue_app_session(target_user_id uuid, target_role text, ttl interval default interval '30 days')
+returns table (
+  session_token text,
+  user_id uuid,
+  role text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  raw_token text := gen_random_uuid()::text || replace(gen_random_uuid()::text, '-', '');
+begin
+  insert into public.app_sessions (token_hash, user_id, role, expires_at)
+  values (public.hash_app_session_token(raw_token), target_user_id, target_role, now() + ttl);
+
+  session_token := raw_token;
+  user_id := target_user_id;
+  role := target_role;
+  expires_at := now() + ttl;
+  return next;
+end;
+$$;
+
+create or replace function public.get_app_session_user_id(session_token text, allowed_roles text[] default array['member', 'guest'])
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select user_id
+  from public.app_sessions
+  where token_hash = public.hash_app_session_token(session_token)
+    and expires_at > now()
+    and role = any(allowed_roles)
+  limit 1;
+$$;
+
+create or replace function public.is_admin_session(session_token text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.app_sessions
+    where token_hash = public.hash_app_session_token(session_token)
+      and expires_at > now()
+      and role = 'admin'
+  );
+$$;
+
+create or replace function public.create_guest_session(phone_value text, pin_value text)
+returns table (
+  session_token text,
+  user_id uuid,
+  role text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_user_id uuid;
+begin
+  if phone_value !~ '^01[016789][0-9]{7,8}$' then
+    raise exception 'Invalid phone number.';
+  end if;
+  if pin_value !~ '^[0-9]{6}$' then
+    raise exception 'Invalid PIN.';
+  end if;
+  if exists (select 1 from public.guest_accounts where phone_normalized = phone_value) then
+    raise exception 'Guest account already exists.';
+  end if;
+
+  insert into public.app_users (account_type)
+  values ('guest')
+  returning app_users.user_id into next_user_id;
+
+  insert into public.guest_accounts (user_id, phone_normalized, pin_hash)
+  values (next_user_id, phone_value, extensions.crypt(pin_value, extensions.gen_salt('bf')));
+
+  insert into public.user_accounts (user_id, account_type)
+  values (next_user_id, 'guest')
+  on conflict (user_id) do update set account_type = 'guest', updated_at = now();
+
+  return query select * from public.issue_app_session(next_user_id, 'guest', interval '30 days');
+end;
+$$;
+
+create or replace function public.login_guest_session(phone_value text, pin_value text)
+returns table (
+  session_token text,
+  user_id uuid,
+  role text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user_id uuid;
+begin
+  if not public.can_attempt_guest_login(phone_value) then
+    raise exception 'Too many attempts.';
+  end if;
+
+  select user_id
+  into target_user_id
+  from public.guest_accounts
+  where phone_normalized = phone_value
+    and pin_hash = extensions.crypt(pin_value, pin_hash)
+  limit 1;
+
+  if target_user_id is null then
+    perform public.record_guest_login_failure(phone_value);
+    raise exception 'Invalid login.';
+  end if;
+
+  perform public.clear_guest_login_failures(phone_value);
+  return query select * from public.issue_app_session(target_user_id, 'guest', interval '30 days');
+end;
+$$;
+
+create or replace function public.login_member_session(login_id_value text, password_value text)
+returns table (
+  session_token text,
+  user_id uuid,
+  role text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user_id uuid;
+begin
+  select user_id
+  into target_user_id
+  from public.member_accounts
+  where lower(login_id) = lower(trim(login_id_value))
+    and password_hash = extensions.crypt(password_value, password_hash)
+  limit 1;
+
+  if target_user_id is null then
+    raise exception 'Invalid login.';
+  end if;
+
+  return query select * from public.issue_app_session(target_user_id, 'member', interval '30 days');
+end;
+$$;
+
+grant execute on function public.create_guest_session(text, text) to anon, authenticated;
+grant execute on function public.login_guest_session(text, text) to anon, authenticated;
+grant execute on function public.login_member_session(text, text) to anon, authenticated;
+grant execute on function public.is_admin_session(text) to anon, authenticated;
+
 create or replace function public.get_admin_applications()
 returns table (
   id uuid,
@@ -553,7 +774,7 @@ as $$
         || '-' ||
         substring(ga.phone_normalized from char_length(ga.phone_normalized) - 3 for 4)
       else
-        coalesce(u.email, a.nickname)
+        coalesce(ma.login_id, a.nickname)
     end as user_display_id,
     coalesce(ua.account_type, 'member') as account_type,
     a.is_returning,
@@ -590,11 +811,239 @@ as $$
   join public.events e on e.id = a.event_id
   left join public.user_accounts ua on ua.user_id = a.user_id
   left join public.guest_accounts ga on ga.user_id = a.user_id
+  left join public.member_accounts ma on ma.user_id = a.user_id
   left join auth.users u on u.id = a.user_id
   where public.is_admin();
 $$;
 
 grant execute on function public.get_admin_applications() to authenticated;
+
+create or replace function public.get_admin_applications_for_session(session_token text)
+returns table (
+  id uuid,
+  application_no text,
+  event_id text,
+  user_id uuid,
+  user_display_id text,
+  account_type text,
+  is_returning boolean,
+  status public.application_status,
+  is_new boolean,
+  name text,
+  birth_date date,
+  gender text,
+  residence text,
+  phone text,
+  relationship_status text,
+  id_photo_path text,
+  nickname text,
+  profile_photo_paths text[],
+  representative_photo_index integer,
+  representative_crop jsonb,
+  voice_intro_path text,
+  height text,
+  job text,
+  employment_proof_path text,
+  access_route text,
+  filming_consent boolean,
+  interview_consent text,
+  refund_agreement boolean,
+  inquiry text,
+  review_notice_confirmed boolean,
+  payment_deadline timestamptz,
+  payment_notice_sent_at timestamptz,
+  reviewed_at timestamptz,
+  submitted_at timestamptz,
+  event_date date,
+  short_name text
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_session(session_token) then
+    raise exception 'Admin session required.';
+  end if;
+
+  return query
+  select
+    a.id,
+    a.application_no,
+    a.event_id,
+    a.user_id,
+    case
+      when coalesce(ua.account_type, au.account_type, 'member') = 'guest' and ga.phone_normalized is not null then
+        '비회원 ' || substring(ga.phone_normalized from char_length(ga.phone_normalized) - 7 for 4)
+        || '-' ||
+        substring(ga.phone_normalized from char_length(ga.phone_normalized) - 3 for 4)
+      when ma.login_id is not null then ma.login_id
+      else a.nickname
+    end as user_display_id,
+    coalesce(ua.account_type, au.account_type, 'member') as account_type,
+    a.is_returning,
+    a.status,
+    a.is_new,
+    a.name,
+    a.birth_date,
+    a.gender,
+    a.residence,
+    a.phone,
+    a.relationship_status,
+    a.id_photo_path,
+    a.nickname,
+    a.profile_photo_paths,
+    a.representative_photo_index,
+    a.representative_crop,
+    a.voice_intro_path,
+    a.height,
+    a.job,
+    a.employment_proof_path,
+    a.access_route,
+    a.filming_consent,
+    a.interview_consent,
+    a.refund_agreement,
+    a.inquiry,
+    a.review_notice_confirmed,
+    a.payment_deadline,
+    a.payment_notice_sent_at,
+    a.reviewed_at,
+    a.submitted_at,
+    e.event_date,
+    e.short_name
+  from public.applications a
+  join public.events e on e.id = a.event_id
+  left join public.user_accounts ua on ua.user_id = a.user_id
+  left join public.app_users au on au.user_id = a.user_id
+  left join public.guest_accounts ga on ga.user_id = a.user_id
+  left join public.member_accounts ma on ma.user_id = a.user_id;
+end;
+$$;
+
+grant execute on function public.get_admin_applications_for_session(text) to anon, authenticated;
+
+create or replace function public.update_application_review_for_session(
+  session_token text,
+  application_id uuid,
+  next_status public.application_status,
+  next_payment_deadline timestamptz,
+  next_payment_notice_sent_at timestamptz,
+  next_reviewed_at timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_session(session_token) then
+    raise exception 'Admin session required.';
+  end if;
+
+  update public.applications
+  set
+    is_new = false,
+    payment_deadline = next_payment_deadline,
+    payment_notice_sent_at = next_payment_notice_sent_at,
+    reviewed_at = coalesce(next_reviewed_at, now()),
+    status = next_status,
+    updated_at = now()
+  where id = application_id;
+end;
+$$;
+
+grant execute on function public.update_application_review_for_session(text, uuid, public.application_status, timestamptz, timestamptz, timestamptz) to anon, authenticated;
+
+create or replace function public.upsert_event_for_admin_session(
+  session_token text,
+  event_id_value text,
+  event_title text,
+  event_short_name text,
+  event_date_value date,
+  event_start_time time,
+  event_end_time time,
+  event_location text,
+  event_venue_booked boolean,
+  male_capacity_value integer,
+  female_capacity_value integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_session(session_token) then
+    raise exception 'Admin session required.';
+  end if;
+
+  insert into public.events (
+    id,
+    title,
+    short_name,
+    event_date,
+    start_time,
+    end_time,
+    location,
+    venue_booked,
+    male_capacity,
+    female_capacity
+  )
+  values (
+    event_id_value,
+    event_title,
+    event_short_name,
+    event_date_value,
+    event_start_time,
+    event_end_time,
+    event_location,
+    event_venue_booked,
+    male_capacity_value,
+    female_capacity_value
+  )
+  on conflict (id) do update set
+    title = excluded.title,
+    short_name = excluded.short_name,
+    event_date = excluded.event_date,
+    start_time = excluded.start_time,
+    end_time = excluded.end_time,
+    location = excluded.location,
+    venue_booked = excluded.venue_booked,
+    male_capacity = excluded.male_capacity,
+    female_capacity = excluded.female_capacity,
+    updated_at = now();
+end;
+$$;
+
+grant execute on function public.upsert_event_for_admin_session(text, text, text, text, date, time, time, text, boolean, integer, integer) to anon, authenticated;
+
+create or replace function public.delete_event_for_admin_session(
+  session_token text,
+  event_id_value text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_session(session_token) then
+    raise exception 'Admin session required.';
+  end if;
+
+  delete from public.application_drafts
+  where event_id = event_id_value;
+
+  delete from public.applications
+  where event_id = event_id_value;
+
+  delete from public.events
+  where id = event_id_value;
+end;
+$$;
+
+grant execute on function public.delete_event_for_admin_session(text, text) to anon, authenticated;
 
 create or replace function public.get_public_participant_previews(target_event_id text)
 returns table (
@@ -741,3 +1190,5 @@ begin
 exception
   when duplicate_object then null;
 end $$;
+
+notify pgrst, 'reload schema';

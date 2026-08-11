@@ -1,4 +1,6 @@
 import { supabase } from '../lib/supabase';
+import { getAdminSession } from './adminAuth';
+import { getAppSession } from './appAuth';
 import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
@@ -100,8 +102,8 @@ interface PublicParticipantPreviewRow {
 export async function ensureApplicationSession() {
   if (!supabase) throw new Error('Supabase is not configured.');
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (sessionData.session?.user) return sessionData.session.user;
+  const appSession = getAppSession();
+  if (appSession?.userId) return { id: appSession.userId };
 
   throw new Error('로그인이 필요합니다.');
 }
@@ -219,9 +221,13 @@ async function getCurrentAccountType(userId: string): Promise<'member' | 'guest'
 
 export async function fetchAdminApplicationsFromSupabase() {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { data, error } = await supabase
-    .rpc('get_admin_applications');
+    .rpc('get_admin_applications_for_session', {
+      session_token: adminSession.token,
+    });
 
   if (error) throw error;
   return (data as SupabaseApplicationRow[])
@@ -240,17 +246,17 @@ export async function updateApplicationReviewInSupabase(
 ) {
   if (!supabase) throw new Error('Supabase is not configured.');
   if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase
-    .from('applications')
-    .update({
-      is_new: false,
-      payment_deadline: values.paymentDeadline ?? application.paymentDeadline ?? null,
-      payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
-      reviewed_at: values.reviewedAt ?? application.reviewedAt ?? new Date().toISOString(),
-      status,
-    })
-    .eq('id', application.dbId);
+  const { error } = await supabase.rpc('update_application_review_for_session', {
+    application_id: application.dbId,
+    next_payment_deadline: values.paymentDeadline ?? application.paymentDeadline ?? null,
+    next_payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
+    next_reviewed_at: values.reviewedAt ?? application.reviewedAt ?? new Date().toISOString(),
+    next_status: status,
+    session_token: adminSession.token,
+  });
 
   if (error) throw error;
 }
@@ -299,21 +305,39 @@ export async function fetchPublicParticipantsFromSupabase(eventId: string) {
 
 export async function upsertEventToSupabase(event: EventData) {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.from('events').upsert({
-    end_time: event.endTime,
-    event_date: event.date,
-    female_capacity: event.targetParticipants / 2,
-    id: event.id,
-    location: event.location,
-    male_capacity: event.targetParticipants / 2,
-    short_name: event.shortName,
-    start_time: event.startTime,
-    title: event.title,
-    venue_booked: event.venueBooked,
+  const { error } = await supabase.rpc('upsert_event_for_admin_session', {
+    event_id_value: event.id,
+    event_title: event.title,
+    event_short_name: event.shortName,
+    event_date_value: event.date,
+    event_start_time: event.startTime,
+    event_end_time: event.endTime,
+    event_location: event.location,
+    event_venue_booked: event.venueBooked,
+    female_capacity_value: event.targetParticipants / 2,
+    male_capacity_value: event.targetParticipants / 2,
+    session_token: adminSession.token,
   });
 
   if (error) throw error;
+}
+
+export async function deleteEventFromSupabase(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-delete-event', {
+    body: {
+      eventId,
+      sessionToken: adminSession.token,
+    },
+  });
+
+  if (error || data?.ok !== true) throw error ?? new Error('행사를 삭제하지 못했습니다.');
 }
 
 export function subscribeToSupabaseChanges(onChange: () => void) {
