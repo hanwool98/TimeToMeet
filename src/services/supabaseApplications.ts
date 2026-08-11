@@ -38,7 +38,7 @@ interface SupabaseApplicationRow {
   application_no: string;
   event_id: string;
   user_id: string;
-  returning: boolean;
+  is_returning: boolean;
   status: StoredApplication['status'];
   is_new: boolean;
   name: string;
@@ -144,7 +144,7 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
     representative_crop: input.representativeCrop,
     representative_photo_index: input.representativeIndex,
     residence: input.residence,
-    returning: input.returning,
+    is_returning: input.returning,
     review_notice_confirmed: true,
     user_id: user.id,
     voice_intro_path: voiceIntroPath,
@@ -350,7 +350,7 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     paymentDeadline: row.payment_deadline ?? undefined,
     paymentNoticeSentAt: row.payment_notice_sent_at ?? undefined,
     profile,
-    returning: row.returning ? '재참여' : '첫 참여',
+    returning: row.is_returning ? '재참여' : '첫 참여',
     reviewedAt: row.reviewed_at ?? undefined,
     status: row.status,
     userId: row.user_display_id ?? row.nickname,

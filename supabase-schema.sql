@@ -1,4 +1,6 @@
-create extension if not exists pgcrypto;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+alter extension pgcrypto set schema extensions;
 
 do $$
 begin
@@ -65,7 +67,7 @@ create table if not exists public.applications (
   event_id text not null references public.events(id) on delete restrict,
   user_id uuid not null default auth.uid(),
   applicant_kind text not null default 'guest',
-  returning boolean not null default false,
+  is_returning boolean not null default false,
   status public.application_status not null default '심사 대기',
   is_new boolean not null default true,
   name text not null,
@@ -99,6 +101,28 @@ create table if not exists public.applications (
   submitted_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'applications'
+      and column_name = 'returning'
+  ) and not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'applications'
+      and column_name = 'is_returning'
+  ) then
+    alter table public.applications rename column "returning" to is_returning;
+  end if;
+end $$;
+
+alter table if exists public.applications
+add column if not exists is_returning boolean not null default false;
 
 create unique index if not exists applications_event_user_unique
 on public.applications (event_id, user_id);
@@ -404,7 +428,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select encode(digest(phone_value, 'sha256'), 'hex');
+  select encode(extensions.digest(phone_value::text, 'sha256'::text), 'hex');
 $$;
 
 create or replace function public.can_attempt_guest_login(phone_value text)
@@ -482,7 +506,7 @@ returns table (
   user_id uuid,
   user_display_id text,
   account_type text,
-  returning boolean,
+  is_returning boolean,
   status public.application_status,
   is_new boolean,
   name text,
@@ -532,7 +556,7 @@ as $$
         coalesce(u.email, a.nickname)
     end as user_display_id,
     coalesce(ua.account_type, 'member') as account_type,
-    a.returning,
+    a.is_returning,
     a.status,
     a.is_new,
     a.name,
