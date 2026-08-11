@@ -9,6 +9,7 @@ import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminPage from './pages/AdminPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
+import GuestPhoneAuthPage from './pages/GuestPhoneAuthPage';
 import LoginPage from './pages/LoginPage';
 import ApplicationCompletePage from './pages/ApplicationCompletePage';
 import MyEventsPage from './pages/MyEventsPage';
@@ -23,6 +24,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/guest-phone" element={<GuestPhoneAuthPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/applications" element={<AdminApplicationsPage />} />
         <Route path="/admin/events" element={<AdminEventManagementPage />} />

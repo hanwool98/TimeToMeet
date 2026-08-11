@@ -20,6 +20,28 @@ create table if not exists public.admin_users (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_accounts (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  account_type text not null check (account_type in ('member', 'guest')),
+  converted_to_member_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.guest_accounts (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  phone_normalized text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.guest_login_attempts (
+  phone_hash text primary key,
+  failed_count integer not null default 0,
+  locked_until timestamptz,
+  last_failed_at timestamptz not null default now()
+);
+
 create table if not exists public.events (
   id text primary key,
   title text not null,
@@ -68,11 +90,25 @@ create table if not exists public.applications (
   inquiry text not null default '',
   review_notice_confirmed boolean not null default false,
   consents jsonb not null default '{}'::jsonb,
+  expires_at timestamptz,
+  legal_hold boolean not null default false,
+  has_dispute boolean not null default false,
   payment_deadline timestamptz,
   payment_notice_sent_at timestamptz,
   reviewed_at timestamptz,
   submitted_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create unique index if not exists applications_event_user_unique
+on public.applications (event_id, user_id);
+
+create table if not exists public.application_drafts (
+  event_id text not null references public.events(id) on delete cascade,
+  user_id uuid not null default auth.uid(),
+  draft_data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (event_id, user_id)
 );
 
 create or replace function public.is_admin()
@@ -110,8 +146,12 @@ before update on public.applications
 for each row execute function public.touch_updated_at();
 
 alter table public.admin_users enable row level security;
+alter table public.user_accounts enable row level security;
+alter table public.guest_accounts enable row level security;
+alter table public.guest_login_attempts enable row level security;
 alter table public.events enable row level security;
 alter table public.applications enable row level security;
+alter table public.application_drafts enable row level security;
 
 drop policy if exists "Admins can manage admin users" on public.admin_users;
 create policy "Admins can manage admin users"
@@ -120,6 +160,75 @@ for all
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+drop policy if exists "Users can read own account" on public.user_accounts;
+create policy "Users can read own account"
+on public.user_accounts
+for select
+to authenticated
+using (user_id = auth.uid());
+
+drop policy if exists "Users can create own account" on public.user_accounts;
+create policy "Users can create own account"
+on public.user_accounts
+for insert
+to authenticated
+with check (user_id = auth.uid());
+
+drop policy if exists "Users can update own account without role escalation" on public.user_accounts;
+create policy "Users can update own account without role escalation"
+on public.user_accounts
+for update
+to authenticated
+using (user_id = auth.uid())
+with check (
+  user_id = auth.uid()
+  and (
+    account_type = 'guest'
+    or exists (
+      select 1
+      from public.user_accounts previous
+      where previous.user_id = auth.uid()
+        and previous.account_type = 'member'
+    )
+  )
+);
+
+drop policy if exists "Admins can read all accounts" on public.user_accounts;
+create policy "Admins can read all accounts"
+on public.user_accounts
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Guests can read own guest account" on public.guest_accounts;
+create policy "Guests can read own guest account"
+on public.guest_accounts
+for select
+to authenticated
+using (user_id = auth.uid());
+
+drop policy if exists "Guests can create own guest account" on public.guest_accounts;
+create policy "Guests can create own guest account"
+on public.guest_accounts
+for insert
+to authenticated
+with check (user_id = auth.uid());
+
+drop policy if exists "Guests can update own guest account" on public.guest_accounts;
+create policy "Guests can update own guest account"
+on public.guest_accounts
+for update
+to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+drop policy if exists "Admins can read guest accounts" on public.guest_accounts;
+create policy "Admins can read guest accounts"
+on public.guest_accounts
+for select
+to authenticated
+using (public.is_admin());
 
 drop policy if exists "Anyone can read public events" on public.events;
 create policy "Anyone can read public events"
@@ -164,6 +273,50 @@ for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+drop policy if exists "Users can manage own application drafts" on public.application_drafts;
+create policy "Users can manage own application drafts"
+on public.application_drafts
+for all
+to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+drop policy if exists "Admins can read all application drafts" on public.application_drafts;
+create policy "Admins can read all application drafts"
+on public.application_drafts
+for select
+to authenticated
+using (public.is_admin());
+
+drop trigger if exists touch_application_drafts_updated_at on public.application_drafts;
+create trigger touch_application_drafts_updated_at
+before update on public.application_drafts
+for each row execute function public.touch_updated_at();
+
+create or replace function public.set_application_expiry()
+returns trigger
+language plpgsql
+as $$
+declare
+  event_day date;
+begin
+  select event_date into event_day
+  from public.events
+  where id = new.event_id;
+
+  if event_day is not null and new.expires_at is null then
+    new.expires_at = (event_day::timestamptz + interval '31 days');
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists set_application_expiry_before_insert on public.applications;
+create trigger set_application_expiry_before_insert
+before insert on public.applications
+for each row execute function public.set_application_expiry();
 
 insert into public.events (
   id,
@@ -243,6 +396,248 @@ as $$
 $$;
 
 grant execute on function public.get_public_event_summaries() to anon, authenticated;
+
+create or replace function public.guest_phone_hash(phone_value text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select encode(digest(phone_value, 'sha256'), 'hex');
+$$;
+
+create or replace function public.can_attempt_guest_login(phone_value text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1
+    from public.guest_login_attempts
+    where phone_hash = public.guest_phone_hash(phone_value)
+      and locked_until is not null
+      and locked_until > now()
+  );
+$$;
+
+create or replace function public.record_guest_login_failure(phone_value text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_failed_count integer;
+  next_locked_until timestamptz;
+  hashed_phone text := public.guest_phone_hash(phone_value);
+begin
+  insert into public.guest_login_attempts (phone_hash, failed_count, last_failed_at)
+  values (hashed_phone, 1, now())
+  on conflict (phone_hash) do update set
+    failed_count = case
+      when public.guest_login_attempts.locked_until is not null
+        and public.guest_login_attempts.locked_until > now()
+      then public.guest_login_attempts.failed_count
+      when public.guest_login_attempts.last_failed_at < now() - interval '30 minutes'
+      then 1
+      else public.guest_login_attempts.failed_count + 1
+    end,
+    last_failed_at = now();
+
+  select failed_count into next_failed_count
+  from public.guest_login_attempts
+  where phone_hash = hashed_phone;
+
+  if next_failed_count >= 5 then
+    next_locked_until := now() + interval '15 minutes';
+    update public.guest_login_attempts
+    set locked_until = next_locked_until
+    where phone_hash = hashed_phone;
+  end if;
+end;
+$$;
+
+create or replace function public.clear_guest_login_failures(phone_value text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.guest_login_attempts
+  where phone_hash = public.guest_phone_hash(phone_value);
+$$;
+
+grant execute on function public.can_attempt_guest_login(text) to anon, authenticated;
+grant execute on function public.record_guest_login_failure(text) to anon, authenticated;
+grant execute on function public.clear_guest_login_failures(text) to anon, authenticated;
+
+create or replace function public.get_admin_applications()
+returns table (
+  id uuid,
+  application_no text,
+  event_id text,
+  user_id uuid,
+  user_display_id text,
+  account_type text,
+  returning boolean,
+  status public.application_status,
+  is_new boolean,
+  name text,
+  birth_date date,
+  gender text,
+  residence text,
+  phone text,
+  relationship_status text,
+  id_photo_path text,
+  nickname text,
+  profile_photo_paths text[],
+  representative_photo_index integer,
+  representative_crop jsonb,
+  voice_intro_path text,
+  height text,
+  job text,
+  employment_proof_path text,
+  access_route text,
+  filming_consent boolean,
+  interview_consent text,
+  refund_agreement boolean,
+  inquiry text,
+  review_notice_confirmed boolean,
+  payment_deadline timestamptz,
+  payment_notice_sent_at timestamptz,
+  reviewed_at timestamptz,
+  submitted_at timestamptz,
+  event_date date,
+  short_name text
+)
+language sql
+stable
+security definer
+set search_path = public, auth
+as $$
+  select
+    a.id,
+    a.application_no,
+    a.event_id,
+    a.user_id,
+    case
+      when coalesce(ua.account_type, 'member') = 'guest' and ga.phone_normalized is not null then
+        '비회원 ' || substring(ga.phone_normalized from char_length(ga.phone_normalized) - 7 for 4)
+        || '-' ||
+        substring(ga.phone_normalized from char_length(ga.phone_normalized) - 3 for 4)
+      else
+        coalesce(u.email, a.nickname)
+    end as user_display_id,
+    coalesce(ua.account_type, 'member') as account_type,
+    a.returning,
+    a.status,
+    a.is_new,
+    a.name,
+    a.birth_date,
+    a.gender,
+    a.residence,
+    a.phone,
+    a.relationship_status,
+    a.id_photo_path,
+    a.nickname,
+    a.profile_photo_paths,
+    a.representative_photo_index,
+    a.representative_crop,
+    a.voice_intro_path,
+    a.height,
+    a.job,
+    a.employment_proof_path,
+    a.access_route,
+    a.filming_consent,
+    a.interview_consent,
+    a.refund_agreement,
+    a.inquiry,
+    a.review_notice_confirmed,
+    a.payment_deadline,
+    a.payment_notice_sent_at,
+    a.reviewed_at,
+    a.submitted_at,
+    e.event_date,
+    e.short_name
+  from public.applications a
+  join public.events e on e.id = a.event_id
+  left join public.user_accounts ua on ua.user_id = a.user_id
+  left join public.guest_accounts ga on ga.user_id = a.user_id
+  left join auth.users u on u.id = a.user_id
+  where public.is_admin();
+$$;
+
+grant execute on function public.get_admin_applications() to authenticated;
+
+create or replace function public.get_guest_cleanup_candidates()
+returns table (
+  user_id uuid,
+  delete_after timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    ua.user_id,
+    max(a.expires_at) as delete_after
+  from public.user_accounts ua
+  join public.applications a on a.user_id = ua.user_id
+  where ua.account_type = 'guest'
+    and ua.converted_to_member_at is null
+    and a.expires_at < now()
+    and a.status not in ('심사 대기', '결제 대기', '참가 확정', '참여 보류')
+    and a.legal_hold = false
+    and a.has_dispute = false
+  group by ua.user_id
+  having bool_and(a.expires_at < now())
+     and bool_and(a.legal_hold = false)
+     and bool_and(a.has_dispute = false);
+$$;
+
+grant execute on function public.get_guest_cleanup_candidates() to authenticated;
+
+create or replace function public.cleanup_guest_profile_data(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can run cleanup.';
+  end if;
+
+  update public.applications
+  set
+    name = '삭제된 비회원',
+    residence = '',
+    phone = '',
+    relationship_status = '',
+    id_photo_path = null,
+    nickname = '삭제된 프로필',
+    profile_photo_paths = '{}',
+    representative_crop = '{}',
+    voice_intro_path = null,
+    height = '',
+    job = '',
+    employment_proof_path = null,
+    access_route = '',
+    inquiry = '',
+    consents = '{}',
+    updated_at = now()
+  where user_id = target_user_id
+    and expires_at < now()
+    and legal_hold = false
+    and has_dispute = false;
+end;
+$$;
+
+grant execute on function public.cleanup_guest_profile_data(uuid) to authenticated;
 
 insert into storage.buckets (id, name, public)
 values ('application-files', 'application-files', false)

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import { supabase } from '../lib/supabase';
+import { formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGuestPin } from '../services/guestPinAuth';
 
 const actionLabels = [
   '로그인',
@@ -21,6 +22,10 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestPin, setGuestPin] = useState('');
+  const [guestError, setGuestError] = useState('');
+  const [activeLoginTab, setActiveLoginTab] = useState<'member' | 'guest'>('member');
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
@@ -39,6 +44,33 @@ export default function LoginPage() {
       navigate(-1);
     } catch {
       window.alert('로그인 정보를 확인해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setGuestError('');
+    const normalizedPhone = normalizeKoreanPhone(guestPhone);
+    if (!normalizedPhone) {
+      setGuestError('한국 휴대폰 번호 형식으로 입력해주세요.');
+      return;
+    }
+
+    const pinError = validateGuestPin(guestPin, normalizedPhone);
+    if (pinError) {
+      setGuestError(pinError);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await loginGuestAccount(normalizedPhone, guestPin);
+      navigate('/profile/new');
+    } catch (caughtError) {
+      setGuestError(caughtError instanceof Error && caughtError.message === '잠시 후 다시 시도해주세요.'
+        ? '로그인 시도가 제한되었습니다. 잠시 후 다시 시도해주세요.'
+        : '휴대폰 번호 또는 PIN 번호를 확인해주세요.');
     } finally {
       setSubmitting(false);
     }
@@ -89,67 +121,128 @@ export default function LoginPage() {
             <img alt="time2meet" className="h-auto w-full object-contain" src="/assets/time2meet-logo.png" />
           </div>
 
-          <form className="mt-16 space-y-7" onSubmit={(event) => event.preventDefault()}>
-            <label className="block">
-              <span className="text-[16px] font-extrabold text-[#8a8a8a]">아이디</span>
-              <input
-                aria-label="아이디"
-                className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
-                onChange={(event) => setEmail(event.target.value)}
-                type="email"
-                value={email}
-              />
-            </label>
+          <div className="mt-10 grid grid-cols-2 gap-2 rounded-[18px] bg-meet-blueSoft p-1.5">
+            <button
+              className={['h-11 rounded-[15px] text-[14px] font-black', activeLoginTab === 'member' ? 'bg-white text-black shadow-sm' : 'text-[#777]'].join(' ')}
+              onClick={() => setActiveLoginTab('member')}
+              type="button"
+            >
+              회원 로그인
+            </button>
+            <button
+              className={['h-11 rounded-[15px] text-[14px] font-black', activeLoginTab === 'guest' ? 'bg-white text-black shadow-sm' : 'text-[#777]'].join(' ')}
+              onClick={() => setActiveLoginTab('guest')}
+              type="button"
+            >
+              비회원 로그인
+            </button>
+          </div>
 
-            <label className="block">
-              <span className="text-[16px] font-extrabold text-[#8a8a8a]">비밀번호</span>
-              <input
-                aria-label="비밀번호"
-                className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                value={password}
-              />
-            </label>
-          </form>
+          {activeLoginTab === 'member' ? (
+            <form className="mt-8 space-y-7" onSubmit={(event) => event.preventDefault()}>
+              <label className="block">
+                <span className="text-[16px] font-extrabold text-[#8a8a8a]">아이디</span>
+                <input
+                  aria-label="아이디"
+                  className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
+                  onChange={(event) => setEmail(event.target.value)}
+                  type="email"
+                  value={email}
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[16px] font-extrabold text-[#8a8a8a]">비밀번호</span>
+                <input
+                  aria-label="비밀번호"
+                  className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
+                  onChange={(event) => setPassword(event.target.value)}
+                  type="password"
+                  value={password}
+                />
+              </label>
+            </form>
+          ) : null}
+
+          {activeLoginTab === 'guest' ? (
+            <form className="mt-8 space-y-7" onSubmit={(event) => event.preventDefault()}>
+              <label className="block">
+                <span className="text-[16px] font-extrabold text-[#8a8a8a]">전화번호</span>
+                <input
+                  aria-label="전화번호"
+                  className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
+                  inputMode="tel"
+                  onChange={(event) => setGuestPhone(formatKoreanPhone(event.target.value))}
+                  placeholder="010-0000-0000"
+                  value={guestPhone}
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[16px] font-extrabold text-[#8a8a8a]">PIN 번호</span>
+                <input
+                  aria-label="PIN 번호"
+                  className="mt-1 h-10 w-full border-0 border-b-2 border-[#9d9d9d] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue"
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(event) => setGuestPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  type="password"
+                  value={guestPin}
+                />
+              </label>
+              {guestError ? <p className="break-keep text-[12px] font-black text-meet-pink">{guestError}</p> : null}
+            </form>
+          ) : null}
 
           <div className="mt-8 space-y-3">
-            {actionLabels.slice(0, 3).map((label, index) => (
+            {activeLoginTab === 'guest' ? (
               <button
-                className={[
-                  'h-14 w-full rounded-[18px] px-5 text-[16px] font-extrabold shadow-sm transition active:scale-[0.99]',
-                  index === 0 ? 'bg-meet-blue text-white hover:bg-[#5aa7e9]' : '',
-                  index === 1 ? 'bg-[#FEE500] text-black hover:bg-[#f2dc00]' : '',
-                  index === 2 ? 'bg-[#d9d9d9] text-black hover:bg-[#d0d0d0]' : '',
-                ].join(' ')}
-                key={label}
-                onClick={index === 0 ? handleLogin : showPreparing}
+                className="h-14 w-full rounded-[18px] bg-meet-blue px-5 text-[16px] font-extrabold text-white shadow-sm transition active:scale-[0.99]"
+                onClick={handleGuestLogin}
                 type="button"
               >
-                {index === 0 && submitting ? '로그인 중' : label}
+                {submitting ? '로그인 중' : '비회원 로그인'}
               </button>
-            ))}
+            ) : null}
+            {activeLoginTab === 'member' ? (
+              actionLabels.slice(0, 3).map((label, index) => (
+                <button
+                  className={[
+                    'h-14 w-full rounded-[18px] px-5 text-[16px] font-extrabold shadow-sm transition active:scale-[0.99]',
+                    index === 0 ? 'bg-meet-blue text-white hover:bg-[#5aa7e9]' : '',
+                    index === 1 ? 'bg-[#FEE500] text-black hover:bg-[#f2dc00]' : '',
+                    index === 2 ? 'bg-[#d9d9d9] text-black hover:bg-[#d0d0d0]' : '',
+                  ].join(' ')}
+                  key={label}
+                  onClick={index === 0 ? handleLogin : showPreparing}
+                  type="button"
+                >
+                  {index === 0 && submitting ? '로그인 중' : label}
+                </button>
+              ))
+            ) : null}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[15px] font-extrabold text-[#777]">
-            {actionLabels.slice(3, 6).map((label, index) => (
-              <span className="flex items-center gap-x-2" key={label}>
-                <button className="transition hover:text-black" onClick={showPreparing} type="button">
-                  {label}
-                </button>
-                {index < 2 ? <span aria-hidden="true">/</span> : null}
-              </span>
-            ))}
-          </div>
+          {activeLoginTab === 'member' ? (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[15px] font-extrabold text-[#777]">
+              {actionLabels.slice(3, 6).map((label, index) => (
+                <span className="flex items-center gap-x-2" key={label}>
+                  <button className="transition hover:text-black" onClick={showPreparing} type="button">
+                    {label}
+                  </button>
+                  {index < 2 ? <span aria-hidden="true">/</span> : null}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           <button
             className="mx-auto mt-8 block border-b-2 border-black pb-1 text-[17px] font-black leading-none"
-            onClick={() => navigate('/profile/new')}
+            onClick={() => navigate('/guest-phone')}
             type="button"
           >
             비회원으로 계속하기
           </button>
-
           <p className="mx-auto mt-7 max-w-[310px] break-keep text-center text-[17px] font-black leading-snug">
             타임투밋 회원이 되시면 프로필 저장/쿠폰 등 다양한 혜택을 받으실 수 있습니다!
           </p>

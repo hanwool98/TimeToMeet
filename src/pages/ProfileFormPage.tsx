@@ -1,8 +1,9 @@
-import { type PointerEvent, useMemo, useRef, useState } from 'react';
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
-import { submitApplicationToSupabase } from '../services/supabaseApplications';
+import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
+import { normalizeKoreanPhone } from '../services/guestPinAuth';
 
 const eventDate = new Date(2026, 7, 16);
 const defaultEventId = 'seongnam-rotation-2026-08-16';
@@ -149,6 +150,7 @@ export default function ProfileFormPage() {
   const chunksRef = useRef<Blob[]>([]);
   const countdownTimerRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
+  const draftLoadedRef = useRef(false);
 
   const [guideConfirmed, setGuideConfirmed] = useState(false);
   const [consentRead, setConsentRead] = useState({ privacy: false, thirdParty: false });
@@ -196,6 +198,94 @@ export default function ProfileFormPage() {
   const photoPreviews = useMemo(() => profilePhotos.map((file) => URL.createObjectURL(file)), [profilePhotos]);
   const allConsentsRead = consentRead.privacy && consentRead.thirdParty;
 
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const draft = await fetchApplicationDraft(defaultEventId);
+        if (!draft) {
+          draftLoadedRef.current = true;
+          return;
+        }
+
+        setGuideConfirmed(Boolean(draft.guideConfirmed));
+        setConsentRead((draft.consentRead as typeof consentRead) ?? { privacy: false, thirdParty: false });
+        setConsents((draft.consents as typeof consents) ?? { privacy: false, thirdParty: false });
+        setName(String(draft.name ?? ''));
+        setBirthDate(String(draft.birthDate ?? ''));
+        setGender(String(draft.gender ?? ''));
+        setLocation(String(draft.location ?? ''));
+        setPhone(String(draft.phone ?? ''));
+        setSingleConfirmed(Boolean(draft.singleConfirmed));
+        setNickname(String(draft.nickname ?? ''));
+        setHeight(String(draft.height ?? ''));
+        setJob(String(draft.job ?? ''));
+        setAccessRoute(String(draft.accessRoute ?? ''));
+        setAccessRouteEtc(String(draft.accessRouteEtc ?? ''));
+        setFilmingConsent(Boolean(draft.filmingConsent));
+        setInterview(String(draft.interview ?? ''));
+        setRefundConsent(Boolean(draft.refundConsent));
+        setInquiry(String(draft.inquiry ?? ''));
+        setFinalNoticeConfirmed(Boolean(draft.finalNoticeConfirmed));
+      } catch {
+        // Draft loading is best-effort; the form remains usable without it.
+      } finally {
+        draftLoadedRef.current = true;
+      }
+    };
+
+    void loadDraft();
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoadedRef.current) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void saveApplicationDraft(defaultEventId, {
+        accessRoute,
+        accessRouteEtc,
+        birthDate,
+        consentRead,
+        consents,
+        filmingConsent,
+        finalNoticeConfirmed,
+        gender,
+        guideConfirmed,
+        height,
+        inquiry,
+        interview,
+        job,
+        location,
+        name,
+        nickname,
+        phone,
+        refundConsent,
+        singleConfirmed,
+      }).catch(() => undefined);
+    }, 600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    accessRoute,
+    accessRouteEtc,
+    birthDate,
+    consentRead,
+    consents,
+    filmingConsent,
+    finalNoticeConfirmed,
+    gender,
+    guideConfirmed,
+    height,
+    inquiry,
+    interview,
+    job,
+    location,
+    name,
+    nickname,
+    phone,
+    refundConsent,
+    singleConfirmed,
+  ]);
+
   const isRequiredComplete = Boolean(
     guideConfirmed &&
       consents.privacy &&
@@ -230,6 +320,8 @@ export default function ProfileFormPage() {
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       chunksRef.current = [];
+      setAudioBlob(null);
+      setAudioUrl('');
       setCountdown(5);
       setRecordingState('recording');
 
@@ -268,6 +360,17 @@ export default function ProfileFormPage() {
 
     setSubmitting(true);
     try {
+      const normalizedContactPhone = normalizeKoreanPhone(phone);
+      if (!normalizedContactPhone) {
+        window.alert('전화번호 형식을 확인해주세요.');
+        return;
+      }
+      const existingApplication = await fetchOwnApplicationForEvent(defaultEventId);
+      if (existingApplication) {
+        window.alert('이미 이 행사에 신청한 내역이 있습니다.');
+        navigate('/application-complete');
+        return;
+      }
       await submitApplicationToSupabase({
         accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
         birthDate,
@@ -283,7 +386,7 @@ export default function ProfileFormPage() {
         job,
         name,
         nickname,
-        phone,
+        phone: normalizedContactPhone,
         profilePhotos,
         refundAgreement: refundConsent,
         relationshipStatus: '미혼이며 교제하는 인원 없음',

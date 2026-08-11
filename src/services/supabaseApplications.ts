@@ -65,10 +65,10 @@ interface SupabaseApplicationRow {
   payment_notice_sent_at: string | null;
   reviewed_at: string | null;
   submitted_at: string;
-  events?: {
-    event_date: string;
-    short_name: string;
-  } | null;
+  event_date?: string;
+  short_name?: string;
+  user_display_id?: string;
+  account_type?: 'member' | 'guest';
 }
 
 interface PublicEventSummaryRow {
@@ -90,15 +90,14 @@ export async function ensureApplicationSession() {
   const { data: sessionData } = await supabase.auth.getSession();
   if (sessionData.session?.user) return sessionData.session.user;
 
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error || !data.user) throw error ?? new Error('Anonymous sign-in failed.');
-  return data.user;
+  throw new Error('로그인이 필요합니다.');
 }
 
 export async function submitApplicationToSupabase(input: SubmitApplicationInput) {
   if (!supabase) throw new Error('Supabase is not configured.');
 
   const user = await ensureApplicationSession();
+  await ensureAccountRow(user.id, await getCurrentAccountType(user.id));
   const basePath = `${user.id}/${crypto.randomUUID()}`;
   const idPhotoPath = await uploadPrivateFile(`${basePath}/id-${sanitizeFileName(input.idPhoto.name)}`, input.idPhoto);
   const employmentProofPath = await uploadPrivateFile(`${basePath}/employment-${sanitizeFileName(input.employmentProof.name)}`, input.employmentProof);
@@ -141,16 +140,80 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
   if (error) throw error;
 }
 
-export async function fetchAdminApplicationsFromSupabase() {
+export async function fetchOwnApplicationForEvent(eventId: string) {
   if (!supabase) return null;
 
   const { data, error } = await supabase
     .from('applications')
-    .select('*, events(event_date, short_name)')
-    .order('submitted_at', { ascending: false });
+    .select('id, status')
+    .eq('event_id', eventId)
+    .maybeSingle();
 
   if (error) throw error;
-  return (data as SupabaseApplicationRow[]).map(mapApplicationRow);
+  return data;
+}
+
+export async function fetchApplicationDraft(eventId: string) {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('application_drafts')
+    .select('draft_data')
+    .eq('event_id', eventId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data?.draft_data ?? null) as Record<string, unknown> | null;
+}
+
+export async function saveApplicationDraft(eventId: string, draftData: Record<string, unknown>) {
+  if (!supabase) return;
+
+  const user = await ensureApplicationSession();
+  const { error } = await supabase.from('application_drafts').upsert({
+    draft_data: draftData,
+    event_id: eventId,
+    user_id: user.id,
+  });
+
+  if (error) throw error;
+}
+
+async function ensureAccountRow(userId: string, accountType: 'member' | 'guest') {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { error } = await supabase.from('user_accounts').upsert({
+    account_type: accountType,
+    user_id: userId,
+  }, {
+    onConflict: 'user_id',
+  });
+
+  if (error) throw error;
+}
+
+async function getCurrentAccountType(userId: string): Promise<'member' | 'guest'> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data } = await supabase
+    .from('user_accounts')
+    .select('account_type')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return data?.account_type === 'guest' ? 'guest' : 'member';
+}
+
+export async function fetchAdminApplicationsFromSupabase() {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .rpc('get_admin_applications');
+
+  if (error) throw error;
+  return (data as SupabaseApplicationRow[])
+    .map(mapApplicationRow)
+    .sort((a, b) => b.appliedAt.localeCompare(a.appliedAt));
 }
 
 export async function updateApplicationReviewInSupabase(
@@ -240,8 +303,9 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     age,
     appliedAt: formatShortDateTime(row.submitted_at),
     dbId: row.id,
-    eventDate: formatApplicationEventDate(row.events?.event_date ?? '2026-08-16'),
-    eventType: row.events?.short_name ?? '로테이션',
+    accountType: row.account_type ?? 'member',
+    eventDate: formatApplicationEventDate(row.event_date ?? '2026-08-16'),
+    eventType: row.short_name ?? '로테이션',
     gender: row.gender,
     id: row.application_no,
     isNew: row.is_new,
@@ -251,7 +315,7 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     returning: row.returning ? '재참여' : '첫 참여',
     reviewedAt: row.reviewed_at ?? undefined,
     status: row.status,
-    userId: row.nickname,
+    userId: row.user_display_id ?? row.nickname,
   };
 }
 

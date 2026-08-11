@@ -9,6 +9,7 @@ export type ApplicationStatus = '심사 대기' | '결제 대기' | '참가 확�
 
 export interface StoredApplication {
   dbId?: string;
+  accountType?: 'member' | 'guest';
   id: string;
   userId: string;
   gender: '남성' | '여성';
@@ -143,6 +144,10 @@ export function getStoredEvents(): EventData[] {
 }
 
 export function getConfirmedApplicationParticipants(eventId = 'seongnam-rotation-2026-08-16'): ParticipantData[] {
+  if (isSupabaseConfigured && typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin')) {
+    return [];
+  }
+
   const event = getStoredEvents().find((item) => item.id === eventId);
   if (!event) return [];
 
