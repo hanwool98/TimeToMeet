@@ -19,6 +19,7 @@ import MyEventsPage from './pages/MyEventsPage';
 import MyPage from './pages/MyPage';
 import PaymentInvitationProvider from './components/PaymentInvitationProvider';
 import PaymentPendingPage from './pages/PaymentPendingPage';
+import ParticipantProfilePage from './pages/ParticipantProfilePage';
 import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
 import { getSupabaseDiagnostics } from './lib/supabase';
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/my-events" element={<MyEventsPage />} />
           <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />
           <Route path="/mypage" element={<MyPage />} />
+          <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
           <Route path="/profile/new" element={<ProfileFormPage />} />
           <Route path="/application-complete" element={<ApplicationCompletePage />} />
           <Route path="/events/:eventId" element={<EventDetailPage />} />

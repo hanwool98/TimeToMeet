@@ -2,6 +2,7 @@ import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
+import { getAppSession } from '../services/appAuth';
 import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
 
@@ -133,15 +134,12 @@ function UploadBox({
   onRemove?: () => void;
   previewUrl?: string;
 }) {
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const [showChoices, setShowChoices] = useState(false);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     onFiles(Array.from(files ?? []));
     event.target.value = '';
-    setShowChoices(false);
   };
 
   return (
@@ -150,7 +148,7 @@ function UploadBox({
         <button
           aria-label={previewUrl ? `${label} 변경` : label}
           className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[22px] bg-meet-blueSoft text-meet-blue"
-          onClick={() => setShowChoices((current) => !current)}
+          onClick={() => imageInputRef.current?.click()}
           type="button"
         >
           {previewUrl ? (
@@ -178,39 +176,14 @@ function UploadBox({
           </button>
         ) : null}
       </div>
-      {showChoices ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            className="h-11 rounded-[16px] bg-[#f7f7f7] text-[14px] font-black"
-            onClick={() => cameraInputRef.current?.click()}
-            type="button"
-          >
-            촬영
-          </button>
-          <button
-            className="h-11 rounded-[16px] bg-[#f7f7f7] text-[14px] font-black"
-            onClick={() => imageInputRef.current?.click()}
-            type="button"
-          >
-            이미지 선택
-          </button>
-        </div>
-      ) : null}
       <input
         accept="image/*"
-        capture="environment"
-        className="hidden"
-        multiple={multiple}
-        onChange={handleChange}
-        ref={cameraInputRef}
-        type="file"
-      />
-      <input
-        accept="image/*"
-        className="hidden"
+        aria-hidden="true"
         multiple={multiple}
         onChange={handleChange}
         ref={imageInputRef}
+        style={{ display: 'none' }}
+        tabIndex={-1}
         type="file"
       />
     </div>
@@ -264,6 +237,8 @@ export default function ProfileFormPage() {
   const [finalNoticeConfirmed, setFinalNoticeConfirmed] = useState(false);
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [saveAsDefaultProfile, setSaveAsDefaultProfile] = useState(false);
+  const isMemberSession = getAppSession()?.role === 'member';
 
   const age = useMemo(() => getAgeOnEventDate(birthDate), [birthDate]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
@@ -467,6 +442,13 @@ export default function ProfileFormPage() {
         navigate('/application-complete');
         return;
       }
+      if (isMemberSession && saveAsDefaultProfile) {
+        const confirmed = window.confirm('이 프로필을 회원 기본 참가 프로필로 저장할까요? 기존 기본 프로필이 있으면 새 프로필로 교체됩니다.');
+        if (!confirmed) {
+          setSubmitting(false);
+          return;
+        }
+      }
       await submitApplicationToSupabase({
         accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
         birthDate,
@@ -494,6 +476,7 @@ export default function ProfileFormPage() {
         representativeIndex,
         residence: location,
         returning: false,
+        saveAsDefaultProfile: isMemberSession && saveAsDefaultProfile,
         voiceIntro: audioBlob,
         voiceIntroFileName: getAudioFileName(audioBlob.type),
       });
@@ -517,26 +500,33 @@ export default function ProfileFormPage() {
   const addProfilePhotos = (files: File[]) => {
     if (files.length === 0) return;
     const nextSelectedIndex = Math.min(profilePhotos.length, 2);
-    setProfilePhotos((current) => [...current, ...files].slice(0, 3));
+    const wasEmpty = profilePhotos.length === 0;
+    setProfilePhotos((current) => {
+      const nextPhotos = [...current, ...files].slice(0, 3);
+      if (nextPhotos.length <= representativeIndex) setRepresentativeIndex(0);
+      return nextPhotos;
+    });
     setSelectedPhotoIndex(nextSelectedIndex);
-    if (profilePhotos.length === 0) {
+    if (wasEmpty) {
       setRepresentativeIndex(0);
       resetRepresentativeAdjustment();
     }
   };
 
   const removeProfilePhoto = (index: number) => {
-    const nextLength = Math.max(0, profilePhotos.length - 1);
-    setProfilePhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
-    setSelectedPhotoIndex((current) => Math.max(0, Math.min(current >= index ? current - 1 : current, nextLength - 1)));
-    if (representativeIndex === index) {
-      setRepresentativeIndex(0);
-      resetRepresentativeAdjustment();
-      return;
-    }
-    if (representativeIndex > index) {
-      setRepresentativeIndex((current) => current - 1);
-    }
+    setProfilePhotos((current) => {
+      const nextPhotos = current.filter((_, photoIndex) => photoIndex !== index);
+      const nextLastIndex = Math.max(0, nextPhotos.length - 1);
+      setSelectedPhotoIndex((currentSelected) => Math.max(0, Math.min(currentSelected >= index ? currentSelected - 1 : currentSelected, nextLastIndex)));
+      setRepresentativeIndex((currentRepresentative) => {
+        if (nextPhotos.length === 0) return 0;
+        if (currentRepresentative === index) return 0;
+        if (currentRepresentative > index) return currentRepresentative - 1;
+        return Math.min(currentRepresentative, nextLastIndex);
+      });
+      if (representativeIndex === index || nextPhotos.length === 0) resetRepresentativeAdjustment();
+      return nextPhotos;
+    });
   };
 
   const getPointerDistance = () => {
@@ -731,7 +721,13 @@ export default function ProfileFormPage() {
             <div className="mt-4 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-1.5 min-[380px]:gap-2">
               {photoPreviews.map((preview, index) => (
                 <div className={`relative rounded-[16px] border-4 ${representativeIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview}>
-                  <button className="block w-full" onClick={() => setSelectedPhotoIndex(index)} type="button">
+                  <button
+                    className="block w-full"
+                    onClick={() => {
+                      setSelectedPhotoIndex(index);
+                    }}
+                    type="button"
+                  >
                     <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
                     <span className="block overflow-hidden text-ellipsis whitespace-nowrap py-1 text-[10px] font-black min-[380px]:text-[11px]">
                       {representativeIndex === index ? '대표사진' : '사진 선택'}
@@ -755,7 +751,8 @@ export default function ProfileFormPage() {
               <button
                 className="mt-3 h-11 w-full rounded-[16px] bg-meet-blue text-[14px] font-black text-white"
                 onClick={() => {
-                  setRepresentativeIndex(selectedPhotoIndex);
+                  const nextIndex = Math.max(0, Math.min(selectedPhotoIndex, profilePhotos.length - 1));
+                  setRepresentativeIndex(nextIndex);
                   setShowRepresentativeEditor(true);
                 }}
                 type="button"
@@ -863,6 +860,22 @@ export default function ProfileFormPage() {
           </Section>
 
           <div className="sticky bottom-4 z-10">
+            {isMemberSession ? (
+              <label className="mb-3 flex items-start gap-2 rounded-[20px] border border-[#e7f2fc] bg-white/95 p-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#666] shadow-sm">
+                <input
+                  checked={saveAsDefaultProfile}
+                  className="mt-1"
+                  onChange={(event) => setSaveAsDefaultProfile(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  이 프로필을 기본 프로필로 저장
+                  <span className="mt-1 block text-[12px] text-[#888]">
+                    다음 행사 신청 때 재사용할 수 있으며, 이미 제출한 신청서는 변경되지 않습니다.
+                  </span>
+                </span>
+              </label>
+            ) : null}
             <PrimaryButton disabled={!isRequiredComplete || submitting} onClick={submit}>
               {submitting ? '제출 중' : '프로필 제출'}
             </PrimaryButton>

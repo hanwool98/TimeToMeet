@@ -29,7 +29,13 @@ export default function MyEventsPage() {
       const nextTickets = await fetchMyEventTickets();
       setTickets(nextTickets);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : '내 행사 정보를 불러오지 못했습니다.');
+      const message = caughtError instanceof Error ? caughtError.message : '내 행사 정보를 불러오지 못했습니다.';
+      if (message.includes('get_my_event_tickets')) {
+        setTickets([]);
+        setError('');
+        return;
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

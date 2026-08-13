@@ -35,6 +35,7 @@ type SubmitPayload = {
   representativeIndex: number;
   residence: string;
   returning: boolean;
+  saveAsDefaultProfile?: boolean;
   sessionToken: string;
   userId?: string;
   voiceIntro: UploadedFile;
@@ -98,7 +99,7 @@ Deno.serve(async (request) => {
     return json({ message: error instanceof Error ? error.message : '파일 업로드에 실패했습니다.' }, 500);
   }
 
-  const { error: insertError } = await supabase.from('applications').insert({
+  const applicationSnapshot = {
     access_route: payload.accessRoute,
     applicant_kind: session.role,
     birth_date: payload.birthDate,
@@ -125,16 +126,63 @@ Deno.serve(async (request) => {
     review_notice_confirmed: true,
     user_id: userId,
     voice_intro_path: voiceIntroPath,
-  });
+  };
+
+  const { data: insertedApplication, error: insertError } = await supabase
+    .from('applications')
+    .insert(applicationSnapshot)
+    .select('id')
+    .single();
 
   if (insertError) {
     console.error('Application insert failed', insertError);
     return json({ message: `신청서 저장에 실패했습니다. ${insertError.message}` }, 500);
   }
 
+  if (session.role === 'member' && payload.saveAsDefaultProfile) {
+    const { error: profileError } = await saveMemberDefaultProfile(supabase, {
+      ...applicationSnapshot,
+      source_application_id: insertedApplication.id,
+    });
+
+    if (profileError) {
+      console.error('Default participant profile save failed', profileError);
+      return json({ message: `신청서는 저장됐지만 기본 프로필 저장에 실패했습니다. ${profileError.message}` }, 500);
+    }
+  }
+
   await supabase.from('application_drafts').delete().eq('event_id', payload.eventId).eq('user_id', userId);
   return json({ ok: true });
 });
+
+async function saveMemberDefaultProfile(supabase: ReturnType<typeof createClient>, snapshot: Record<string, unknown>) {
+  const userId = snapshot.user_id as string;
+  await supabase
+    .from('participant_profiles')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('is_active', true);
+
+  return supabase.from('participant_profiles').insert({
+    birth_date: snapshot.birth_date,
+    employment_proof_path: snapshot.employment_proof_path,
+    gender: snapshot.gender,
+    height: snapshot.height,
+    id_photo_path: snapshot.id_photo_path,
+    job: snapshot.job,
+    name: snapshot.name,
+    nickname: snapshot.nickname,
+    phone: snapshot.phone,
+    profile_photo_paths: snapshot.profile_photo_paths,
+    relationship_status: snapshot.relationship_status,
+    representative_crop: snapshot.representative_crop,
+    representative_photo_index: snapshot.representative_photo_index,
+    residence: snapshot.residence,
+    source_application_id: snapshot.source_application_id,
+    user_id: userId,
+    voice_intro_path: snapshot.voice_intro_path,
+  });
+}
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {

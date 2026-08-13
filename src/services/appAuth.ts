@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { fetchMyPageSummary } from './participantProfiles';
 
 const appSessionKey = 'time2meet.appSession';
 
@@ -6,6 +7,7 @@ export type AppRole = 'member' | 'guest' | 'admin';
 
 interface AppSession {
   expiresAt: string;
+  phoneNormalized?: string;
   role: AppRole;
   token: string;
   userId?: string;
@@ -13,6 +15,7 @@ interface AppSession {
 
 interface SessionResponse {
   expires_at: string;
+  phone_normalized?: string;
   role: AppRole;
   session_token: string;
   user_id?: string;
@@ -35,9 +38,10 @@ function readSession(key: string): AppSession | null {
   }
 }
 
-function writeSession(key: string, response: SessionResponse) {
+function writeSession(key: string, response: SessionResponse, fallbackPhoneNormalized?: string) {
   const session: AppSession = {
     expiresAt: response.expires_at,
+    phoneNormalized: response.phone_normalized || fallbackPhoneNormalized,
     role: response.role,
     token: response.session_token,
     userId: response.user_id,
@@ -67,22 +71,17 @@ export function clearAppSession() {
 }
 
 export async function fetchMyTabProfileAvatar() {
-  if (!supabase) return null;
-  const session = getAppSession();
-  if (!session?.token) return null;
-
-  const { data, error } = await supabase.rpc('get_my_tab_profile_avatar', {
-    session_token: session.token,
-  });
-
-  if (error) return null;
-  const response = Array.isArray(data) ? data[0] : data;
-  if (!response?.has_profile) return { hasProfile: false, avatarIndex: 0 };
-
-  return {
-    hasProfile: true,
-    avatarIndex: Number(response.avatar_index ?? 0),
-  };
+  try {
+    const summary = await fetchMyPageSummary();
+    if (!summary?.hasProfile) return { hasProfile: false, avatarIndex: 0 };
+    return {
+      avatarIndex: summary.avatarIndex,
+      hasProfile: true,
+      photoUrl: summary.profilePhotoUrl,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function createGuestSession(phoneNormalized: string, pin: string) {
@@ -101,7 +100,7 @@ export async function createGuestSession(phoneNormalized: string, pin: string) {
     throw error;
   }
   if (!response?.session_token) throw new Error('비회원 계정을 만들 수 없습니다.');
-  return writeSession(appSessionKey, response);
+  return writeSession(appSessionKey, response, phoneNormalized);
 }
 
 export async function loginGuestSession(phoneNormalized: string, pin: string) {
@@ -114,7 +113,7 @@ export async function loginGuestSession(phoneNormalized: string, pin: string) {
 
   const response = firstSessionResponse(data);
   if (error || !response?.session_token) throw error ?? new Error('비회원 로그인에 실패했습니다.');
-  return writeSession(appSessionKey, response);
+  return writeSession(appSessionKey, response, phoneNormalized);
 }
 
 export async function loginMemberSession(loginId: string, password: string) {

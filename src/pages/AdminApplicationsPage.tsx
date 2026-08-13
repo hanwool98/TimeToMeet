@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
-import { getAvatarPosition } from '../components/ParticipantList';
 import useOperationalData from '../hooks/useOperationalData';
-import { confirmBankTransferInSupabase, rejectBankTransferInSupabase, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
-import type { ParticipantProfile } from '../types/participant';
+import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 
 type ApplicationTab = 'review' | 'waiting' | 'payment' | 'completed';
@@ -18,7 +18,6 @@ const tabs: Array<{ id: ApplicationTab; label: string }> = [
 
 const dateOptions = ['전체', '8월 16일 로테이션'];
 const filterOptions = ['성별', '나이', '재참여 여부', '심사대기', '참여확정', '반려'];
-const adminProfileSheet = '/assets/admin-profile-photos.svg';
 
 export default function AdminApplicationsPage() {
   const navigate = useNavigate();
@@ -75,6 +74,13 @@ export default function AdminApplicationsPage() {
 
   const decideReview = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!reviewingApplication) return;
+    const reason =
+      status === '반려'
+        ? window.prompt(`${reviewingApplication.id} 신청을 참가 거부 처리합니다. 거부 사유를 입력해주세요.`)
+        : status === '참여 보류'
+          ? window.prompt(`${reviewingApplication.id} 신청을 참가 대기 처리합니다. 대기 사유를 입력해주세요.`, '성비 및 신청 현황 고려')
+          : '';
+    if ((status === '반려' || status === '참여 보류') && !reason?.trim()) return;
     const now = new Date();
     const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const reviewedAt = now.toISOString();
@@ -83,6 +89,7 @@ export default function AdminApplicationsPage() {
     await updateApplicationReviewInSupabase(reviewingApplication, status, {
       paymentDeadline,
       paymentNoticeSentAt,
+      reason: reason?.trim() || undefined,
       reviewedAt,
     });
     await reload();
@@ -202,7 +209,6 @@ export default function AdminApplicationsPage() {
           application={reviewingApplication}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
-          profile={reviewingApplication.profile}
         />
       ) : null}
     </main>
@@ -332,154 +338,518 @@ function ReviewProfileModal({
   application,
   onClose,
   onDecide,
-  profile,
 }: {
   application: StoredApplication;
   onClose: () => void;
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
-  profile: ParticipantProfile;
 }) {
+  const profile = application.profile;
+  const [files, setFiles] = useState<AdminApplicationFiles | null>(null);
+  const [filesError, setFilesError] = useState('');
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [expandedPhoto, setExpandedPhoto] = useState<{ photos: SignedApplicationFile[]; index: number; title: string } | null>(null);
+  const [deciding, setDeciding] = useState(false);
+  const canReview = application.status === '심사 대기';
+
+  const loadFiles = async () => {
+    setFilesLoading(true);
+    setFilesError('');
+    try {
+      setFiles(await fetchAdminApplicationFiles(application));
+    } catch (error) {
+      setFilesError(error instanceof Error ? error.message : '신청 자료를 불러오지 못했습니다.');
+      setFiles(null);
+    } finally {
+      setFilesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadFiles();
+  }, [application.dbId]);
+
+  const requestDecision = async (status: '결제 대기' | '참여 보류' | '반려') => {
+    if (!canReview || deciding) return;
+    const label = status === '결제 대기' ? '참가 승인' : status === '참여 보류' ? '참가 대기' : '참가 거부';
+    const ok = window.confirm(`${application.id} · ${profile?.name ?? application.userId}\n처리 결과: ${label}\n이대로 처리할까요?`);
+    if (!ok) return;
+    setDeciding(true);
+    try {
+      await onDecide(status);
+    } finally {
+      setDeciding(false);
+    }
+  };
+
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-40 grid place-items-center bg-black/35 px-4"
+      className="fixed inset-0 z-40 grid place-items-center bg-black/35 px-3"
       onClick={onClose}
       role="dialog"
     >
       <section
-        className="max-h-[88dvh] w-full max-w-[390px] min-w-0 overflow-y-auto rounded-[22px] bg-white p-4 shadow-calendar min-[380px]:p-5"
+        className="max-h-[92dvh] w-full max-w-[430px] min-w-0 overflow-y-auto rounded-[22px] bg-white shadow-calendar"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[14px] font-extrabold text-[#8a8a8a]">{application.id} · {application.userId}</p>
-            <h2 className="mt-1 text-[23px] font-black leading-tight">심사용 프로필</h2>
+        <header className="border-b border-[#eef1f5] px-5 pb-4 pt-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <img alt="time2meet" className="h-auto w-[120px] object-contain" src="/assets/time2meet-logo.png" />
+              <h2 className="mt-4 text-[26px] font-black leading-tight">참가신청 심사</h2>
+            </div>
+            <button
+              aria-label="참가신청 심사 닫기"
+              className="grid h-11 w-11 shrink-0 place-items-center text-[42px] font-light leading-none text-[#454b54]"
+              onClick={onClose}
+              type="button"
+            >
+              ×
+            </button>
           </div>
-          <button
-            aria-label="심사용 프로필 닫기"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black"
-            onClick={onClose}
-            type="button"
-          >
-            ×
-          </button>
+        </header>
+
+        <div className="px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[24px] font-black leading-tight">{application.id}</p>
+              <StatusBadge status={application.status} />
+            </div>
+            <p className="mt-2 text-[17px] font-black leading-snug text-[#263149]">{application.eventDate} {application.eventType} 소개팅</p>
+            <p className="mt-2 text-[15px] font-extrabold text-[#7a828c]">{application.accountType === 'guest' ? '비회원' : '회원'} {application.userId}</p>
+          </div>
+
+          {profile ? (
+            <section className="mt-5 rounded-[18px] border border-[#e9edf2] bg-white p-4 shadow-sm">
+              <div className="grid grid-cols-[78px_minmax(0,1fr)] gap-4">
+                <RepresentativeThumb file={files?.profilePhotos[files.representativeIndex] ?? files?.profilePhotos[0]} loading={filesLoading} />
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[22px] font-black">{profile.name}</p>
+                      <p className="mt-1 text-[15px] font-extrabold text-[#747b84]">{profile.nickname}</p>
+                    </div>
+                    <p className="shrink-0 text-[15px] font-black text-[#263149]">{maskPhone(profile.phone)}</p>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-extrabold text-[#5d6672]">
+                    <span>📅 {formatBirthDate(profile.birthDate)}</span>
+                    <span>{profile.genderLabel}</span>
+                    <span>📍 {profile.residence}</span>
+                    <span>💼 {profile.job}</span>
+                    <span>{profile.height}cm</span>
+                    <span>{application.returning}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {filesError ? (
+            <div className="mt-4 rounded-[16px] bg-meet-pinkSoft px-4 py-3 text-[14px] font-black text-meet-pink">
+              {filesError}
+              <button className="ml-2 underline" onClick={() => void loadFiles()} type="button">다시 불러오기</button>
+            </div>
+          ) : null}
+
+          <div className="mt-6 space-y-6">
+            <ReviewSection title="본인확인">
+              <FilePreviewCard
+                emptyText="업로드된 사진이 없습니다."
+                file={files?.idPhoto}
+                loading={filesLoading}
+                onOpen={() => files?.idPhoto && setExpandedPhoto({ photos: [files.idPhoto], index: 0, title: '신분증 사진' })}
+                title="신분증 사진 1장"
+              />
+            </ReviewSection>
+
+            <ReviewSection
+              actionText={files?.profilePhotos.length ? `${files.profilePhotos.length}장 · 눌러서 크게 보기` : undefined}
+              title="프로필 사진"
+            >
+              <ProfilePhotoGrid
+                files={files?.profilePhotos ?? []}
+                loading={filesLoading}
+                onOpen={(index) => setExpandedPhoto({ photos: files?.profilePhotos ?? [], index, title: '프로필 사진' })}
+                representativeIndex={files?.representativeIndex ?? 0}
+              />
+            </ReviewSection>
+
+            <ReviewSection title="목소리 소개">
+              <ReviewAudioPlayer
+                file={files?.voiceIntro}
+                loading={filesLoading}
+                onRefresh={() => void loadFiles()}
+              />
+            </ReviewSection>
+
+            <ReviewSection title="첨부파일">
+              <AttachmentCard
+                emptyText="첨부파일이 없습니다."
+                file={files?.employmentProof}
+                loading={filesLoading}
+                title="재직 증명"
+              />
+            </ReviewSection>
+
+            {profile ? (
+              <ReviewSection title="신청 내용">
+                <div className="grid gap-2">
+                  <ReviewField label="3. 이름" value={profile.name} />
+                  <ReviewField label="4. 생년월일" value={formatBirthDate(profile.birthDate)} />
+                  <ReviewField label="5. 성별" value={profile.genderLabel} />
+                  <ReviewField label="6. 거주지" value={profile.residence} />
+                  <ReviewField label="7. 전화번호" value={maskPhone(profile.phone)} />
+                  <ReviewField label="8. 결혼 및 교제 여부" value={profile.relationshipStatus} />
+                  <ReviewField label="10. 닉네임" value={profile.nickname} />
+                  <ReviewField label="13. 키" value={`${profile.height}cm`} />
+                  <ReviewField label="14. 직업" value={profile.job} />
+                  <ReviewField label="16. 접속 경로" value={profile.accessRoute} />
+                  <ReviewField label="17. 촬영 동의" value={profile.shootingConsent} />
+                  <ReviewField label="18. 인터뷰 여부" value={profile.interviewConsent} />
+                  <ReviewField label="19. 환불규정" value={profile.refundAgreement} />
+                  <ReviewField label="20. 타임투밋 문의사항" value={profile.inquiry || '입력 없음'} />
+                  <ReviewField label="21. 심사 후 개별 연락 안내" value={profile.reviewNotice} />
+                </div>
+              </ReviewSection>
+            ) : null}
+          </div>
         </div>
 
-        <div className="mt-5 space-y-3">
-          <ReviewRow label="3. 이름" value={profile.name} />
-          <ReviewRow label="4. 생년월일" value={profile.birthDate} />
-          <ReviewRow label="5. 성별" value={profile.genderLabel} />
-          <ReviewRow label="6. 거주지" value={profile.residence} />
-          <ReviewRow label="7. 전화번호" value={profile.phone} />
-          <ReviewRow label="8. 결혼 및 교제 여부" value={profile.relationshipStatus} />
-          <ReviewImage label="9. 본인확인용 신분증 사진 첨부" offset={2} value={profile.idPhotoStatus} />
-          <ReviewRow label="10. 닉네임" value={profile.nickname} />
-          <ReviewPhotos value={profile.profilePhotos} />
-          <ReviewVoice />
-          <ReviewRow label="13. 키" value={profile.height} />
-          <ReviewRow label="14. 직업" value={profile.job} />
-          <ReviewImage label="15. 재직 증명" offset={3} value={profile.employmentProof} />
-          <ReviewRow label="16. 접속 경로" value={profile.accessRoute} />
-          <ReviewRow label="17. 촬영 동의 (모자이크)" value={profile.shootingConsent} />
-          <ReviewRow label="18. 인터뷰 여부" value={profile.interviewConsent} />
-          <ReviewRow label="19. 환불규정" value={profile.refundAgreement} />
-          <ReviewRow label="20. 타임투밋 문의사항" value={profile.inquiry} />
-          <ReviewRow label="21. 심사 후 개별 연락 안내" value={profile.reviewNotice} />
+        <div className="sticky bottom-0 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
+          <button
+            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-blue px-2 text-[14px] font-black text-white disabled:bg-[#d8dee6]"
+            disabled={!canReview || deciding}
+            onClick={() => void requestDecision('결제 대기')}
+            type="button"
+          >
+            <span className="text-[22px]">✓</span>
+            참가 승인
+          </button>
+          <button
+            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-[#eef0f3] px-2 text-[14px] font-black text-[#4b515a] disabled:opacity-45"
+            disabled={!canReview || deciding}
+            onClick={() => void requestDecision('참여 보류')}
+            type="button"
+          >
+            <span className="text-[18px]">Ⅱ</span>
+            참가 대기
+          </button>
+          <button
+            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-pink px-2 text-[14px] font-black text-white disabled:bg-[#f4b6cc]"
+            disabled={!canReview || deciding}
+            onClick={() => void requestDecision('반려')}
+            type="button"
+          >
+            <span className="text-[24px]">×</span>
+            참가 거부
+          </button>
         </div>
+      </section>
+      {expandedPhoto ? (
+        <PhotoViewer
+          onClose={() => setExpandedPhoto(null)}
+          onMove={(nextIndex) => setExpandedPhoto((current) => current && { ...current, index: nextIndex })}
+          state={expandedPhoto}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-        <div className="sticky bottom-0 mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-3 bg-white pt-3">
-          <button
-            aria-label="통과"
-            className="grid h-12 place-items-center rounded-[16px] bg-meet-blue text-[24px] font-black text-white"
-            onClick={() => onDecide('결제 대기')}
-            type="button"
-          >
-            ✓
-          </button>
-          <button
-            aria-label="보류"
-            className="grid h-12 place-items-center rounded-[16px] bg-[#d9d9d9] text-[22px] font-black text-black"
-            onClick={() => onDecide('참여 보류')}
-            type="button"
-          >
-            ⏸
-          </button>
-          <button
-            aria-label="반려"
-            className="grid h-12 place-items-center rounded-[16px] bg-meet-pink text-[24px] font-black text-white"
-            onClick={() => onDecide('반려')}
-            type="button"
-          >
-            ×
-          </button>
+function ReviewSection({ actionText, children, title }: { actionText?: string; children: ReactNode; title: string }) {
+  return (
+    <section className="w-full max-w-full min-w-0">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-[20px] font-black leading-tight">{title}</h3>
+        {actionText ? <p className="shrink-0 text-[13px] font-black text-meet-blue">{actionText}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ReviewField({ label, value }: { label: string; value: string }) {
+  return (
+    <section className="rounded-[14px] bg-[#f7f9fb] px-4 py-3">
+      <p className="text-[12px] font-black text-[#828b96]">{label}</p>
+      <p className="mt-1 break-words text-[15px] font-black leading-snug text-[#111]">{value}</p>
+    </section>
+  );
+}
+
+function RepresentativeThumb({ file, loading }: { file?: SignedApplicationFile; loading: boolean }) {
+  if (loading) return <div className="h-[78px] w-[78px] rounded-[24px] bg-[#f0f4f8]" />;
+  if (!file) {
+    return (
+      <div className="grid h-[78px] w-[78px] place-items-center rounded-[24px] bg-[#f0f4f8] text-[11px] font-black text-[#8a929c]">
+        사진 없음
+      </div>
+    );
+  }
+
+  return (
+    <img
+      alt="대표사진"
+      className="h-[78px] w-[78px] rounded-[24px] object-cover"
+      src={file.signedUrl}
+    />
+  );
+}
+
+function FilePreviewCard({
+  emptyText,
+  file,
+  loading,
+  onOpen,
+  title,
+}: {
+  emptyText: string;
+  file?: SignedApplicationFile;
+  loading: boolean;
+  onOpen: () => void;
+  title: string;
+}) {
+  if (loading) return <SkeletonCard />;
+  if (!file) return <EmptyCard text={emptyText} />;
+
+  return (
+    <button
+      className="flex w-full max-w-full min-w-0 items-center gap-4 rounded-[18px] border border-[#e9edf2] bg-white p-3 text-left shadow-sm"
+      onClick={onOpen}
+      type="button"
+    >
+      <img alt={title} className="h-[82px] w-[116px] shrink-0 rounded-[12px] object-cover" src={file.signedUrl} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[17px] font-black">{title}</p>
+        <p className="mt-2 text-[14px] font-black text-meet-blue">확대 보기 ›</p>
+      </div>
+      <span className="shrink-0 text-[28px] text-[#444]">›</span>
+    </button>
+  );
+}
+
+function ProfilePhotoGrid({
+  files,
+  loading,
+  onOpen,
+  representativeIndex,
+}: {
+  files: SignedApplicationFile[];
+  loading: boolean;
+  onOpen: (index: number) => void;
+  representativeIndex: number;
+}) {
+  if (loading) return <SkeletonCard />;
+  if (!files.length) return <EmptyCard text="업로드된 사진이 없습니다." />;
+
+  return (
+    <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
+      {files.map((file, index) => (
+        <button
+          className="relative aspect-square min-w-0 overflow-hidden rounded-[14px] bg-[#f4f6f8]"
+          key={`${file.path}-${index}`}
+          onClick={() => onOpen(index)}
+          type="button"
+        >
+          <img alt={`프로필 사진 ${index + 1}`} className="h-full w-full object-cover" src={file.signedUrl} />
+          {index === representativeIndex ? (
+            <span className="absolute left-2 top-2 rounded-[8px] bg-meet-blue px-2 py-1 text-[11px] font-black text-white">
+              대표사진
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AttachmentCard({
+  emptyText,
+  file,
+  loading,
+  title,
+}: {
+  emptyText: string;
+  file?: SignedApplicationFile;
+  loading: boolean;
+  title: string;
+}) {
+  if (loading) return <SkeletonCard />;
+  if (!file) return <EmptyCard text={emptyText} />;
+
+  return (
+    <a
+      className="flex min-w-0 items-center gap-4 rounded-[18px] border border-[#e9edf2] bg-white p-4 shadow-sm"
+      href={file.signedUrl}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <span className="grid h-14 w-14 shrink-0 place-items-center rounded-[14px] bg-meet-pink text-[13px] font-black text-white">FILE</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-black text-[#8a929c]">{title}</span>
+        <span className="block truncate text-[17px] font-black text-black">{file.fileName}</span>
+      </span>
+      <span className="shrink-0 text-[15px] font-black text-meet-blue">확인 ›</span>
+    </a>
+  );
+}
+
+function ReviewAudioPlayer({
+  file,
+  loading,
+  onRefresh,
+}: {
+  file?: SignedApplicationFile;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState('');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [time, setTime] = useState(0);
+
+  useEffect(() => {
+    setDuration(0);
+    setError('');
+    setIsPlaying(false);
+    setTime(0);
+  }, [file?.signedUrl]);
+
+  if (loading) return <SkeletonCard />;
+  if (!file) return <EmptyCard text="업로드된 음성이 없습니다." />;
+
+  const progress = duration > 0 ? Math.min(100, (time / duration) * 100) : 0;
+
+  const togglePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setError('');
+    try {
+      if (audio.paused) {
+        await audio.play();
+      } else {
+        audio.pause();
+      }
+    } catch {
+      setError('음성을 재생하지 못했습니다. 다시 불러온 뒤 시도해주세요.');
+      onRefresh();
+    }
+  };
+
+  const replay = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    await togglePlay();
+  };
+
+  return (
+    <section className="rounded-[18px] border border-[#e9edf2] bg-white p-4 shadow-sm">
+      <audio
+        onEnded={() => setIsPlaying(false)}
+        onError={() => setError('음성을 재생하지 못했습니다.')}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+        onPause={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+        onTimeUpdate={(event) => setTime(event.currentTarget.currentTime)}
+        preload="metadata"
+        ref={audioRef}
+        src={file.signedUrl}
+      />
+      <div className="flex items-center gap-4">
+        <button
+          aria-label={isPlaying ? '음성 일시정지' : '음성 재생'}
+          className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-meet-blue text-white"
+          onClick={() => void togglePlay()}
+          type="button"
+        >
+          {isPlaying ? 'Ⅱ' : '▶'}
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-[16px] font-black">5초 자기소개</p>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e9edf2]">
+            <div className="h-full rounded-full bg-meet-blue" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-2 text-[13px] font-extrabold text-[#7a828c]">{formatAudioTime(time)} / {formatAudioTime(duration || 5)}</p>
         </div>
+        <button className="shrink-0 text-[13px] font-black text-meet-blue" onClick={() => void replay()} type="button">
+          다시 듣기
+        </button>
+      </div>
+      {error ? <p className="mt-3 text-[13px] font-black text-meet-pink">{error}</p> : null}
+    </section>
+  );
+}
+
+function PhotoViewer({
+  onClose,
+  onMove,
+  state,
+}: {
+  onClose: () => void;
+  onMove: (index: number) => void;
+  state: { photos: SignedApplicationFile[]; index: number; title: string };
+}) {
+  const photo = state.photos[state.index];
+  const canMove = state.photos.length > 1;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 px-3" onClick={onClose}>
+      <section className="w-full max-w-[430px] rounded-[18px] bg-white p-3" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-[17px] font-black">{state.title} {state.index + 1}/{state.photos.length}</p>
+          <button aria-label="사진 닫기" className="text-[30px] leading-none" onClick={onClose} type="button">×</button>
+        </div>
+        {photo ? <img alt={state.title} className="max-h-[70dvh] w-full rounded-[12px] object-contain" src={photo.signedUrl} /> : <EmptyCard text="사진을 불러오지 못했습니다." />}
+        {canMove ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              className="h-11 rounded-[12px] bg-[#f0f2f4] text-[14px] font-black"
+              onClick={() => onMove((state.index - 1 + state.photos.length) % state.photos.length)}
+              type="button"
+            >
+              이전
+            </button>
+            <button
+              className="h-11 rounded-[12px] bg-[#f0f2f4] text-[14px] font-black"
+              onClick={() => onMove((state.index + 1) % state.photos.length)}
+              type="button"
+            >
+              다음
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
 }
 
-function ReviewRow({ label, value }: { label: string; value: string }) {
+function SkeletonCard() {
+  return <div className="h-[108px] animate-pulse rounded-[18px] bg-[#f2f5f8]" />;
+}
+
+function EmptyCard({ text }: { text: string }) {
   return (
-    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
-      <p className="text-[12px] font-black text-[#8a8a8a]">{label}</p>
-      <p className="mt-1 text-fluid-safe text-[15px] font-black leading-snug text-black">{value}</p>
-    </section>
+    <div className="grid min-h-[108px] place-items-center rounded-[18px] border border-dashed border-[#dce3eb] bg-[#f9fbfd] px-4 text-center text-[15px] font-black text-[#8a929c]">
+      {text}
+    </div>
   );
 }
 
-function ReviewImage({ label, offset, value }: { label: string; offset: number; value: string }) {
-  return (
-    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
-      <p className="text-[12px] font-black text-[#8a8a8a]">{label}</p>
-      <p className="mt-1 text-[15px] font-black text-black">{value}</p>
-      <div
-        className="mt-3 h-[160px] rounded-[14px] bg-cover bg-center"
-        style={{
-          backgroundImage: `url(${adminProfileSheet})`,
-          backgroundPosition: getAvatarPosition(offset),
-          backgroundSize: '440% 330%',
-        }}
-      />
-    </section>
-  );
+function maskPhone(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 8) return value;
+  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
-function ReviewPhotos({ value }: { value: string }) {
-  return (
-    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
-      <p className="text-[12px] font-black text-[#8a8a8a]">11. 프로필 사진</p>
-      <p className="mt-1 text-[15px] font-black text-black">{value}</p>
-      <div className="mt-3 space-y-3">
-        {['대표사진', '사진 2', '사진 3'].map((label, index) => (
-          <div className="overflow-hidden rounded-[16px] bg-white shadow-sm" key={label}>
-            <div
-              className="aspect-[4/5] bg-cover bg-center"
-              style={{
-                backgroundImage: `url(${adminProfileSheet})`,
-                backgroundPosition: getAvatarPosition(index + 1),
-                backgroundSize: '440% 330%',
-              }}
-            />
-            <p className="px-4 py-3 text-[13px] font-black text-black">{label}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+function formatBirthDate(value: string) {
+  return value.replace(/-/g, '.');
 }
 
-function ReviewVoice() {
-  return (
-    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
-      <p className="text-[12px] font-black text-[#8a8a8a]">12. 너의 목소리가 보여</p>
-      <button
-        className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-white text-[14px] font-black text-meet-pink shadow-sm"
-        onClick={() => window.alert('샘플 음성입니다.')}
-        type="button"
-      >
-        <span className="h-0 w-0 border-y-[6px] border-l-[10px] border-y-transparent border-l-meet-pink" />
-        5초 자기소개 재생
-      </button>
-    </section>
-  );
+function formatAudioTime(value: number) {
+  if (!Number.isFinite(value)) return '0:00';
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
 }

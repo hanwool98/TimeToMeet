@@ -17,12 +17,14 @@ function TabIcon({
   hasProfile,
   isLoggedIn,
   name,
+  photoUrl,
 }: {
   avatarIndex?: number;
   active: boolean;
   hasProfile?: boolean;
   isLoggedIn?: boolean;
   name: string;
+  photoUrl?: string;
 }) {
   const common = {
     fill: 'none',
@@ -64,6 +66,19 @@ function TabIcon({
   }
 
   if (name === 'person' && isLoggedIn) {
+    if (hasProfile && photoUrl) {
+      return (
+        <img
+          alt=""
+          className={[
+            'h-8 w-8 rounded-full bg-cover bg-center bg-no-repeat ring-2',
+            active ? 'ring-meet-blue/55' : 'ring-[#777]/30 saturate-[0.9]',
+          ].join(' ')}
+          src={photoUrl}
+        />
+      );
+    }
+
     if (hasProfile) {
       return (
         <span
@@ -109,7 +124,7 @@ function DefaultProfileIcon() {
 export default function BottomTabs() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [profileAvatar, setProfileAvatar] = useState<{ avatarIndex: number; hasProfile: boolean } | null>(null);
+  const [profileAvatar, setProfileAvatar] = useState<{ avatarIndex: number; hasProfile: boolean; photoUrl?: string } | null>(null);
   const isLoggedIn = Boolean(getAppSession());
   const { unreadCount } = usePaymentInvitations();
 
@@ -165,6 +180,7 @@ export default function BottomTabs() {
                 hasProfile={profileAvatar?.hasProfile}
                 isLoggedIn={isLoggedIn}
                 name={tab.icon}
+                photoUrl={profileAvatar?.photoUrl}
               />
               {tab.path === '/my-events' && unreadCount > 0 ? (
                 <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-meet-pink" />

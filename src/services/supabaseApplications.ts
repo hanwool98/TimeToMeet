@@ -23,6 +23,7 @@ interface SubmitApplicationInput {
     offsetX: number;
     offsetY: number;
   };
+  saveAsDefaultProfile?: boolean;
   voiceIntro: Blob;
   voiceIntroFileName: string;
   height: string;
@@ -191,6 +192,20 @@ export interface AdminCheckInResult {
   ok: boolean;
 }
 
+export interface AdminApplicationFiles {
+  employmentProof?: SignedApplicationFile;
+  idPhoto?: SignedApplicationFile;
+  profilePhotos: SignedApplicationFile[];
+  representativeIndex: number;
+  voiceIntro?: SignedApplicationFile;
+}
+
+export interface SignedApplicationFile {
+  fileName: string;
+  path: string;
+  signedUrl: string;
+}
+
 interface PaymentInvitationRow {
   application_id: string;
   created_at: string;
@@ -244,6 +259,7 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
     representativeIndex: input.representativeIndex,
     residence: input.residence,
     returning: input.returning,
+    saveAsDefaultProfile: Boolean(input.saveAsDefaultProfile),
     sessionToken: session.token,
     userId: user.id,
     voiceIntro: await blobToPayload(input.voiceIntro, input.voiceIntroFileName),
@@ -345,6 +361,7 @@ export async function updateApplicationReviewInSupabase(
   values: {
     paymentDeadline?: string;
     paymentNoticeSentAt?: string;
+    reason?: string;
     reviewedAt?: string;
   } = {},
 ) {
@@ -359,6 +376,7 @@ export async function updateApplicationReviewInSupabase(
     next_payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
     next_reviewed_at: values.reviewedAt ?? application.reviewedAt ?? new Date().toISOString(),
     next_status: status,
+    review_reason: values.reason ?? null,
     session_token: adminSession.token,
   });
 
@@ -392,6 +410,32 @@ export async function rejectBankTransferInSupabase(application: StoredApplicatio
   });
 
   if (error) throw error;
+}
+
+export async function fetchAdminApplicationFiles(application: StoredApplication) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-application-files', {
+    body: {
+      applicationId: application.dbId,
+      sessionToken: adminSession.token,
+    },
+  });
+
+  if (error || data?.ok !== true) {
+    throw new Error(data?.message || error?.message || '신청 자료를 불러오지 못했습니다.');
+  }
+
+  return {
+    employmentProof: data.employmentProof ?? undefined,
+    idPhoto: data.idPhoto ?? undefined,
+    profilePhotos: Array.isArray(data.profilePhotos) ? data.profilePhotos : [],
+    representativeIndex: Number(data.representativeIndex ?? 0),
+    voiceIntro: data.voiceIntro ?? undefined,
+  } satisfies AdminApplicationFiles;
 }
 
 export async function fetchPublicEventsFromSupabase() {
