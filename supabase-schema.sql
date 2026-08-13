@@ -572,10 +572,10 @@ begin
   insert into public.app_sessions (token_hash, user_id, role, expires_at)
   values (public.hash_app_session_token(raw_token), target_user_id, target_role, now() + ttl);
 
-  session_token := raw_token;
-  user_id := target_user_id;
-  role := target_role;
-  expires_at := now() + ttl;
+  issue_app_session.session_token := raw_token;
+  issue_app_session.user_id := target_user_id;
+  issue_app_session.role := target_role;
+  issue_app_session.expires_at := now() + ttl;
   return next;
 end;
 $$;
@@ -587,11 +587,11 @@ stable
 security definer
 set search_path = public
 as $$
-  select user_id
+  select app_sessions.user_id
   from public.app_sessions
-  where token_hash = public.hash_app_session_token(session_token)
-    and expires_at > now()
-    and role = any(allowed_roles)
+  where app_sessions.token_hash = public.hash_app_session_token(session_token)
+    and app_sessions.expires_at > now()
+    and app_sessions.role = any(allowed_roles)
   limit 1;
 $$;
 
@@ -644,7 +644,7 @@ begin
 
   insert into public.user_accounts (user_id, account_type)
   values (next_user_id, 'guest')
-  on conflict (user_id) do update set account_type = 'guest', updated_at = now();
+  on conflict on constraint user_accounts_pkey do update set account_type = 'guest', updated_at = now();
 
   return query select * from public.issue_app_session(next_user_id, 'guest', interval '30 days');
 end;
@@ -668,7 +668,7 @@ begin
     raise exception 'Too many attempts.';
   end if;
 
-  select user_id
+  select guest_accounts.user_id
   into target_user_id
   from public.guest_accounts
   where phone_normalized = phone_value
@@ -699,7 +699,7 @@ as $$
 declare
   target_user_id uuid;
 begin
-  select user_id
+  select member_accounts.user_id
   into target_user_id
   from public.member_accounts
   where lower(login_id) = lower(trim(login_id_value))
