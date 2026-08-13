@@ -18,6 +18,7 @@ export default function GuestPhoneAuthPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = searchParams.get('mode') === 'login' ? 'login' : 'signup';
   const fromLoginTab = searchParams.get('entry') === 'tab';
+  const returnTo = getSafeReturnTo(searchParams.get('returnTo'));
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
@@ -26,7 +27,11 @@ export default function GuestPhoneAuthPage() {
   const normalizedPhone = useMemo(() => normalizeKoreanPhone(phone), [phone]);
 
   const changeMode = (nextMode: 'signup' | 'login') => {
-    setSearchParams(nextMode === 'login' ? { mode: 'login', entry: 'tab' } : { entry: 'tab' });
+    setSearchParams({
+      ...(nextMode === 'login' ? { mode: 'login' } : {}),
+      ...(returnTo ? { returnTo } : {}),
+      entry: 'tab',
+    });
     setPin('');
     setPinConfirm('');
     setError('');
@@ -58,10 +63,12 @@ export default function GuestPhoneAuthPage() {
       } else {
         await loginGuestAccount(normalizedPhone, pin);
       }
-      navigate('/profile/new');
+      navigate(returnTo ?? '/profile/new', { replace: Boolean(returnTo) });
     } catch (caughtError) {
       const message = caughtError instanceof Error && caughtError.message === '잠시 후 다시 시도해주세요.'
         ? '로그인 시도가 제한되었습니다. 잠시 후 다시 시도해주세요.'
+        : caughtError instanceof Error && caughtError.message === '이미 가입된 번호입니다'
+          ? '이미 가입된 번호입니다'
         : mode === 'signup'
           ? '비회원 계정을 만들 수 없습니다. 입력값을 확인해주세요.'
           : '휴대폰 번호 또는 PIN 번호를 확인해주세요.';
@@ -171,4 +178,9 @@ export default function GuestPhoneAuthPage() {
       </div>
     </main>
   );
+}
+
+function getSafeReturnTo(value: string | null) {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  return value;
 }

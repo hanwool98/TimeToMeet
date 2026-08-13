@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { avatarSheet, getAvatarPosition } from './ParticipantList';
+import { fetchMyTabProfileAvatar, getAppSession } from '../services/appAuth';
 
 const tabs = [
   { icon: 'calendar', label: '캘린더', path: '/' },
@@ -7,7 +10,17 @@ const tabs = [
   { icon: 'person', label: '마이페이지', path: '/mypage' },
 ];
 
-function TabIcon({ name }: { name: string }) {
+function TabIcon({
+  avatarIndex,
+  hasProfile,
+  isLoggedIn,
+  name,
+}: {
+  avatarIndex?: number;
+  hasProfile?: boolean;
+  isLoggedIn?: boolean;
+  name: string;
+}) {
   const common = {
     fill: 'none',
     stroke: 'currentColor',
@@ -42,6 +55,24 @@ function TabIcon({ name }: { name: string }) {
     );
   }
 
+  if (name === 'person' && isLoggedIn) {
+    if (hasProfile) {
+      return (
+        <span
+          aria-hidden="true"
+          className="h-10 w-10 rounded-full bg-cover bg-center bg-no-repeat shadow-[0_2px_7px_rgba(0,0,0,0.25)] ring-2 ring-white/85 blur-[1px] saturate-[0.9]"
+          style={{
+            backgroundImage: `url(${avatarSheet})`,
+            backgroundPosition: getAvatarPosition(avatarIndex ?? 0),
+            backgroundSize: '440% 330%',
+          }}
+        />
+      );
+    }
+
+    return <DefaultProfileIcon />;
+  }
+
   return (
     <svg aria-hidden="true" className="h-9 w-9 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]" viewBox="0 0 24 24">
       <circle cx="12" cy="8" r="4" {...common} />
@@ -50,9 +81,45 @@ function TabIcon({ name }: { name: string }) {
   );
 }
 
+function DefaultProfileIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-10 w-10 place-items-center rounded-full bg-[#d9d9d9] text-white shadow-[0_2px_7px_rgba(0,0,0,0.18)] ring-2 ring-white/80"
+    >
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+        <path d="M5.8 19c1.1-3.2 3.3-4.8 6.2-4.8s5.1 1.6 6.2 4.8" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+      </svg>
+    </span>
+  );
+}
+
 export default function BottomTabs() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [profileAvatar, setProfileAvatar] = useState<{ avatarIndex: number; hasProfile: boolean } | null>(null);
+  const isLoggedIn = Boolean(getAppSession());
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!isLoggedIn) {
+      setProfileAvatar(null);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    void fetchMyTabProfileAvatar().then((avatar) => {
+      if (!mounted) return;
+      setProfileAvatar(avatar);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn, location.pathname]);
 
   return (
     <nav
@@ -74,7 +141,12 @@ export default function BottomTabs() {
             onClick={() => navigate(tab.path)}
             type="button"
           >
-            <TabIcon name={tab.icon} />
+            <TabIcon
+              avatarIndex={profileAvatar?.avatarIndex}
+              hasProfile={profileAvatar?.hasProfile}
+              isLoggedIn={isLoggedIn}
+              name={tab.icon}
+            />
           </button>
           );
         })}

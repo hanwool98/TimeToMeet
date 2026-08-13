@@ -60,6 +60,29 @@ export function getAppSession() {
   return readSession(appSessionKey);
 }
 
+export function clearAppSession() {
+  clearSession(appSessionKey);
+}
+
+export async function fetchMyTabProfileAvatar() {
+  if (!supabase) return null;
+  const session = getAppSession();
+  if (!session?.token) return null;
+
+  const { data, error } = await supabase.rpc('get_my_tab_profile_avatar', {
+    session_token: session.token,
+  });
+
+  if (error) return null;
+  const response = Array.isArray(data) ? data[0] : data;
+  if (!response?.has_profile) return { hasProfile: false, avatarIndex: 0 };
+
+  return {
+    hasProfile: true,
+    avatarIndex: Number(response.avatar_index ?? 0),
+  };
+}
+
 export async function createGuestSession(phoneNormalized: string, pin: string) {
   if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
 
@@ -69,7 +92,13 @@ export async function createGuestSession(phoneNormalized: string, pin: string) {
   });
 
   const response = firstSessionResponse(data);
-  if (error || !response?.session_token) throw error ?? new Error('비회원 계정을 만들 수 없습니다.');
+  if (error) {
+    if (error.message === 'Guest account already exists.') {
+      throw new Error('이미 가입된 번호입니다');
+    }
+    throw error;
+  }
+  if (!response?.session_token) throw new Error('비회원 계정을 만들 수 없습니다.');
   return writeSession(appSessionKey, response);
 }
 

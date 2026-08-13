@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import { loginMemberSession } from '../services/appAuth';
 import { formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGuestPin } from '../services/guestPinAuth';
@@ -20,6 +20,8 @@ function showPreparing() {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnTo = getSafeReturnTo(searchParams.get('returnTo'));
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
@@ -32,7 +34,8 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await loginMemberSession(loginId, password);
-      navigate(-1);
+      if (returnTo) navigate(returnTo, { replace: true });
+      else navigate(-1);
     } catch {
       window.alert('아이디 또는 비밀번호를 확인해주세요.');
     } finally {
@@ -57,7 +60,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await loginGuestAccount(normalizedPhone, guestPin);
-      navigate('/profile/new');
+      navigate(returnTo ?? '/profile/new', { replace: Boolean(returnTo) });
     } catch (caughtError) {
       setGuestError(caughtError instanceof Error && caughtError.message === '잠시 후 다시 시도해주세요.'
         ? '로그인 시도가 제한되었습니다. 잠시 후 다시 시도해주세요.'
@@ -229,7 +232,7 @@ export default function LoginPage() {
 
           <button
             className="mx-auto mt-8 block border-b-2 border-black pb-1 text-[17px] font-black leading-none"
-            onClick={() => navigate('/guest-phone')}
+            onClick={() => navigate(returnTo ? `/guest-phone?returnTo=${encodeURIComponent(returnTo)}` : '/guest-phone')}
             type="button"
           >
             비회원으로 계속하기
@@ -241,4 +244,9 @@ export default function LoginPage() {
       </div>
     </main>
   );
+}
+
+function getSafeReturnTo(value: string | null) {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  return value;
 }
