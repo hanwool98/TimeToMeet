@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { avatarSheet, getAvatarPosition } from './ParticipantList';
 import { fetchMyTabProfileAvatar, getAppSession } from '../services/appAuth';
+import { usePaymentInvitations } from './PaymentInvitationProvider';
 
 const tabs = [
   { icon: 'calendar', label: '캘린더', path: '/' },
@@ -110,6 +111,7 @@ export default function BottomTabs() {
   const location = useLocation();
   const [profileAvatar, setProfileAvatar] = useState<{ avatarIndex: number; hasProfile: boolean } | null>(null);
   const isLoggedIn = Boolean(getAppSession());
+  const { unreadCount } = usePaymentInvitations();
 
   useEffect(() => {
     let mounted = true;
@@ -153,7 +155,7 @@ export default function BottomTabs() {
           >
             <span
               className={[
-                'grid h-11 w-11 place-items-center rounded-[15px] transition',
+                'relative grid h-11 w-11 place-items-center rounded-[15px] transition',
                 active ? 'bg-meet-blueSoft' : 'bg-transparent',
               ].join(' ')}
             >
@@ -164,6 +166,9 @@ export default function BottomTabs() {
                 isLoggedIn={isLoggedIn}
                 name={tab.icon}
               />
+              {tab.path === '/my-events' && unreadCount > 0 ? (
+                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-meet-pink" />
+              ) : null}
             </span>
             <span className={['whitespace-nowrap text-[12px] leading-none', active ? 'font-black' : 'font-bold'].join(' ')}>
               {tab.label}

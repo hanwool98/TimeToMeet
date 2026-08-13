@@ -66,6 +66,12 @@ interface SupabaseApplicationRow {
   review_notice_confirmed: boolean;
   payment_deadline: string | null;
   payment_notice_sent_at: string | null;
+  deposit_requested_at: string | null;
+  deposit_failed_at: string | null;
+  deposit_failure_reason: string | null;
+  depositor_name: string | null;
+  payment_completed_at: string | null;
+  checked_in_at: string | null;
   reviewed_at: string | null;
   submitted_at: string;
   event_date?: string;
@@ -100,6 +106,103 @@ interface PublicParticipantPreviewRow {
   age: number;
   job: string;
   avatar_index: number;
+}
+
+export interface PaymentInvitation {
+  applicationId: string;
+  createdAt: string;
+  dismissedAt?: string;
+  eventDate: string;
+  eventId: string;
+  eventTitle: string;
+  id: string;
+  paymentDeadline: string;
+  readAt?: string;
+  startTime: string;
+  status: '결제 대기';
+}
+
+export interface MyEventTicket {
+  applicationId: string;
+  applicationNo: string;
+  status: StoredApplication['status'];
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  nickname: string;
+  job: string;
+  age: number;
+  gender: '남성' | '여성';
+  applicantName: string;
+  paymentDeadline?: string;
+  paymentAmount: number;
+  depositRequestedAt?: string;
+  depositFailedAt?: string;
+  depositFailureReason?: string;
+  depositorName?: string;
+  paymentCompletedAt?: string;
+  qrToken?: string;
+  qrIssuedAt?: string;
+  checkedInAt?: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
+}
+
+interface MyEventTicketRow {
+  application_id: string;
+  application_no: string;
+  status: StoredApplication['status'];
+  event_id: string;
+  event_title: string;
+  event_date: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  nickname: string;
+  job: string;
+  age: number;
+  gender: '남성' | '여성';
+  applicant_name: string;
+  payment_deadline: string | null;
+  payment_amount: number;
+  deposit_requested_at: string | null;
+  deposit_failed_at: string | null;
+  deposit_failure_reason: string | null;
+  depositor_name: string | null;
+  payment_completed_at: string | null;
+  qr_token: string | null;
+  qr_issued_at: string | null;
+  checked_in_at: string | null;
+  bank_name: string;
+  bank_account_number: string;
+  bank_account_holder: string;
+}
+
+export interface AdminCheckInResult {
+  alreadyCheckedIn: boolean;
+  applicationNo: string;
+  checkedInAt?: string;
+  message: string;
+  nickname: string;
+  ok: boolean;
+}
+
+interface PaymentInvitationRow {
+  application_id: string;
+  created_at: string;
+  dismissed_at: string | null;
+  event_date: string;
+  event_id: string;
+  event_title: string;
+  id: string;
+  payment_deadline: string;
+  read_at: string | null;
+  start_time: string;
+  status: '결제 대기';
 }
 
 export async function ensureApplicationSession() {
@@ -262,6 +365,35 @@ export async function updateApplicationReviewInSupabase(
   if (error) throw error;
 }
 
+export async function confirmBankTransferInSupabase(application: StoredApplication) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('confirm_bank_transfer_for_session', {
+    application_id: application.dbId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
+export async function rejectBankTransferInSupabase(application: StoredApplication, reason: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('reject_bank_transfer_for_session', {
+    application_id: application.dbId,
+    failure_reason: reason,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
 export async function fetchPublicEventsFromSupabase() {
   if (!supabase) throw new Error('Supabase is not configured.');
 
@@ -362,6 +494,162 @@ export function subscribeToSupabaseChanges(onChange: () => void) {
   };
 }
 
+export async function fetchMyPaymentInvitations() {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return [];
+
+  const { data, error } = await supabase.rpc('get_my_payment_invitations', {
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+  return (data as PaymentInvitationRow[]).map(mapPaymentInvitationRow);
+}
+
+export async function fetchMyEventTickets() {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return [];
+
+  const { data, error } = await supabase.rpc('get_my_event_tickets', {
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+  return (data as MyEventTicketRow[]).map(mapMyEventTicketRow);
+}
+
+export async function requestBankTransferConfirmation(applicationId: string, depositorName: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('request_bank_transfer_confirmation', {
+    application_id: applicationId,
+    depositor_name_value: depositorName,
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+}
+
+export function subscribeToMyApplicationChanges(onChange: () => void) {
+  if (!supabase) return () => undefined;
+  const session = getAppSession();
+  if (!session?.userId) return () => undefined;
+
+  const client = supabase;
+  const channel = supabase
+    .channel(`time2meet-my-applications-${session.userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        filter: `user_id=eq.${session.userId}`,
+        schema: 'public',
+        table: 'applications',
+      },
+      () => onChange(),
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') onChange();
+    });
+
+  return () => {
+    void client.removeChannel(channel);
+  };
+}
+
+export async function checkInTicketInSupabase(eventId: string, qrToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('check_in_ticket_for_session', {
+    event_id_value: eventId,
+    qr_token_value: qrToken,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    alreadyCheckedIn: Boolean(row?.already_checked_in),
+    applicationNo: row?.application_no ?? '',
+    checkedInAt: row?.checked_in_at ?? undefined,
+    message: row?.message ?? '',
+    nickname: row?.nickname ?? '',
+    ok: Boolean(row?.ok),
+  } satisfies AdminCheckInResult;
+}
+
+export async function dismissPaymentInvitation(invitationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('mark_payment_invitation_dismissed', {
+    invitation_id: invitationId,
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+}
+
+export async function markPaymentInvitationRead(invitationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('mark_payment_invitation_read', {
+    invitation_id: invitationId,
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+}
+
+export async function markPaymentInvitationReadByApplication(applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('mark_payment_invitation_read_by_application', {
+    application_id: applicationId,
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+}
+
+export function subscribeToPaymentInvitationChanges(onChange: () => void) {
+  if (!supabase) return () => undefined;
+  const session = getAppSession();
+  if (!session?.userId) return () => undefined;
+
+  const client = supabase;
+  const channel = supabase
+    .channel(`time2meet-payment-invitations-${session.userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        filter: `user_id=eq.${session.userId}`,
+        schema: 'public',
+        table: 'payment_invitations',
+      },
+      () => onChange(),
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') onChange();
+    });
+
+  return () => {
+    void client.removeChannel(channel);
+  };
+}
+
 function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
   const age = getAge(row.birth_date);
   const profile = mapProfile(row);
@@ -376,13 +664,68 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     gender: row.gender,
     id: row.application_no,
     isNew: row.is_new,
+    checkedInAt: row.checked_in_at ?? undefined,
+    depositFailedAt: row.deposit_failed_at ?? undefined,
+    depositFailureReason: row.deposit_failure_reason ?? undefined,
+    depositRequestedAt: row.deposit_requested_at ?? undefined,
+    depositorName: row.depositor_name ?? undefined,
     paymentDeadline: row.payment_deadline ?? undefined,
+    paymentCompletedAt: row.payment_completed_at ?? undefined,
     paymentNoticeSentAt: row.payment_notice_sent_at ?? undefined,
     profile,
     returning: row.is_returning ? '재참여' : '첫 참여',
     reviewedAt: row.reviewed_at ?? undefined,
     status: row.status,
     userId: row.user_display_id ?? row.nickname,
+    userUuid: row.user_id,
+  };
+}
+
+function mapPaymentInvitationRow(row: PaymentInvitationRow): PaymentInvitation {
+  return {
+    applicationId: row.application_id,
+    createdAt: row.created_at,
+    dismissedAt: row.dismissed_at ?? undefined,
+    eventDate: row.event_date,
+    eventId: row.event_id,
+    eventTitle: row.event_title,
+    id: row.id,
+    paymentDeadline: row.payment_deadline,
+    readAt: row.read_at ?? undefined,
+    startTime: row.start_time.slice(0, 5),
+    status: row.status,
+  };
+}
+
+function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
+  return {
+    age: row.age,
+    applicantName: row.applicant_name,
+    applicationId: row.application_id,
+    applicationNo: row.application_no,
+    bankAccountHolder: row.bank_account_holder,
+    bankAccountNumber: row.bank_account_number,
+    bankName: row.bank_name,
+    checkedInAt: row.checked_in_at ?? undefined,
+    depositFailedAt: row.deposit_failed_at ?? undefined,
+    depositFailureReason: row.deposit_failure_reason ?? undefined,
+    depositRequestedAt: row.deposit_requested_at ?? undefined,
+    depositorName: row.depositor_name ?? undefined,
+    endTime: row.end_time.slice(0, 5),
+    eventDate: row.event_date,
+    eventId: row.event_id,
+    eventTitle: row.event_title,
+    gender: row.gender,
+    job: row.job,
+    location: row.location,
+    nickname: row.nickname,
+    paymentAmount: row.payment_amount,
+    paymentCompletedAt: row.payment_completed_at ?? undefined,
+    paymentDeadline: row.payment_deadline ?? undefined,
+    qrIssuedAt: row.qr_issued_at ?? undefined,
+    qrToken: row.qr_token ?? undefined,
+    startTime: row.start_time.slice(0, 5),
+    status: row.status,
   };
 }
 

@@ -43,6 +43,7 @@ function writeSession(key: string, response: SessionResponse) {
     userId: response.user_id,
   };
   window.localStorage.setItem(key, JSON.stringify(session));
+  window.dispatchEvent(new Event('time2meet:app-session-changed'));
   return session;
 }
 
@@ -54,6 +55,7 @@ function firstSessionResponse(data: unknown) {
 function clearSession(key: string) {
   window.localStorage.removeItem(key);
   window.sessionStorage.removeItem(key);
+  window.dispatchEvent(new Event('time2meet:app-session-changed'));
 }
 
 export function getAppSession() {

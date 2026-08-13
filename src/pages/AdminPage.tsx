@@ -5,7 +5,7 @@ import { clearAdminSession } from '../services/adminAuth';
 import type { EventData } from '../types/event';
 import type { StoredApplication } from '../utils/adminApplications';
 
-const adminActions = ['행사모드', '회원·신고 관리', '콘텐츠 관리'];
+const adminActions = ['회원·신고 관리', '콘텐츠 관리'];
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -60,6 +60,14 @@ export default function AdminPage() {
               type="button"
             >
               참가신청 관리
+            </button>
+            <button
+              className="min-h-[68px] w-full rounded-[22px] border border-[#f0f3f6] bg-white px-3 py-4 text-fluid-safe text-[19px] font-black text-black shadow-calendar transition active:scale-[0.99] disabled:opacity-50"
+              disabled={upcomingEvents.length === 0}
+              onClick={() => upcomingEvents[0] && navigate(`/admin/events/${upcomingEvents[0].id}/check-in`)}
+              type="button"
+            >
+              행사모드
             </button>
             {adminActions.map((label) => (
               <button

@@ -169,6 +169,41 @@ button {
   padding-bottom: calc(108px + env(safe-area-inset-bottom));
 }
 
+.payment-invitation-fade {
+  animation: paymentInvitationFade 180ms ease-out both;
+}
+
+.payment-invitation-card {
+  animation: paymentInvitationCard 460ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+@keyframes paymentInvitationFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes paymentInvitationCard {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .payment-invitation-fade,
+  .payment-invitation-card {
+    animation-duration: 1ms;
+  }
+}
+
 .text-fluid-safe {
   overflow-wrap: anywhere;
   word-break: keep-all;

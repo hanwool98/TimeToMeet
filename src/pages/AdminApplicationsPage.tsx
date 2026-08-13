@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import { getAvatarPosition } from '../components/ParticipantList';
 import useOperationalData from '../hooks/useOperationalData';
-import { updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import { confirmBankTransferInSupabase, rejectBankTransferInSupabase, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
 import type { ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -46,7 +46,7 @@ export default function AdminApplicationsPage() {
       .filter((item) => {
         if (activeTab === 'review') return item.status === '심사 대기';
         if (activeTab === 'waiting') return item.status === '참여 보류';
-        if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '환불 완료' || item.status === '자동 취소';
+        if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소';
         return item.status === '참가 확정' || item.status === '반려';
       })
       .filter((item) => (dateFilter === '전체' ? true : item.eventDate === '8월 16일'))
@@ -62,14 +62,14 @@ export default function AdminApplicationsPage() {
         return true;
       })
       .sort((a, b) => {
-        const priority = (status: StoredApplication['status']) => (status === '심사 대기' ? 0 : status === '반려' ? 1 : status === '결제 대기' ? 2 : 3);
+        const priority = (status: StoredApplication['status']) => (status === '심사 대기' ? 0 : status === '입금 확인 중' ? 1 : status === '반려' ? 2 : status === '결제 대기' ? 3 : 4);
         return priority(a.status) - priority(b.status);
       });
   }, [activeTab, applicationsWithAutoCancel, dateFilter, filter, search]);
 
   const reviewCount = applicationsWithAutoCancel.filter((item) => item.status === '심사 대기').length;
   const waitingCount = applicationsWithAutoCancel.filter((item) => item.status === '참여 보류').length;
-  const paymentCount = applicationsWithAutoCancel.filter((item) => item.status === '결제 대기' || item.status === '환불 완료' || item.status === '자동 취소').length;
+  const paymentCount = applicationsWithAutoCancel.filter((item) => item.status === '결제 대기' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소').length;
   const completedCount = applicationsWithAutoCancel.filter((item) => item.status === '참가 확정' || item.status === '반려').length;
   const newReviewCount = applicationsWithAutoCancel.filter((item) => item.status === '심사 대기' && item.isNew).length;
 
@@ -93,11 +93,19 @@ export default function AdminApplicationsPage() {
 
   const completePayment = async (applicationId: string) => {
     const applicationToUpdate = applications.find((application) => application.id === applicationId);
-    const reviewedAt = new Date().toISOString();
     if (applicationToUpdate) {
-      await updateApplicationReviewInSupabase(applicationToUpdate, '참가 확정', { reviewedAt });
+      await confirmBankTransferInSupabase(applicationToUpdate);
       await reload();
     }
+  };
+
+  const failPayment = async (applicationId: string) => {
+    const applicationToUpdate = applications.find((application) => application.id === applicationId);
+    if (!applicationToUpdate) return;
+    const reason = window.prompt('참가자에게 표시할 확인 실패 사유를 입력해주세요.', '입금 내역을 확인하지 못했습니다.');
+    if (!reason) return;
+    await rejectBankTransferInSupabase(applicationToUpdate, reason);
+    await reload();
   };
 
   if (loading) return <DataLoadingState />;
@@ -177,6 +185,7 @@ export default function AdminApplicationsPage() {
                 application={application}
                 highlighted={index === 0 && activeTab === 'review'}
                 key={application.id}
+                onPaymentFail={() => void failPayment(application.id)}
                 onReview={() => setReviewingApplication(application)}
                 onPaymentComplete={() => void completePayment(application.id)}
               />
@@ -215,11 +224,13 @@ function SummaryCard({ count, label, newCount = 0 }: { count: number; label: str
 function ApplicationCard({
   application,
   highlighted,
+  onPaymentFail,
   onPaymentComplete,
   onReview,
 }: {
   application: StoredApplication;
   highlighted: boolean;
+  onPaymentFail: () => void;
   onPaymentComplete: () => void;
   onReview: () => void;
 }) {
@@ -245,19 +256,38 @@ function ApplicationCard({
               <p className="mt-1 text-meet-blue">결제 기한 {formatDateTime(application.paymentDeadline)}</p>
             </div>
           ) : null}
+          {application.status === '입금 확인 중' ? (
+            <div className="mt-3 rounded-[12px] bg-meet-pinkSoft px-3 py-2 text-[12px] font-black leading-snug text-[#263149]">
+              <p>입금 확인 요청</p>
+              <p className="mt-1 text-meet-pink">
+                {application.depositRequestedAt ? formatDateTime(application.depositRequestedAt) : '요청 시간 없음'} · 입금자 {application.depositorName || application.profile?.name || '-'}
+              </p>
+            </div>
+          ) : null}
         </div>
         <StatusBadge status={application.status} />
       </div>
-      {application.status === '결제 대기' ? (
+      {application.status === '결제 대기' || application.status === '입금 확인 중' ? (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <DecisionTime application={application} />
-          <button
-            className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white"
-            onClick={onPaymentComplete}
-            type="button"
-          >
-            결제 완료
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white disabled:bg-[#d9d9d9]"
+              disabled={application.status !== '입금 확인 중'}
+              onClick={onPaymentComplete}
+              type="button"
+            >
+              참가 확정
+            </button>
+            <button
+              className="h-10 rounded-[12px] bg-[#d9d9d9] px-4 text-[13px] font-black text-black disabled:opacity-50"
+              disabled={application.status !== '입금 확인 중'}
+              onClick={onPaymentFail}
+              type="button"
+            >
+              입금 내역 없음
+            </button>
+          </div>
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
@@ -285,7 +315,7 @@ function DecisionTime({ application }: { application: StoredApplication }) {
 }
 
 function StatusBadge({ status }: { status: StoredApplication['status'] }) {
-  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : 'bg-meet-blueSoft text-meet-blue';
+  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : status === '입금 확인 중' ? 'bg-meet-pinkSoft text-meet-pink' : 'bg-meet-blueSoft text-meet-blue';
   return <span className={`max-w-[44%] shrink-0 truncate rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
 }
 
