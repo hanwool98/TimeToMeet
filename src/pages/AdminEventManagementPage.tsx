@@ -45,11 +45,11 @@ export default function AdminEventManagementPage() {
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 pb-8 pt-2">
-        <header className="mb-1 flex items-center gap-1">
-          <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
-          <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
+    <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
+      <div className="mobile-container mx-auto flex min-h-screen w-full max-w-full min-w-0 flex-col px-3 pb-8 pt-2">
+        <header className="mb-1 flex max-w-full min-w-0 items-center gap-1 overflow-hidden">
+          <img alt="time2meet" className="h-auto w-[150px] max-w-[60%] shrink-0 object-contain" src="/assets/time2meet-logo.png" />
+          <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
         <Calendar
@@ -61,8 +61,8 @@ export default function AdminEventManagementPage() {
           today={today}
         />
 
-        <section className="mt-8 rounded-[28px] bg-meet-blueSoft px-5 py-6">
-          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] font-extrabold text-[#8a8a8a]">
+        <section className="mt-8 w-full max-w-full min-w-0 rounded-[28px] bg-meet-blueSoft px-5 py-6">
+          <div className="mb-2 flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[15px] font-extrabold text-[#8a8a8a]">
             <span className="min-w-0 text-fluid-safe">{formatKoreanDate(selectedDate)}</span>
             {selectedEvent ? (
               <>

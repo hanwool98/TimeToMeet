@@ -108,6 +108,8 @@ create table if not exists public.events (
   venue_booked boolean not null default false,
   male_capacity integer not null default 10,
   female_capacity integer not null default 10,
+  male_price integer not null default 50000,
+  female_price integer not null default 40000,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -409,7 +411,9 @@ insert into public.events (
   location,
   venue_booked,
   male_capacity,
-  female_capacity
+  female_capacity,
+  male_price,
+  female_price
 )
 values (
   'seongnam-rotation-2026-08-16',
@@ -421,7 +425,9 @@ values (
   '성남',
   false,
   10,
-  10
+  10,
+  50000,
+  40000
 )
 on conflict (id) do update set
   title = excluded.title,
@@ -432,7 +438,11 @@ on conflict (id) do update set
   location = excluded.location,
   venue_booked = excluded.venue_booked,
   male_capacity = excluded.male_capacity,
-  female_capacity = excluded.female_capacity;
+  female_capacity = excluded.female_capacity,
+  male_price = excluded.male_price,
+  female_price = excluded.female_price;
+
+drop function if exists public.get_public_event_summaries();
 
 create or replace function public.get_public_event_summaries()
 returns table (
@@ -444,6 +454,8 @@ returns table (
   end_time time,
   location text,
   venue_booked boolean,
+  male_price integer,
+  female_price integer,
   current_participants integer,
   target_participants integer,
   male_applications integer,
@@ -465,6 +477,8 @@ as $$
     e.end_time,
     e.location,
     e.venue_booked,
+    e.male_price,
+    e.female_price,
     count(a.id) filter (where a.status = '참가 확정')::integer as current_participants,
     (e.male_capacity + e.female_capacity)::integer as target_participants,
     count(a.id) filter (where a.gender = '남성')::integer as male_applications,
@@ -965,6 +979,9 @@ $$;
 
 grant execute on function public.update_application_review_for_session(text, uuid, public.application_status, timestamptz, timestamptz, timestamptz) to anon, authenticated;
 
+drop function if exists public.upsert_event_for_admin_session(text, text, text, text, date, time, time, text, boolean, integer, integer);
+drop function if exists public.upsert_event_for_admin_session(text, text, text, text, date, time, time, text, integer, integer, boolean, integer, integer);
+
 create or replace function public.upsert_event_for_admin_session(
   session_token text,
   event_id_value text,
@@ -974,6 +991,8 @@ create or replace function public.upsert_event_for_admin_session(
   event_start_time time,
   event_end_time time,
   event_location text,
+  event_male_price integer,
+  event_female_price integer,
   event_venue_booked boolean,
   male_capacity_value integer,
   female_capacity_value integer
@@ -996,6 +1015,8 @@ begin
     start_time,
     end_time,
     location,
+    male_price,
+    female_price,
     venue_booked,
     male_capacity,
     female_capacity
@@ -1008,6 +1029,8 @@ begin
     event_start_time,
     event_end_time,
     event_location,
+    event_male_price,
+    event_female_price,
     event_venue_booked,
     male_capacity_value,
     female_capacity_value
@@ -1019,6 +1042,8 @@ begin
     start_time = excluded.start_time,
     end_time = excluded.end_time,
     location = excluded.location,
+    male_price = excluded.male_price,
+    female_price = excluded.female_price,
     venue_booked = excluded.venue_booked,
     male_capacity = excluded.male_capacity,
     female_capacity = excluded.female_capacity,
@@ -1026,7 +1051,7 @@ begin
 end;
 $$;
 
-grant execute on function public.upsert_event_for_admin_session(text, text, text, text, date, time, time, text, boolean, integer, integer) to anon, authenticated;
+grant execute on function public.upsert_event_for_admin_session(text, text, text, text, date, time, time, text, integer, integer, boolean, integer, integer) to anon, authenticated;
 
 create or replace function public.delete_event_for_admin_session(
   session_token text,

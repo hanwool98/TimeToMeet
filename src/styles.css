@@ -43,6 +43,114 @@ button {
   font: inherit;
 }
 
+.admin-page,
+.admin-page * {
+  box-sizing: border-box;
+}
+
+.admin-page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.admin-page main,
+.admin-page section,
+.admin-page form,
+.admin-page label,
+.admin-page div {
+  min-width: 0;
+}
+
+.admin-page input:not([type='checkbox']):not([type='radio']),
+.admin-page select,
+.admin-page textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-page button {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-page input[type='date'],
+.admin-page input[type='time'],
+.admin-page input[type='datetime-local'],
+.admin-page select {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.admin-page input[type='date']::-webkit-date-and-time-value,
+.admin-page input[type='time']::-webkit-date-and-time-value,
+.admin-page input[type='datetime-local']::-webkit-date-and-time-value {
+  min-width: 0;
+  width: 100%;
+  text-align: inherit;
+}
+
+.admin-page input[type='date']::-webkit-calendar-picker-indicator,
+.admin-page input[type='time']::-webkit-calendar-picker-indicator,
+.admin-page input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  margin-inline-start: 0;
+  flex-shrink: 0;
+}
+
+.app-page,
+.app-page * {
+  box-sizing: border-box;
+}
+
+.app-page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.app-page main,
+.app-page section,
+.app-page form,
+.app-page label,
+.app-page div {
+  min-width: 0;
+}
+
+.app-page input:not([type='checkbox']):not([type='radio']),
+.app-page select,
+.app-page textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.app-page button {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.app-page input[type='date'],
+.app-page input[type='time'],
+.app-page input[type='datetime-local'],
+.app-page select {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.app-page input[type='date']::-webkit-date-and-time-value,
+.app-page input[type='time']::-webkit-date-and-time-value,
+.app-page input[type='datetime-local']::-webkit-date-and-time-value {
+  min-width: 0;
+  width: 100%;
+}
+
 .min-h-screen {
   min-height: 100dvh !important;
 }

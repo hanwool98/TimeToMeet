@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.admin-delete-event]
 verify_jwt = false
+
+[functions.submit-application]
+verify_jwt = false

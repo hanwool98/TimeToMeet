@@ -46,7 +46,7 @@ function Field({
   label: string;
 }) {
   return (
-    <label className="block">
+    <label className="block w-full max-w-full min-w-0">
       <span className="mb-2 block text-[15px] font-black text-black">{label}</span>
       {children}
     </label>
@@ -54,7 +54,7 @@ function Field({
 }
 
 const inputClassName =
-  'h-12 min-w-0 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold text-black outline-none focus:ring-2 focus:ring-meet-blue';
+  'h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-meet-blueSoft px-3 text-center text-[15px] font-bold text-black outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]';
 
 export default function AdminEventCreatePage() {
   const navigate = useNavigate();
@@ -81,6 +81,8 @@ export default function AdminEventCreatePage() {
   const [deadline, setDeadline] = useState(toDateTimeInputValue(defaultDeadline));
   const [maleCapacity, setMaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
   const [femaleCapacity, setFemaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
+  const [malePrice, setMalePrice] = useState(editingEvent ? String(editingEvent.malePrice) : '50000');
+  const [femalePrice, setFemalePrice] = useState(editingEvent ? String(editingEvent.femalePrice) : '40000');
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
@@ -96,6 +98,8 @@ export default function AdminEventCreatePage() {
     setEndTime(editingEvent.endTime);
     setMaleCapacity(String(editingEvent.targetParticipants / 2));
     setFemaleCapacity(String(editingEvent.targetParticipants / 2));
+    setMalePrice(String(editingEvent.malePrice));
+    setFemalePrice(String(editingEvent.femalePrice));
     setRegion(`${editingEvent.location}시`);
     setVenueBooked(editingEvent.venueBooked);
   }, [editingEvent]);
@@ -110,6 +114,8 @@ export default function AdminEventCreatePage() {
       endTime,
       location: region.replace('시', ''),
       venueBooked,
+      malePrice: Number(malePrice) || 0,
+      femalePrice: Number(femalePrice) || 0,
       currentParticipants: editingEvent?.currentParticipants ?? 0,
       targetParticipants: Number(maleCapacity) + Number(femaleCapacity),
     };
@@ -134,18 +140,18 @@ export default function AdminEventCreatePage() {
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 pb-8 pt-2">
-        <header className="mb-1 flex items-center gap-1">
-          <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
-          <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
+    <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
+      <div className="mobile-container mx-auto flex min-h-screen w-full max-w-full min-w-0 flex-col px-3 pb-8 pt-2">
+        <header className="mb-1 flex max-w-full min-w-0 items-center gap-1 overflow-hidden">
+          <img alt="time2meet" className="h-auto w-[150px] max-w-[60%] shrink-0 object-contain" src="/assets/time2meet-logo.png" />
+          <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
-        <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-4 py-6 shadow-calendar min-[380px]:px-5">
+        <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-4 py-6 shadow-calendar min-[380px]:px-5">
           <h1 className="text-fluid-safe text-[25px] font-black leading-tight">{pageTitle}</h1>
           <p className="mt-3 text-[18px] font-black text-meet-blue">{formatKoreanDate(eventDate)}</p>
 
-          <form className="mt-7 space-y-5" onSubmit={(event) => event.preventDefault()}>
+          <form className="mt-7 w-full max-w-full min-w-0 space-y-5" onSubmit={(event) => event.preventDefault()}>
             <Field label="행사 종류">
               <select className={inputClassName} onChange={(event) => setEventType(event.target.value)} value={eventType}>
                 {eventTypes.map((type) => (
@@ -166,9 +172,9 @@ export default function AdminEventCreatePage() {
 
             <div>
               <span className="mb-2 block text-[15px] font-black text-black">진행 시간</span>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+              <div className="grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                 <input className={inputClassName} onChange={(event) => setStartTime(event.target.value)} type="time" value={startTime} />
-                <span className="text-[18px] font-black text-[#777]">~</span>
+                <span className="shrink-0 text-[18px] font-black text-[#777]">~</span>
                 <input className={inputClassName} onChange={(event) => setEndTime(event.target.value)} type="time" value={endTime} />
               </div>
             </div>
@@ -177,11 +183,11 @@ export default function AdminEventCreatePage() {
               <input className={inputClassName} onChange={(event) => setDeadline(event.target.value)} type="datetime-local" value={deadline} />
             </Field>
 
-            <div className="rounded-[24px] bg-meet-blueSoft p-4">
+            <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">
               <h2 className="text-[17px] font-black">모집 인원</h2>
-              <div className="mt-4 grid grid-cols-2 gap-2 min-[380px]:gap-3">
+              <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2 min-[380px]:gap-3">
                 <Field label="남성">
-                  <select className="h-12 min-w-0 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setMaleCapacity(event.target.value)} value={maleCapacity}>
+                  <select className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]" onChange={(event) => setMaleCapacity(event.target.value)} value={maleCapacity}>
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
@@ -190,13 +196,37 @@ export default function AdminEventCreatePage() {
                   </select>
                 </Field>
                 <Field label="여성">
-                  <select className="h-12 min-w-0 w-full rounded-[18px] bg-white px-4 text-[16px] font-bold outline-none focus:ring-2 focus:ring-meet-blue" onChange={(event) => setFemaleCapacity(event.target.value)} value={femaleCapacity}>
+                  <select className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]" onChange={(event) => setFemaleCapacity(event.target.value)} value={femaleCapacity}>
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
                       </option>
                     ))}
                   </select>
+                </Field>
+              </div>
+            </div>
+
+            <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">
+              <h2 className="text-[17px] font-black">참가비</h2>
+              <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2 min-[380px]:gap-3">
+                <Field label="남성">
+                  <input
+                    className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    inputMode="numeric"
+                    onChange={(event) => setMalePrice(event.target.value.replace(/\D/g, ''))}
+                    placeholder="50000"
+                    value={malePrice}
+                  />
+                </Field>
+                <Field label="여성">
+                  <input
+                    className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    inputMode="numeric"
+                    onChange={(event) => setFemalePrice(event.target.value.replace(/\D/g, ''))}
+                    placeholder="40000"
+                    value={femalePrice}
+                  />
                 </Field>
               </div>
             </div>
@@ -217,7 +247,7 @@ export default function AdminEventCreatePage() {
 
             <div>
               <span className="mb-2 block text-[15px] font-black text-black">대관여부</span>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <button
                   className={[
                     'h-12 rounded-[18px] text-[16px] font-black transition active:scale-[0.99]',
@@ -241,7 +271,7 @@ export default function AdminEventCreatePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3 pt-2">
               <button
                 className="h-14 rounded-[18px] bg-[#e8e8e8] text-[16px] font-black text-black transition active:scale-[0.99]"
                 onClick={() => navigate(cancelPath)}

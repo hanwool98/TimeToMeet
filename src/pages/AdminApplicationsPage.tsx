@@ -104,19 +104,19 @@ export default function AdminApplicationsPage() {
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mobile-container mx-auto min-h-screen px-3 pb-8 pt-2">
-        <header className="mb-1 flex items-center gap-1">
-          <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
-          <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
+    <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
+      <div className="mobile-container mx-auto min-h-screen w-full max-w-full min-w-0 px-3 pb-8 pt-2">
+        <header className="mb-1 flex max-w-full min-w-0 items-center gap-1 overflow-hidden">
+          <img alt="time2meet" className="h-auto w-[150px] max-w-[60%] shrink-0 object-contain" src="/assets/time2meet-logo.png" />
+          <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
-        <section className="rounded-[22px] border border-[#f0f3f6] bg-white px-4 py-5 shadow-calendar">
+        <section className="w-full max-w-full min-w-0 rounded-[22px] border border-[#f0f3f6] bg-white px-4 py-5 shadow-calendar">
           <h1 className="text-center text-[22px] font-black">참가 신청 관리</h1>
 
-          <label className="mx-auto mt-5 flex h-12 w-full max-w-[210px] items-center gap-3 rounded-[18px] border border-[#edf1f5] bg-white px-4 shadow-sm">
+          <label className="mx-auto mt-5 flex h-12 w-full max-w-[210px] min-w-0 items-center gap-3 rounded-[18px] border border-[#edf1f5] bg-white px-4 shadow-sm">
             <span aria-hidden="true" className="text-[18px]">📅</span>
-            <select className="min-w-0 flex-1 bg-transparent text-center text-[17px] font-black outline-none" onChange={(event) => setDateFilter(event.target.value)} value={dateFilter}>
+            <select className="w-full max-w-full min-w-0 flex-1 appearance-none bg-transparent text-center text-[17px] font-black outline-none" onChange={(event) => setDateFilter(event.target.value)} value={dateFilter}>
               {dateOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -125,14 +125,14 @@ export default function AdminApplicationsPage() {
             </select>
           </label>
 
-          <div className="mt-5 grid grid-cols-2 gap-2 min-[390px]:grid-cols-4">
+          <div className="mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2 min-[390px]:grid-cols-[repeat(4,minmax(0,1fr))]">
             <SummaryCard count={reviewCount} label="심사 대기" newCount={newReviewCount} />
             <SummaryCard count={waitingCount} label="참여 대기" />
             <SummaryCard count={paymentCount} label="결제·환불" />
             <SummaryCard count={completedCount} label="심사 완료" />
           </div>
 
-          <div className="mt-5 grid grid-cols-4 border-b border-[#edf1f5] text-center">
+          <div className="mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(4,minmax(0,1fr))] border-b border-[#edf1f5] text-center">
             {tabs.map((tab) => (
               <button
                 className={[
@@ -150,18 +150,18 @@ export default function AdminApplicationsPage() {
             ))}
           </div>
 
-          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_54px] gap-2 min-[380px]:gap-3">
-            <label className="flex h-12 items-center gap-2 rounded-[16px] border border-[#edf1f5] bg-white px-4 shadow-sm">
+          <div className="mt-5 grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)_54px] gap-2 min-[380px]:gap-3">
+            <label className="flex h-12 w-full max-w-full min-w-0 items-center gap-2 rounded-[16px] border border-[#edf1f5] bg-white px-4 shadow-sm">
               <span className="text-[18px] text-[#9aa3ad]">⌕</span>
               <input
-                className="min-w-0 flex-1 text-[14px] font-extrabold outline-none placeholder:text-[#aeb6bf]"
+                className="w-full max-w-full min-w-0 flex-1 text-[14px] font-extrabold outline-none placeholder:text-[#aeb6bf]"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="신청번호 · 아이디 검색"
                 value={search}
               />
             </label>
-            <label className="grid h-12 place-items-center rounded-[16px] border border-[#edf1f5] bg-white shadow-sm">
-              <select aria-label="필터" className="h-full w-full rounded-[16px] bg-transparent text-center text-[12px] font-black outline-none" onChange={(event) => setFilter(event.target.value)} value={filter}>
+            <label className="grid h-12 w-full max-w-full min-w-0 place-items-center rounded-[16px] border border-[#edf1f5] bg-white shadow-sm">
+              <select aria-label="필터" className="h-full w-full max-w-full min-w-0 appearance-none rounded-[16px] bg-transparent text-center text-[12px] font-black outline-none" onChange={(event) => setFilter(event.target.value)} value={filter}>
                 {filterOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -202,7 +202,7 @@ export default function AdminApplicationsPage() {
 
 function SummaryCard({ count, label, newCount = 0 }: { count: number; label: string; newCount?: number }) {
   return (
-    <section className="min-w-0 rounded-[14px] border border-[#edf1f5] bg-white px-3 py-4 shadow-sm">
+    <section className="w-full max-w-full min-w-0 rounded-[14px] border border-[#edf1f5] bg-white px-3 py-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <p className="text-fluid-safe text-[13px] font-black text-[#555]">{label}</p>
         {newCount > 0 ? <span className="text-[18px] font-black italic text-meet-pink">N</span> : null}
@@ -224,7 +224,7 @@ function ApplicationCard({
   onReview: () => void;
 }) {
   return (
-    <article className={['min-w-0 rounded-[14px] border bg-white px-4 py-4 shadow-sm', highlighted ? 'border-meet-blue' : 'border-[#edf1f5]'].join(' ')}>
+    <article className={['w-full max-w-full min-w-0 rounded-[14px] border bg-white px-4 py-4 shadow-sm', highlighted ? 'border-meet-blue' : 'border-[#edf1f5]'].join(' ')}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -286,7 +286,7 @@ function DecisionTime({ application }: { application: StoredApplication }) {
 
 function StatusBadge({ status }: { status: StoredApplication['status'] }) {
   const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : 'bg-meet-blueSoft text-meet-blue';
-  return <span className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
+  return <span className={`max-w-[44%] shrink-0 truncate rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
 }
 
 function formatDateTime(value: string) {
@@ -317,7 +317,7 @@ function ReviewProfileModal({
       role="dialog"
     >
       <section
-        className="max-h-[88dvh] w-full max-w-[390px] overflow-y-auto rounded-[22px] bg-white p-4 shadow-calendar min-[380px]:p-5"
+        className="max-h-[88dvh] w-full max-w-[390px] min-w-0 overflow-y-auto rounded-[22px] bg-white p-4 shadow-calendar min-[380px]:p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -357,7 +357,7 @@ function ReviewProfileModal({
           <ReviewRow label="21. 심사 후 개별 연락 안내" value={profile.reviewNotice} />
         </div>
 
-        <div className="sticky bottom-0 mt-5 grid grid-cols-3 gap-3 bg-white pt-3">
+        <div className="sticky bottom-0 mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-3 bg-white pt-3">
           <button
             aria-label="통과"
             className="grid h-12 place-items-center rounded-[16px] bg-meet-blue text-[24px] font-black text-white"
@@ -390,7 +390,7 @@ function ReviewProfileModal({
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <section className="min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[12px] font-black text-[#8a8a8a]">{label}</p>
       <p className="mt-1 text-fluid-safe text-[15px] font-black leading-snug text-black">{value}</p>
     </section>
@@ -399,7 +399,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 
 function ReviewImage({ label, offset, value }: { label: string; offset: number; value: string }) {
   return (
-    <section className="rounded-[16px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[12px] font-black text-[#8a8a8a]">{label}</p>
       <p className="mt-1 text-[15px] font-black text-black">{value}</p>
       <div
@@ -416,7 +416,7 @@ function ReviewImage({ label, offset, value }: { label: string; offset: number; 
 
 function ReviewPhotos({ value }: { value: string }) {
   return (
-    <section className="rounded-[16px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[12px] font-black text-[#8a8a8a]">11. 프로필 사진</p>
       <p className="mt-1 text-[15px] font-black text-black">{value}</p>
       <div className="mt-3 space-y-3">
@@ -440,7 +440,7 @@ function ReviewPhotos({ value }: { value: string }) {
 
 function ReviewVoice() {
   return (
-    <section className="rounded-[16px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[16px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[12px] font-black text-[#8a8a8a]">12. 너의 목소리가 보여</p>
       <button
         className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-white text-[14px] font-black text-meet-pink shadow-sm"

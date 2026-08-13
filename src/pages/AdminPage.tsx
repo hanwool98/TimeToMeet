@@ -30,16 +30,16 @@ export default function AdminPage() {
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mobile-container mx-auto flex min-h-screen flex-col px-3 pt-2">
-        <header className="mb-1 flex items-center gap-1">
-          <img alt="time2meet" className="h-auto w-[150px] object-contain" src="/assets/time2meet-logo.png" />
-          <span className="translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
+    <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
+      <div className="mobile-container mx-auto flex min-h-screen w-full max-w-full min-w-0 flex-col px-3 pt-2">
+        <header className="mb-1 flex max-w-full min-w-0 items-center gap-1 overflow-hidden">
+          <img alt="time2meet" className="h-auto w-[150px] max-w-[60%] shrink-0 object-contain" src="/assets/time2meet-logo.png" />
+          <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
-        <section className="rounded-[30px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
-          <div className="overflow-x-auto rounded-[28px] bg-meet-blueSoft p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] [-webkit-overflow-scrolling:touch]">
-            <div className="flex snap-x snap-mandatory gap-3">
+        <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
+          <div className="w-full max-w-full min-w-0 overflow-x-auto rounded-[28px] bg-meet-blueSoft p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] [-webkit-overflow-scrolling:touch]">
+            <div className="flex w-full max-w-full min-w-0 snap-x snap-mandatory gap-3">
               {upcomingEvents.map((event) => (
                 <DashboardEventCard applications={applications} event={event} key={event.id} />
               ))}
@@ -92,7 +92,7 @@ function DashboardEventCard({ applications, event }: { applications: StoredAppli
   const paymentCount = eventApplications.filter((application) => application.status === '결제 대기').length;
 
   return (
-    <div className="w-full min-w-full snap-center rounded-[24px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
+    <div className="w-full max-w-full min-w-0 shrink-0 basis-full snap-center rounded-[24px] border border-[#f0f3f6] bg-white px-5 py-6 shadow-calendar">
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-[22px] font-black leading-none">다가오는 행사</h1>
         <p className="text-[18px] font-black italic leading-none text-meet-blue">D-{getDaysUntilEvent(event.date)}</p>
@@ -106,7 +106,7 @@ function DashboardEventCard({ applications, event }: { applications: StoredAppli
           className={['mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full', event.venueBooked ? 'bg-green-500' : 'bg-red-500'].join(' ')}
         />
       </div>
-      <div className="mt-6 grid grid-cols-2 gap-4 text-[15px] font-black leading-none">
+      <div className="mt-6 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4 text-[15px] font-black leading-none">
         <p>남성&nbsp; {event.maleConfirmed ?? 0}/10</p>
         <p>여성&nbsp; {event.femaleConfirmed ?? 0}/10</p>
       </div>

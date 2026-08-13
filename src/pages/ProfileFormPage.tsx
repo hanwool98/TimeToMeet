@@ -50,8 +50,51 @@ function getAgeOnEventDate(birthDate: string) {
   return age;
 }
 
-function filePreview(file?: File) {
-  return file ? URL.createObjectURL(file) : '';
+function useObjectUrl(file?: Blob | null) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    if (!file) {
+      setUrl('');
+      return undefined;
+    }
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return url;
+}
+
+function useObjectUrls(files: File[]) {
+  const [urls, setUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    const nextUrls = files.map((file) => URL.createObjectURL(file));
+    setUrls(nextUrls);
+    return () => nextUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [files]);
+
+  return urls;
+}
+
+function getSupportedAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+}
+
+function getAudioFileName(mimeType: string) {
+  if (mimeType.includes('mp4')) return 'voice-intro.m4a';
+  if (mimeType.includes('ogg')) return 'voice-intro.ogg';
+  if (mimeType.includes('webm')) return 'voice-intro.webm';
+  return 'voice-intro.audio';
 }
 
 function BackIcon() {
@@ -65,7 +108,7 @@ function BackIcon() {
 
 function Section({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
+    <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
       <h2 className="mb-5 text-fluid-safe text-[22px] font-black leading-tight">{title}</h2>
       {children}
     </section>
@@ -81,30 +124,60 @@ function UploadBox({
   label,
   multiple = false,
   onFiles,
+  onRemove,
+  previewUrl,
 }: {
   label: string;
   multiple?: boolean;
   onFiles: (files: File[]) => void;
+  onRemove?: () => void;
+  previewUrl?: string;
 }) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [showChoices, setShowChoices] = useState(false);
 
-  const handleChange = (files: FileList | null) => {
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
     onFiles(Array.from(files ?? []));
+    event.target.value = '';
     setShowChoices(false);
   };
 
   return (
     <div>
-      <button
-        aria-label={label}
-        className="grid aspect-square w-full place-items-center rounded-[22px] bg-meet-blueSoft text-[42px] font-black text-meet-blue"
-        onClick={() => setShowChoices((current) => !current)}
-        type="button"
-      >
-        +
-      </button>
+      <div className="relative">
+        <button
+          aria-label={previewUrl ? `${label} 변경` : label}
+          className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[22px] bg-meet-blueSoft text-meet-blue"
+          onClick={() => setShowChoices((current) => !current)}
+          type="button"
+        >
+          {previewUrl ? (
+            <>
+              <img alt={`${label} 미리보기`} className="h-full w-full object-cover" src={previewUrl} />
+              <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1.5 text-[12px] font-black text-white">
+                사진 변경
+              </span>
+            </>
+          ) : (
+            <span className="text-center">
+              <span className="block text-[42px] font-black leading-none">+</span>
+              <span className="mt-2 block text-[13px] font-black">사진 추가</span>
+            </span>
+          )}
+        </button>
+        {previewUrl && onRemove ? (
+          <button
+            aria-label={`${label} 삭제`}
+            className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/65 text-[18px] font-black leading-none text-white"
+            onClick={onRemove}
+            type="button"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
       {showChoices ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
@@ -128,7 +201,7 @@ function UploadBox({
         capture="environment"
         className="hidden"
         multiple={multiple}
-        onChange={(event) => handleChange(event.target.files)}
+        onChange={handleChange}
         ref={cameraInputRef}
         type="file"
       />
@@ -136,7 +209,7 @@ function UploadBox({
         accept="image/*"
         className="hidden"
         multiple={multiple}
-        onChange={(event) => handleChange(event.target.files)}
+        onChange={handleChange}
         ref={imageInputRef}
         type="file"
       />
@@ -178,6 +251,7 @@ export default function ProfileFormPage() {
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saved'>('idle');
   const [countdown, setCountdown] = useState(5);
   const [micError, setMicError] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [height, setHeight] = useState('');
   const [job, setJob] = useState('');
   const [employmentProof, setEmploymentProof] = useState<File | null>(null);
@@ -193,9 +267,9 @@ export default function ProfileFormPage() {
 
   const age = useMemo(() => getAgeOnEventDate(birthDate), [birthDate]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
-  const idPreview = useMemo(() => filePreview(idPhoto ?? undefined), [idPhoto]);
-  const employmentPreview = useMemo(() => filePreview(employmentProof ?? undefined), [employmentProof]);
-  const photoPreviews = useMemo(() => profilePhotos.map((file) => URL.createObjectURL(file)), [profilePhotos]);
+  const idPreview = useObjectUrl(idPhoto);
+  const employmentPreview = useObjectUrl(employmentProof);
+  const photoPreviews = useObjectUrls(profilePhotos);
   const allConsentsRead = consentRead.privacy && consentRead.thirdParty;
 
   useEffect(() => {
@@ -235,6 +309,14 @@ export default function ProfileFormPage() {
 
     void loadDraft();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
 
   useEffect(() => {
     if (!draftLoadedRef.current) return;
@@ -316,12 +398,20 @@ export default function ProfileFormPage() {
   const startRecording = async () => {
     setMicError('');
     try {
+      if (typeof MediaRecorder === 'undefined') {
+        setMicError('현재 브라우저에서는 녹음을 지원하지 않습니다. Safari 또는 Chrome 최신 버전에서 다시 시도해주세요.');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const mimeType = getSupportedAudioMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
       chunksRef.current = [];
       setAudioBlob(null);
-      setAudioUrl('');
+      setAudioUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return '';
+      });
       setCountdown(5);
       setRecordingState('recording');
 
@@ -331,7 +421,8 @@ export default function ProfileFormPage() {
 
       recorder.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blobType = recorder.mimeType || mimeType || chunksRef.current[0]?.type || 'audio/mp4';
+        const blob = new Blob(chunksRef.current, { type: blobType });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         setRecordingState('saved');
@@ -339,23 +430,28 @@ export default function ProfileFormPage() {
         if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
       };
 
-      recorder.start();
+      recorder.start(250);
       countdownTimerRef.current = window.setInterval(() => {
         setCountdown((current) => Math.max(0, current - 1));
       }, 1000);
-      stopTimerRef.current = window.setTimeout(() => recorder.stop(), 5000);
-    } catch {
+      stopTimerRef.current = window.setTimeout(() => {
+        if (recorder.state !== 'inactive') recorder.stop();
+      }, 5000);
+    } catch (error) {
+      console.error('Voice recording failed', error);
       setMicError('마이크 권한이 거부되었거나 사용할 수 없습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.');
       setRecordingState('idle');
     }
   };
 
   const stopRecording = () => {
-    recorderRef.current?.stop();
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
   };
 
   const submit = async () => {
+    if (submitting) return;
     setTouched(true);
+    setSubmitError('');
     if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
 
     setSubmitting(true);
@@ -399,10 +495,14 @@ export default function ProfileFormPage() {
         residence: location,
         returning: false,
         voiceIntro: audioBlob,
+        voiceIntroFileName: getAudioFileName(audioBlob.type),
       });
       navigate('/application-complete');
-    } catch {
-      window.alert('신청서 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } catch (error) {
+      console.error('Application submit failed', error);
+      const message = error instanceof Error ? error.message : '신청서 저장에 실패했습니다. 잠시 후 다시 시도해주세요.';
+      setSubmitError(message);
+      window.alert(message);
     } finally {
       setSubmitting(false);
     }
@@ -426,8 +526,9 @@ export default function ProfileFormPage() {
   };
 
   const removeProfilePhoto = (index: number) => {
+    const nextLength = Math.max(0, profilePhotos.length - 1);
     setProfilePhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
-    setSelectedPhotoIndex((current) => Math.max(0, Math.min(current >= index ? current - 1 : current, profilePhotos.length - 2)));
+    setSelectedPhotoIndex((current) => Math.max(0, Math.min(current >= index ? current - 1 : current, nextLength - 1)));
     if (representativeIndex === index) {
       setRepresentativeIndex(0);
       resetRepresentativeAdjustment();
@@ -482,8 +583,8 @@ export default function ProfileFormPage() {
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-3 py-12 text-black min-[380px]:px-4">
-      <div className="mobile-container mx-auto">
+    <main className="app-page min-h-screen w-full max-w-full min-w-0 bg-white px-3 py-12 text-black min-[380px]:px-4">
+      <div className="mobile-container mx-auto w-full max-w-full min-w-0">
         <header className="relative mb-8 rounded-[30px] border border-[#f0f3f6] bg-white px-4 pb-7 pt-16 text-center shadow-calendar min-[380px]:px-5">
           <button aria-label="뒤로 가기" className="absolute left-5 top-5 grid h-10 w-10 place-items-center text-black" onClick={() => navigate(-1)} type="button">
             <BackIcon />
@@ -494,7 +595,7 @@ export default function ProfileFormPage() {
           <h1 className="text-fluid-safe text-[23px] font-black leading-tight">타임투밋 행사 참여 위한 프로필 작성</h1>
         </header>
 
-        <form className="space-y-8" onSubmit={(event) => event.preventDefault()}>
+        <form className="w-full max-w-full min-w-0 space-y-8" onSubmit={(event) => event.preventDefault()}>
           <Section title="1. 참가 전 꼭 확인해주세요">
             <div className="rounded-[22px] border-4 border-meet-blue bg-[#f8fbff] p-3 text-[13px] font-extrabold leading-relaxed text-[#777] min-[380px]:p-4">
               <ol className="text-fluid-safe list-decimal space-y-2 pl-4">
@@ -571,7 +672,7 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="5. 성별">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               {['남성', '여성'].map((option) => (
                 <button className={`h-12 rounded-[18px] text-[16px] font-black ${gender === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setGender(option)} type="button">
                   {option}
@@ -602,8 +703,12 @@ export default function ProfileFormPage() {
 
           <Section title="9. 본인확인용 신분증 사진 첨부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">민감한 정보는 가려도 되며 이름과 생년월일만 확인되면 됩니다.</p>
-            <UploadBox label="본인확인용 신분증 사진 첨부" onFiles={(files) => setIdPhoto(files[0] ?? null)} />
-            {idPreview ? <img alt="신분증 미리보기" className="mt-4 max-h-52 w-full rounded-[18px] object-cover" src={idPreview} /> : null}
+            <UploadBox
+              label="본인확인용 신분증 사진 첨부"
+              onFiles={(files) => setIdPhoto(files[0] ?? null)}
+              onRemove={() => setIdPhoto(null)}
+              previewUrl={idPreview}
+            />
             <ErrorText>{touched && !idPhoto ? '신분증 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
@@ -615,17 +720,22 @@ export default function ProfileFormPage() {
 
           <Section title="11. 프로필 사진">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진으로 지정한 사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
-            <UploadBox
-              label="프로필 사진 첨부"
-              multiple
-              onFiles={addProfilePhotos}
-            />
-            <div className="mt-4 grid grid-cols-3 gap-1.5 min-[380px]:gap-2">
+            {photoPreviews[representativeIndex] ? (
+              <div className="relative aspect-square w-full overflow-hidden rounded-[22px] bg-meet-blueSoft">
+                <img alt="대표사진 미리보기" className="h-full w-full object-cover" src={photoPreviews[representativeIndex]} />
+                <span className="absolute bottom-3 left-3 rounded-full bg-meet-blue px-3 py-1.5 text-[12px] font-black text-white">대표사진</span>
+              </div>
+            ) : (
+              <UploadBox label="프로필 사진 첨부" onFiles={addProfilePhotos} />
+            )}
+            <div className="mt-4 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-1.5 min-[380px]:gap-2">
               {photoPreviews.map((preview, index) => (
-                <div className={`relative rounded-[16px] border-4 ${selectedPhotoIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview}>
+                <div className={`relative rounded-[16px] border-4 ${representativeIndex === index ? 'border-meet-blue' : 'border-transparent'}`} key={preview}>
                   <button className="block w-full" onClick={() => setSelectedPhotoIndex(index)} type="button">
                     <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
-                    <span className="block py-1 text-[11px] font-black">{representativeIndex === index ? '대표사진' : '사진 선택'}</span>
+                    <span className="block overflow-hidden text-ellipsis whitespace-nowrap py-1 text-[10px] font-black min-[380px]:text-[11px]">
+                      {representativeIndex === index ? '대표사진' : '사진 선택'}
+                    </span>
                   </button>
                   <button
                     aria-label={`본인 사진 ${index + 1} 삭제`}
@@ -637,6 +747,9 @@ export default function ProfileFormPage() {
                   </button>
                 </div>
               ))}
+              {profilePhotos.length < 3 ? (
+                <UploadBox label="프로필 사진 추가" onFiles={addProfilePhotos} />
+              ) : null}
             </div>
             {profilePhotos.length > 0 ? (
               <button
@@ -676,13 +789,17 @@ export default function ProfileFormPage() {
 
           <Section title="15. 재직 증명">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">사원증, 명함 등 본인의 재직사실을 증명할 수 있는 사진을 첨부해주세요.</p>
-            <UploadBox label="재직 증명 사진 첨부" onFiles={(files) => setEmploymentProof(files[0] ?? null)} />
-            {employmentPreview ? <img alt="재직 증명 미리보기" className="mt-4 max-h-52 w-full rounded-[18px] object-cover" src={employmentPreview} /> : null}
+            <UploadBox
+              label="재직 증명 사진 첨부"
+              onFiles={(files) => setEmploymentProof(files[0] ?? null)}
+              onRemove={() => setEmploymentProof(null)}
+              previewUrl={employmentPreview}
+            />
             <ErrorText>{touched && !employmentProof ? '재직 증명 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
           <Section title="16. 접속 경로">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
               {routeOptions.map((option) => (
                 <button className={`h-11 rounded-[16px] text-[13px] font-black ${accessRoute === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setAccessRoute(option)} type="button">
                   {option}
@@ -704,7 +821,7 @@ export default function ProfileFormPage() {
 
           <Section title="18. 인터뷰 여부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">더 나은 소개팅, 고객 경험 개선을 위해서 행사 종료 후에 짧은 인터뷰를 진행합니다. 원하시면 모자이크 또는 얼굴 아래로 촬영을 할 예정입니다.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               {['참여', '미참여'].map((option) => (
                 <button className={`h-12 rounded-[18px] text-[16px] font-black ${interview === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setInterview(option)} type="button">
                   {option}
@@ -749,6 +866,7 @@ export default function ProfileFormPage() {
             <PrimaryButton disabled={!isRequiredComplete || submitting} onClick={submit}>
               {submitting ? '제출 중' : '프로필 제출'}
             </PrimaryButton>
+            <ErrorText>{submitError}</ErrorText>
             {!isRequiredComplete ? <p className="mt-2 text-center text-[12px] font-extrabold text-[#888]">필수 항목을 모두 입력하면 제출할 수 있습니다.</p> : null}
           </div>
         </form>

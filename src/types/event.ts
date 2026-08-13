@@ -7,6 +7,8 @@ export interface EventData {
   endTime: string;
   location: string;
   venueBooked: boolean;
+  malePrice: number;
+  femalePrice: number;
   currentParticipants: number;
   targetParticipants: number;
   maleApplications?: number;

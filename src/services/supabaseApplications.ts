@@ -24,6 +24,7 @@ interface SubmitApplicationInput {
     offsetY: number;
   };
   voiceIntro: Blob;
+  voiceIntroFileName: string;
   height: string;
   job: string;
   employmentProof: File;
@@ -82,6 +83,8 @@ interface PublicEventSummaryRow {
   end_time: string;
   location: string;
   venue_booked: boolean;
+  male_price: number | null;
+  female_price: number | null;
   current_participants: number;
   target_participants: number;
   male_applications: number;
@@ -112,47 +115,45 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
   if (!supabase) throw new Error('Supabase is not configured.');
 
   const user = await ensureApplicationSession();
-  await ensureAccountRow(user.id, await getCurrentAccountType(user.id));
-  const basePath = `${user.id}/${crypto.randomUUID()}`;
-  const idPhotoPath = await uploadPrivateFile(`${basePath}/id-${sanitizeFileName(input.idPhoto.name)}`, input.idPhoto);
-  const employmentProofPath = await uploadPrivateFile(`${basePath}/employment-${sanitizeFileName(input.employmentProof.name)}`, input.employmentProof);
-  const voiceIntroPath = await uploadPrivateFile(`${basePath}/voice-intro.webm`, input.voiceIntro);
-  const profilePhotoPaths = await Promise.all(
-    input.profilePhotos.map((file, index) =>
-      uploadPrivateFile(`${basePath}/profile-${index + 1}-${sanitizeFileName(file.name)}`, file),
-    ),
-  );
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인 또는 비회원 세션이 필요합니다.');
 
-  const { error } = await supabase.from('applications').insert({
-    access_route: input.accessRoute,
-    applicant_kind: 'guest',
-    birth_date: input.birthDate,
+  const payload = {
+    accessRoute: input.accessRoute,
+    birthDate: input.birthDate,
     consents: input.consents,
-    employment_proof_path: employmentProofPath,
-    event_id: input.eventId,
-    filming_consent: input.filmingConsent,
+    employmentProof: await fileToPayload(input.employmentProof),
+    eventId: input.eventId,
+    filmingConsent: input.filmingConsent,
     gender: input.gender,
     height: input.height,
-    id_photo_path: idPhotoPath,
+    idPhoto: await fileToPayload(input.idPhoto),
     inquiry: input.inquiry,
-    interview_consent: input.interviewConsent,
+    interviewConsent: input.interviewConsent,
     job: input.job,
     name: input.name,
     nickname: input.nickname,
     phone: input.phone,
-    profile_photo_paths: profilePhotoPaths,
-    refund_agreement: input.refundAgreement,
-    relationship_status: input.relationshipStatus,
-    representative_crop: input.representativeCrop,
-    representative_photo_index: input.representativeIndex,
+    profilePhotos: await Promise.all(input.profilePhotos.map(fileToPayload)),
+    refundAgreement: input.refundAgreement,
+    relationshipStatus: input.relationshipStatus,
+    representativeCrop: input.representativeCrop,
+    representativeIndex: input.representativeIndex,
     residence: input.residence,
-    is_returning: input.returning,
-    review_notice_confirmed: true,
-    user_id: user.id,
-    voice_intro_path: voiceIntroPath,
+    returning: input.returning,
+    sessionToken: session.token,
+    userId: user.id,
+    voiceIntro: await blobToPayload(input.voiceIntro, input.voiceIntroFileName),
+  };
+
+  const { data, error } = await supabase.functions.invoke('submit-application', {
+    body: payload,
   });
 
-  if (error) throw error;
+  if (error || data?.ok !== true) {
+    const message = data?.message || error?.message || '신청서 저장에 실패했습니다.';
+    throw new Error(message);
+  }
 }
 
 export async function fetchOwnApplicationForEvent(eventId: string) {
@@ -273,6 +274,8 @@ export async function fetchPublicEventsFromSupabase() {
     endTime: event.end_time.slice(0, 5),
     id: event.id,
     location: event.location,
+    malePrice: event.male_price ?? 50000,
+    femalePrice: event.female_price ?? 40000,
     femaleApplications: event.female_applications,
     femaleConfirmed: event.female_confirmed,
     maleApplications: event.male_applications,
@@ -316,6 +319,8 @@ export async function upsertEventToSupabase(event: EventData) {
     event_start_time: event.startTime,
     event_end_time: event.endTime,
     event_location: event.location,
+    event_male_price: event.malePrice,
+    event_female_price: event.femalePrice,
     event_venue_booked: event.venueBooked,
     female_capacity_value: event.targetParticipants / 2,
     male_capacity_value: event.targetParticipants / 2,
@@ -405,22 +410,6 @@ function mapProfile(row: SupabaseApplicationRow): ParticipantProfile {
   };
 }
 
-async function uploadPrivateFile(path: string, file: Blob) {
-  if (!supabase) throw new Error('Supabase is not configured.');
-
-  const { error } = await supabase.storage.from('application-files').upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-  });
-
-  if (error) throw error;
-  return path;
-}
-
-function sanitizeFileName(fileName: string) {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
 function getAge(birthDate: string) {
   const eventDate = new Date(2026, 7, 16);
   const birth = new Date(birthDate);
@@ -428,6 +417,29 @@ function getAge(birthDate: string) {
   const monthDiff = eventDate.getMonth() - birth.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && eventDate.getDate() < birth.getDate())) age -= 1;
   return age;
+}
+
+async function fileToPayload(file: File) {
+  return blobToPayload(file, file.name);
+}
+
+async function blobToPayload(blob: Blob, fileName: string) {
+  const dataUrl = await blobToDataUrl(blob);
+  const [, base64 = ''] = dataUrl.split(',');
+  return {
+    base64,
+    contentType: blob.type || 'application/octet-stream',
+    fileName,
+  };
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function formatShortDateTime(value: string) {

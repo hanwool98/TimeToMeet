@@ -44,9 +44,9 @@ export default function AdminEventParticipantsPage() {
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
-      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
-        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
+    <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white px-2 py-12 text-black">
+      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] w-full max-w-full min-w-0 flex-col justify-center">
+        <section className="relative w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
@@ -57,9 +57,9 @@ export default function AdminEventParticipantsPage() {
             </p>
           </div>
 
-          <div className="mt-5 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="mt-5 w-full max-w-full min-w-0 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             {event ? (
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
                 <ParticipantList onProfileClick={setPreviewParticipant} participants={maleParticipants} title="남" />
                 <ParticipantList onProfileClick={setPreviewParticipant} participants={femaleParticipants} title="여" />
               </div>
@@ -68,7 +68,7 @@ export default function AdminEventParticipantsPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-5">
+          <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3 pt-5">
             <PrimaryButton disabled={!event} onClick={() => navigate(`/admin/events/${eventId}/edit`)}>
               행사 수정
             </PrimaryButton>
@@ -88,7 +88,7 @@ export default function AdminEventParticipantsPage() {
       </div>
       {previewParticipant ? (
         <div aria-modal="true" className="fixed inset-0 z-30 grid place-items-center bg-black/35 px-4" role="dialog">
-          <div className="max-h-[86dvh] w-full max-w-[390px] overflow-y-auto rounded-[30px] bg-white p-4 shadow-calendar min-[380px]:p-5">
+          <div className="max-h-[86dvh] w-full max-w-[390px] min-w-0 overflow-y-auto rounded-[30px] bg-white p-4 shadow-calendar min-[380px]:p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[14px] font-extrabold text-[#8a8a8a]">{previewParticipant.nickname}</p>
@@ -142,7 +142,7 @@ export default function AdminEventParticipantsPage() {
               </p>
             )}
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               <button
                 className="h-12 rounded-[18px] bg-meet-pink text-[14px] font-black text-white transition active:scale-[0.99]"
                 onClick={() => {
@@ -224,7 +224,7 @@ function createEmptyProfile(application: StoredApplication): ParticipantProfile 
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
-    <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">{label}</p>
       <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
     </section>
@@ -243,7 +243,7 @@ function ProfileImageSection({
   value: string;
 }) {
   return (
-    <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">{label}</p>
       <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
       <div className="mt-3 overflow-hidden rounded-[18px] bg-white shadow-sm">
@@ -264,7 +264,7 @@ function ProfilePhotoGallery({ participant, value }: { participant: ParticipantD
   const labels = ['대표사진', '사진 2', '사진 3'];
 
   return (
-    <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">11. 프로필 사진</p>
       <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
       <div className="mt-3 space-y-3">
@@ -288,7 +288,7 @@ function ProfilePhotoGallery({ participant, value }: { participant: ParticipantD
 
 function ProfileVoicePreview() {
   return (
-    <section className="rounded-[20px] bg-meet-blueSoft px-4 py-3">
+    <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">12. 너의 목소리가 보여</p>
       <button
         className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[18px] bg-white text-[15px] font-black text-meet-pink shadow-sm"

@@ -191,8 +191,8 @@ export default function EventInfoPage() {
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
             <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-              <p>남성 50,000원</p>
-              <p>여성 40,000원</p>
+              <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
+              <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
               <p className="mt-5">얼리버드 신청 시 5,000원 할인</p>
             </div>
           </section>
@@ -223,6 +223,10 @@ function getDaysUntilEvent(dateValue: string) {
   const today = new Date(2026, 7, 7);
   const eventDate = new Date(`${dateValue}T00:00:00`);
   return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
+}
+
+function formatWon(value: number) {
+  return `${value.toLocaleString('ko-KR')}원`;
 }
 
 function formatKoreanWeekday(dateValue: string) {
