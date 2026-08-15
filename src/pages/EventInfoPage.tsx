@@ -209,7 +209,16 @@ export default function EventInfoPage() {
 
           {!isTabEventInfo ? (
             <div className="sticky bottom-4 mt-10">
-              <PrimaryButton onClick={() => navigate('/login')}>내 프로필 만들기</PrimaryButton>
+              <PrimaryButton
+                disabled={!eventId}
+                onClick={() => {
+                  if (!eventId) return;
+                  const returnTo = `/events/${eventId}/apply/profile`;
+                  navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+                }}
+              >
+                내 프로필 만들기
+              </PrimaryButton>
             </div>
           ) : null}
         </section>
@@ -220,7 +229,8 @@ export default function EventInfoPage() {
 }
 
 function getDaysUntilEvent(dateValue: string) {
-  const today = new Date(2026, 7, 7);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const eventDate = new Date(`${dateValue}T00:00:00`);
   return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
 }

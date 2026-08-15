@@ -1,6 +1,7 @@
 export type ApplicationStatus =
   | '심사 대기'
   | '결제 대기'
+  | '결제중'
   | '입금 확인 중'
   | '참가 확정'
   | '반려'
@@ -27,6 +28,11 @@ export interface StoredApplication {
   depositFailedAt?: string;
   depositFailureReason?: string;
   depositorName?: string;
+  paymentMethod?: string;
+  refundPolicyConfirmed?: boolean;
+  refundPolicyConfirmedAt?: string;
+  transferGuideConfirmedAt?: string;
+  transferIntentConfirmed?: boolean;
   paymentCompletedAt?: string;
   checkedInAt?: string;
   reviewedAt?: string;

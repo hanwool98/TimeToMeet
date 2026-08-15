@@ -19,7 +19,7 @@ export default function AdminPage() {
 
   const reviewCount = applications.filter((application) => application.status === '심사 대기').length;
   const waitingCount = applications.filter((application) => application.status === '참여 보류').length;
-  const paymentCount = applications.filter((application) => application.status === '결제 대기' || application.status === '입금 확인 중').length;
+  const paymentCount = applications.filter((application) => application.status === '결제 대기' || application.status === '결제중' || application.status === '입금 확인 중').length;
 
   const showPreparing = () => {
     window.alert('준비중!');
@@ -77,7 +77,7 @@ export default function AdminPage() {
               active
               icon={<Icon name="radio" />}
               label="행사 모드"
-              onClick={() => primaryEvent ? navigate(`/admin/events/${primaryEvent.id}/check-in`) : showPreparing()}
+              onClick={() => navigate('/admin/event-mode')}
             />
             <MenuCard icon={<Icon name="user" />} label="회원 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon name="shield" />} label="신고 관리" onClick={showPreparing} />
@@ -100,7 +100,7 @@ function DashboardEventCard({ applications, event, onClick }: { applications: St
   const eventApplications = applications.filter((application) => application.eventDate === formatApplicationEventDate(event.date) && application.eventType === event.shortName);
   const reviewCount = eventApplications.filter((application) => application.status === '심사 대기').length;
   const waitingCount = eventApplications.filter((application) => application.status === '참여 보류').length;
-  const paymentCount = eventApplications.filter((application) => application.status === '결제 대기' || application.status === '입금 확인 중').length;
+  const paymentCount = eventApplications.filter((application) => application.status === '결제 대기' || application.status === '결제중' || application.status === '입금 확인 중').length;
   const maleCapacity = Math.max(1, Math.round(event.targetParticipants / 2));
   const femaleCapacity = Math.max(1, event.targetParticipants - maleCapacity);
   const maleConfirmed = event.maleConfirmed ?? 0;

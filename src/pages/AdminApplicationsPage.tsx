@@ -16,7 +16,6 @@ const tabs: Array<{ id: ApplicationTab; label: string }> = [
   { id: 'completed', label: '심사 완료' },
 ];
 
-const dateOptions = ['전체', '8월 16일 로테이션'];
 const filterOptions = ['성별', '나이', '재참여 여부', '심사대기', '참여확정', '반려'];
 
 export default function AdminApplicationsPage() {
@@ -27,28 +26,22 @@ export default function AdminApplicationsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('성별');
   const [reviewingApplication, setReviewingApplication] = useState<StoredApplication | null>(null);
+  const [actionError, setActionError] = useState('');
 
-  const applicationsWithAutoCancel = useMemo(
-    () =>
-      applications.map((application) =>
-        application.status === '결제 대기' &&
-        application.paymentDeadline &&
-        new Date(application.paymentDeadline).getTime() < Date.now()
-          ? { ...application, status: '자동 취소' as const }
-          : application,
-      ),
-    [applications],
-  );
+  const dateOptions = useMemo(() => {
+    const options = applications.map((application) => `${application.eventDate} ${application.eventType}`).filter(Boolean);
+    return ['전체', ...Array.from(new Set(options))];
+  }, [applications]);
 
   const filteredApplications = useMemo(() => {
-    return applicationsWithAutoCancel
+    return applications
       .filter((item) => {
         if (activeTab === 'review') return item.status === '심사 대기';
         if (activeTab === 'waiting') return item.status === '참여 보류';
-        if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소';
+        if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소';
         return item.status === '참가 확정' || item.status === '반려';
       })
-      .filter((item) => (dateFilter === '전체' ? true : item.eventDate === '8월 16일'))
+      .filter((item) => (dateFilter === '전체' ? true : `${item.eventDate} ${item.eventType}` === dateFilter))
       .filter((item) => {
         const keyword = search.trim().toLowerCase();
         if (!keyword) return true;
@@ -61,16 +54,16 @@ export default function AdminApplicationsPage() {
         return true;
       })
       .sort((a, b) => {
-        const priority = (status: StoredApplication['status']) => (status === '심사 대기' ? 0 : status === '입금 확인 중' ? 1 : status === '반려' ? 2 : status === '결제 대기' ? 3 : 4);
+        const priority = (status: StoredApplication['status']) => (status === '심사 대기' ? 0 : status === '결제중' || status === '입금 확인 중' ? 1 : status === '반려' ? 2 : status === '결제 대기' ? 3 : 4);
         return priority(a.status) - priority(b.status);
       });
-  }, [activeTab, applicationsWithAutoCancel, dateFilter, filter, search]);
+  }, [activeTab, applications, dateFilter, filter, search]);
 
-  const reviewCount = applicationsWithAutoCancel.filter((item) => item.status === '심사 대기').length;
-  const waitingCount = applicationsWithAutoCancel.filter((item) => item.status === '참여 보류').length;
-  const paymentCount = applicationsWithAutoCancel.filter((item) => item.status === '결제 대기' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소').length;
-  const completedCount = applicationsWithAutoCancel.filter((item) => item.status === '참가 확정' || item.status === '반려').length;
-  const newReviewCount = applicationsWithAutoCancel.filter((item) => item.status === '심사 대기' && item.isNew).length;
+  const reviewCount = applications.filter((item) => item.status === '심사 대기').length;
+  const waitingCount = applications.filter((item) => item.status === '참여 보류').length;
+  const paymentCount = applications.filter((item) => item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소').length;
+  const completedCount = applications.filter((item) => item.status === '참가 확정' || item.status === '반려').length;
+  const newReviewCount = applications.filter((item) => item.status === '심사 대기' && item.isNew).length;
 
   const decideReview = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!reviewingApplication) return;
@@ -101,8 +94,15 @@ export default function AdminApplicationsPage() {
   const completePayment = async (applicationId: string) => {
     const applicationToUpdate = applications.find((application) => application.id === applicationId);
     if (applicationToUpdate) {
-      await confirmBankTransferInSupabase(applicationToUpdate);
-      await reload();
+      setActionError('');
+      try {
+        await confirmBankTransferInSupabase(applicationToUpdate);
+        await reload();
+      } catch (error) {
+        const message = getActionErrorMessage(error, '입금 확인 처리에 실패했습니다.');
+        console.error('Bank transfer confirmation failed', error);
+        setActionError(message);
+      }
     }
   };
 
@@ -111,8 +111,15 @@ export default function AdminApplicationsPage() {
     if (!applicationToUpdate) return;
     const reason = window.prompt('참가자에게 표시할 확인 실패 사유를 입력해주세요.', '입금 내역을 확인하지 못했습니다.');
     if (!reason) return;
-    await rejectBankTransferInSupabase(applicationToUpdate, reason);
-    await reload();
+    setActionError('');
+    try {
+      await rejectBankTransferInSupabase(applicationToUpdate, reason);
+      await reload();
+    } catch (error) {
+      const message = getActionErrorMessage(error, '입금 내역 없음 처리에 실패했습니다.');
+      console.error('Bank transfer rejection failed', error);
+      setActionError(message);
+    }
   };
 
   if (loading) return <DataLoadingState />;
@@ -187,6 +194,9 @@ export default function AdminApplicationsPage() {
           </div>
 
           <div className="mt-4 space-y-3">
+            {actionError ? (
+              <p className="rounded-[16px] bg-meet-pinkSoft p-4 text-[13px] font-black leading-relaxed text-meet-pink">{actionError}</p>
+            ) : null}
             {filteredApplications.map((application, index) => (
               <ApplicationCard
                 application={application}
@@ -213,6 +223,15 @@ export default function AdminApplicationsPage() {
       ) : null}
     </main>
   );
+}
+
+function getActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { details?: unknown; hint?: unknown; message?: unknown };
+    return [candidate.message, candidate.details, candidate.hint].filter(Boolean).join(' ') || fallback;
+  }
+  return fallback;
 }
 
 function SummaryCard({ count, label, newCount = 0 }: { count: number; label: string; newCount?: number }) {
@@ -262,24 +281,26 @@ function ApplicationCard({
               <p className="mt-1 text-meet-blue">결제 기한 {formatDateTime(application.paymentDeadline)}</p>
             </div>
           ) : null}
-          {application.status === '입금 확인 중' ? (
+          {application.status === '결제중' || application.status === '입금 확인 중' ? (
             <div className="mt-3 rounded-[12px] bg-meet-pinkSoft px-3 py-2 text-[12px] font-black leading-snug text-[#263149]">
-              <p>입금 확인 요청</p>
+              <p>결제중</p>
               <p className="mt-1 text-meet-pink">
-                {application.depositRequestedAt ? formatDateTime(application.depositRequestedAt) : '요청 시간 없음'} · 입금자 {application.depositorName || application.profile?.name || '-'}
+                {application.transferGuideConfirmedAt || application.depositRequestedAt ? formatDateTime(application.transferGuideConfirmedAt || application.depositRequestedAt || '') : '확인 시간 없음'} · 입금자 {application.depositorName || application.profile?.name || '-'}
               </p>
+              <p className="mt-1 text-[#555]">결제 방식 {application.paymentMethod === 'bank_transfer' ? '계좌이체' : application.paymentMethod || '-'}</p>
+              <p className="mt-1 text-[#555]">환불 규정 {application.refundPolicyConfirmed ? '확인 완료' : '미확인'}</p>
             </div>
           ) : null}
         </div>
         <StatusBadge status={application.status} />
       </div>
-      {application.status === '결제 대기' || application.status === '입금 확인 중' ? (
+      {application.status === '결제 대기' || application.status === '결제중' || application.status === '입금 확인 중' ? (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <DecisionTime application={application} />
           <div className="flex flex-wrap gap-2">
             <button
               className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white disabled:bg-[#d9d9d9]"
-              disabled={application.status !== '입금 확인 중'}
+              disabled={application.status !== '결제중' && application.status !== '입금 확인 중'}
               onClick={onPaymentComplete}
               type="button"
             >
@@ -287,7 +308,7 @@ function ApplicationCard({
             </button>
             <button
               className="h-10 rounded-[12px] bg-[#d9d9d9] px-4 text-[13px] font-black text-black disabled:opacity-50"
-              disabled={application.status !== '입금 확인 중'}
+              disabled={application.status !== '결제중' && application.status !== '입금 확인 중'}
               onClick={onPaymentFail}
               type="button"
             >
@@ -321,7 +342,7 @@ function DecisionTime({ application }: { application: StoredApplication }) {
 }
 
 function StatusBadge({ status }: { status: StoredApplication['status'] }) {
-  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : status === '입금 확인 중' ? 'bg-meet-pinkSoft text-meet-pink' : 'bg-meet-blueSoft text-meet-blue';
+  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : status === '결제중' || status === '입금 확인 중' ? 'bg-[#fff4e8] text-[#ba7a2a]' : 'bg-meet-blueSoft text-meet-blue';
   return <span className={`max-w-[44%] shrink-0 truncate rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
 }
 
@@ -350,6 +371,8 @@ function ReviewProfileModal({
   const [expandedPhoto, setExpandedPhoto] = useState<{ photos: SignedApplicationFile[]; index: number; title: string } | null>(null);
   const [deciding, setDeciding] = useState(false);
   const canReview = application.status === '심사 대기';
+  const filesReady = !filesLoading && !filesError && files !== null;
+  const canDecide = canReview && filesReady;
 
   const loadFiles = async () => {
     setFilesLoading(true);
@@ -369,7 +392,7 @@ function ReviewProfileModal({
   }, [application.dbId]);
 
   const requestDecision = async (status: '결제 대기' | '참여 보류' | '반려') => {
-    if (!canReview || deciding) return;
+    if (!canDecide || deciding) return;
     const label = status === '결제 대기' ? '참가 승인' : status === '참여 보류' ? '참가 대기' : '참가 거부';
     const ok = window.confirm(`${application.id} · ${profile?.name ?? application.userId}\n처리 결과: ${label}\n이대로 처리할까요?`);
     if (!ok) return;
@@ -454,10 +477,12 @@ function ReviewProfileModal({
           <div className="mt-6 space-y-6">
             <ReviewSection title="본인확인">
               <FilePreviewCard
-                emptyText="업로드된 사진이 없습니다."
+                emptyText="제출된 사진이 없습니다."
+                failed={Boolean(filesError)}
                 file={files?.idPhoto}
                 loading={filesLoading}
-                onOpen={() => files?.idPhoto && setExpandedPhoto({ photos: [files.idPhoto], index: 0, title: '신분증 사진' })}
+                onOpen={() => files?.idPhoto?.signedUrl && setExpandedPhoto({ photos: [files.idPhoto], index: 0, title: '신분증 사진' })}
+                onRetry={() => void loadFiles()}
                 title="신분증 사진 1장"
               />
             </ReviewSection>
@@ -467,15 +492,21 @@ function ReviewProfileModal({
               title="프로필 사진"
             >
               <ProfilePhotoGrid
+                failed={Boolean(filesError)}
                 files={files?.profilePhotos ?? []}
                 loading={filesLoading}
-                onOpen={(index) => setExpandedPhoto({ photos: files?.profilePhotos ?? [], index, title: '프로필 사진' })}
+                onOpen={(index) => {
+                  const photos = (files?.profilePhotos ?? []).filter((file) => file.signedUrl);
+                  if (photos.length) setExpandedPhoto({ photos, index: Math.min(index, photos.length - 1), title: '프로필 사진' });
+                }}
+                onRetry={() => void loadFiles()}
                 representativeIndex={files?.representativeIndex ?? 0}
               />
             </ReviewSection>
 
             <ReviewSection title="목소리 소개">
               <ReviewAudioPlayer
+                failed={Boolean(filesError)}
                 file={files?.voiceIntro}
                 loading={filesLoading}
                 onRefresh={() => void loadFiles()}
@@ -485,8 +516,10 @@ function ReviewProfileModal({
             <ReviewSection title="첨부파일">
               <AttachmentCard
                 emptyText="첨부파일이 없습니다."
+                failed={Boolean(filesError)}
                 file={files?.employmentProof}
                 loading={filesLoading}
+                onRetry={() => void loadFiles()}
                 title="재직 증명"
               />
             </ReviewSection>
@@ -518,7 +551,7 @@ function ReviewProfileModal({
         <div className="sticky bottom-0 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
           <button
             className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-blue px-2 text-[14px] font-black text-white disabled:bg-[#d8dee6]"
-            disabled={!canReview || deciding}
+            disabled={!canDecide || deciding}
             onClick={() => void requestDecision('결제 대기')}
             type="button"
           >
@@ -527,7 +560,7 @@ function ReviewProfileModal({
           </button>
           <button
             className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-[#eef0f3] px-2 text-[14px] font-black text-[#4b515a] disabled:opacity-45"
-            disabled={!canReview || deciding}
+            disabled={!canDecide || deciding}
             onClick={() => void requestDecision('참여 보류')}
             type="button"
           >
@@ -536,13 +569,18 @@ function ReviewProfileModal({
           </button>
           <button
             className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-pink px-2 text-[14px] font-black text-white disabled:bg-[#f4b6cc]"
-            disabled={!canReview || deciding}
+            disabled={!canDecide || deciding}
             onClick={() => void requestDecision('반려')}
             type="button"
           >
             <span className="text-[24px]">×</span>
             참가 거부
           </button>
+          {!filesReady ? (
+            <p className="col-span-3 text-center text-[12px] font-black text-[#8a929c]">
+              심사 자료를 불러온 후 처리할 수 있습니다
+            </p>
+          ) : null}
         </div>
       </section>
       {expandedPhoto ? (
@@ -579,7 +617,7 @@ function ReviewField({ label, value }: { label: string; value: string }) {
 
 function RepresentativeThumb({ file, loading }: { file?: SignedApplicationFile; loading: boolean }) {
   if (loading) return <div className="h-[78px] w-[78px] rounded-[24px] bg-[#f0f4f8]" />;
-  if (!file) {
+  if (!file?.signedUrl) {
     return (
       <div className="grid h-[78px] w-[78px] place-items-center rounded-[24px] bg-[#f0f4f8] text-[11px] font-black text-[#8a929c]">
         사진 없음
@@ -598,19 +636,25 @@ function RepresentativeThumb({ file, loading }: { file?: SignedApplicationFile; 
 
 function FilePreviewCard({
   emptyText,
+  failed,
   file,
   loading,
   onOpen,
+  onRetry,
   title,
 }: {
   emptyText: string;
+  failed: boolean;
   file?: SignedApplicationFile;
   loading: boolean;
   onOpen: () => void;
+  onRetry: () => void;
   title: string;
 }) {
   if (loading) return <SkeletonCard />;
+  if (failed) return <RetryCard onRetry={onRetry} text="심사 자료를 불러오지 못했습니다." />;
   if (!file) return <EmptyCard text={emptyText} />;
+  if (!file.signedUrl) return <RetryCard onRetry={onRetry} text={file.errorMessage || '사진 URL을 발급하지 못했습니다.'} />;
 
   return (
     <button
@@ -629,18 +673,23 @@ function FilePreviewCard({
 }
 
 function ProfilePhotoGrid({
+  failed,
   files,
   loading,
   onOpen,
+  onRetry,
   representativeIndex,
 }: {
+  failed: boolean;
   files: SignedApplicationFile[];
   loading: boolean;
   onOpen: (index: number) => void;
+  onRetry: () => void;
   representativeIndex: number;
 }) {
   if (loading) return <SkeletonCard />;
-  if (!files.length) return <EmptyCard text="업로드된 사진이 없습니다." />;
+  if (failed) return <RetryCard onRetry={onRetry} text="심사 자료를 불러오지 못했습니다." />;
+  if (!files.length) return <EmptyCard text="제출된 사진이 없습니다." />;
 
   return (
     <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
@@ -648,10 +697,17 @@ function ProfilePhotoGrid({
         <button
           className="relative aspect-square min-w-0 overflow-hidden rounded-[14px] bg-[#f4f6f8]"
           key={`${file.path}-${index}`}
+          disabled={!file.signedUrl}
           onClick={() => onOpen(index)}
           type="button"
         >
-          <img alt={`프로필 사진 ${index + 1}`} className="h-full w-full object-cover" src={file.signedUrl} />
+          {file.signedUrl ? (
+            <img alt={`프로필 사진 ${index + 1}`} className="h-full w-full object-cover" src={file.signedUrl} />
+          ) : (
+            <span className="grid h-full w-full place-items-center px-2 text-center text-[12px] font-black text-[#8a929c]">
+              불러오기 실패
+            </span>
+          )}
           {index === representativeIndex ? (
             <span className="absolute left-2 top-2 rounded-[8px] bg-meet-blue px-2 py-1 text-[11px] font-black text-white">
               대표사진
@@ -665,17 +721,23 @@ function ProfilePhotoGrid({
 
 function AttachmentCard({
   emptyText,
+  failed,
   file,
   loading,
+  onRetry,
   title,
 }: {
   emptyText: string;
+  failed: boolean;
   file?: SignedApplicationFile;
   loading: boolean;
+  onRetry: () => void;
   title: string;
 }) {
   if (loading) return <SkeletonCard />;
+  if (failed) return <RetryCard onRetry={onRetry} text="심사 자료를 불러오지 못했습니다." />;
   if (!file) return <EmptyCard text={emptyText} />;
+  if (!file.signedUrl) return <RetryCard onRetry={onRetry} text={file.errorMessage || '첨부파일 URL을 발급하지 못했습니다.'} />;
 
   return (
     <a
@@ -695,10 +757,12 @@ function AttachmentCard({
 }
 
 function ReviewAudioPlayer({
+  failed,
   file,
   loading,
   onRefresh,
 }: {
+  failed: boolean;
   file?: SignedApplicationFile;
   loading: boolean;
   onRefresh: () => void;
@@ -717,7 +781,9 @@ function ReviewAudioPlayer({
   }, [file?.signedUrl]);
 
   if (loading) return <SkeletonCard />;
+  if (failed) return <RetryCard onRetry={onRefresh} text="심사 자료를 불러오지 못했습니다." />;
   if (!file) return <EmptyCard text="업로드된 음성이 없습니다." />;
+  if (!file.signedUrl) return <RetryCard onRetry={onRefresh} text={file.errorMessage || '음성 URL을 발급하지 못했습니다.'} />;
 
   const progress = duration > 0 ? Math.min(100, (time / duration) * 100) : 0;
 
@@ -833,6 +899,19 @@ function EmptyCard({ text }: { text: string }) {
   return (
     <div className="grid min-h-[108px] place-items-center rounded-[18px] border border-dashed border-[#dce3eb] bg-[#f9fbfd] px-4 text-center text-[15px] font-black text-[#8a929c]">
       {text}
+    </div>
+  );
+}
+
+function RetryCard({ onRetry, text }: { onRetry: () => void; text: string }) {
+  return (
+    <div className="grid min-h-[108px] place-items-center rounded-[18px] border border-dashed border-meet-pink/30 bg-meet-pinkSoft px-4 text-center">
+      <div>
+        <p className="text-[15px] font-black text-meet-pink">{text}</p>
+        <button className="mt-2 text-[14px] font-black text-meet-pink underline" onClick={onRetry} type="button">
+          다시 불러오기
+        </button>
+      </div>
     </div>
   );
 }

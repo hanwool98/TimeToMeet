@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import { clearAppSession, getAppSession } from '../services/appAuth';
-import { fetchMyPageSummary, type MyPageSummary } from '../services/participantProfiles';
+import { fetchMyPageSummary, fetchMySessionPhone, type MyPageSummary } from '../services/participantProfiles';
 
 const menuItems = [
   { icon: 'profile', label: '참가 프로필', path: '/mypage/profile' },
@@ -19,8 +19,14 @@ export default function MyPage() {
   const session = getAppSession();
   const loggedIn = Boolean(session);
   const accountType = summary?.accountType ?? (session?.role === 'guest' || session?.role === 'member' ? session.role : null);
-  const accountLabel = accountType === 'guest' ? formatGuestLabel(summary?.phoneMasked || session?.phoneNormalized) : '회원';
-  const phoneLabel = summary?.phoneMasked || (accountType === 'guest' ? maskPhone(session?.phoneNormalized) : '') || (accountType === 'guest' ? '비회원번호 확인 중' : '전화번호 없음');
+  const accountLabel =
+    accountType === 'guest'
+      ? formatGuestLabel(summary?.guestDisplayId || session?.phoneNormalized)
+      : '회원';
+  const phoneLabel =
+    summary?.phoneMasked ||
+    (accountType === 'guest' ? maskPhone(session?.phoneNormalized) : '') ||
+    (accountType === 'guest' ? '전화번호 확인 중' : '전화번호 없음');
 
   useEffect(() => {
     const refreshSession = () => setSessionVersion((version) => version + 1);
@@ -48,8 +54,27 @@ export default function MyPage() {
       .then((nextSummary) => {
         if (mounted) setSummary(nextSummary);
       })
-      .catch(() => {
-        if (mounted) setSummary(null);
+      .catch(async () => {
+        if (session?.role !== 'guest') {
+          if (mounted) setSummary(null);
+          return;
+        }
+
+        const fallback = await fetchMySessionPhone(session.token);
+        if (mounted) {
+          setSummary(
+            fallback
+              ? {
+                  accountType: fallback.accountType,
+                  avatarIndex: 0,
+                  guestDisplayId: fallback.guestDisplayId,
+                  hasProfile: false,
+                  nickname: '비회원',
+                  phoneMasked: fallback.phoneMasked,
+                }
+              : null,
+          );
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);

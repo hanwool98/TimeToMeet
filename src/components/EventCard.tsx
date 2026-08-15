@@ -36,7 +36,8 @@ export default function EventCard({ selectedDateLabel, event, onApply }: EventCa
 }
 
 function getDaysUntilEvent(dateValue: string) {
-  const today = new Date(2026, 7, 7);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const eventDate = new Date(`${dateValue}T00:00:00`);
   return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
 }

@@ -26,9 +26,9 @@ function toDateTimeInputValue(date: Date) {
 }
 
 function parseDateParam(dateParam: string | null) {
-  if (!dateParam) return new Date(2026, 7, 16);
+  if (!dateParam) return new Date();
   const [year, month, day] = dateParam.split('-').map(Number);
-  if (!year || !month || !day) return new Date(2026, 7, 16);
+  if (!year || !month || !day) return new Date();
   return new Date(year, month - 1, day);
 }
 

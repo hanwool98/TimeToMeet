@@ -71,6 +71,11 @@ interface SupabaseApplicationRow {
   deposit_failed_at: string | null;
   deposit_failure_reason: string | null;
   depositor_name: string | null;
+  payment_method: string | null;
+  refund_policy_confirmed: boolean | null;
+  refund_policy_confirmed_at: string | null;
+  transfer_guide_confirmed_at: string | null;
+  transfer_intent_confirmed: boolean | null;
   payment_completed_at: string | null;
   checked_in_at: string | null;
   reviewed_at: string | null;
@@ -109,6 +114,34 @@ interface PublicParticipantPreviewRow {
   avatar_index: number;
 }
 
+interface AdminEventModeSummaryRow {
+  checkin_count: number;
+  confirmed_count: number;
+  end_time: string;
+  event_date: string;
+  id: string;
+  is_test_event: boolean;
+  location: string;
+  required_tablets: number;
+  start_time: string;
+  tablet_count: number;
+  title: string;
+}
+
+export interface AdminEventModeSummary {
+  checkinCount: number;
+  confirmedCount: number;
+  date: string;
+  endTime: string;
+  id: string;
+  isTestEvent: boolean;
+  location: string;
+  requiredTablets: number;
+  startTime: string;
+  tabletCount: number;
+  title: string;
+}
+
 export interface PaymentInvitation {
   applicationId: string;
   createdAt: string;
@@ -144,6 +177,11 @@ export interface MyEventTicket {
   depositFailedAt?: string;
   depositFailureReason?: string;
   depositorName?: string;
+  paymentMethod?: string;
+  refundPolicyConfirmed?: boolean;
+  refundPolicyConfirmedAt?: string;
+  transferGuideConfirmedAt?: string;
+  transferIntentConfirmed?: boolean;
   paymentCompletedAt?: string;
   qrToken?: string;
   qrIssuedAt?: string;
@@ -174,6 +212,11 @@ interface MyEventTicketRow {
   deposit_failed_at: string | null;
   deposit_failure_reason: string | null;
   depositor_name: string | null;
+  payment_method: string | null;
+  refund_policy_confirmed: boolean | null;
+  refund_policy_confirmed_at: string | null;
+  transfer_guide_confirmed_at: string | null;
+  transfer_intent_confirmed: boolean | null;
   payment_completed_at: string | null;
   qr_token: string | null;
   qr_issued_at: string | null;
@@ -201,9 +244,10 @@ export interface AdminApplicationFiles {
 }
 
 export interface SignedApplicationFile {
+  errorMessage?: string;
   fileName: string;
   path: string;
-  signedUrl: string;
+  signedUrl?: string;
 }
 
 interface PaymentInvitationRow {
@@ -277,41 +321,53 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
 
 export async function fetchOwnApplicationForEvent(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
 
-  const { data, error } = await supabase
-    .from('applications')
-    .select('id, status')
-    .eq('event_id', eventId)
-    .maybeSingle();
+  const { data, error } = await supabase.functions.invoke('application-session-data', {
+    body: {
+      action: 'get-existing',
+      eventId,
+      sessionToken: session.token,
+    },
+  });
 
-  if (error) throw error;
-  return data;
+  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '기존 신청 내역 확인에 실패했습니다.');
+  return data.application ?? null;
 }
 
 export async function fetchApplicationDraft(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
 
-  const { data, error } = await supabase
-    .from('application_drafts')
-    .select('draft_data')
-    .eq('event_id', eventId)
-    .maybeSingle();
+  const { data, error } = await supabase.functions.invoke('application-session-data', {
+    body: {
+      action: 'get-draft',
+      eventId,
+      sessionToken: session.token,
+    },
+  });
 
-  if (error) throw error;
-  return (data?.draft_data ?? null) as Record<string, unknown> | null;
+  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '임시저장을 불러오지 못했습니다.');
+  return (data.draft ?? null) as Record<string, unknown> | null;
 }
 
 export async function saveApplicationDraft(eventId: string, draftData: Record<string, unknown>) {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
 
-  const user = await ensureApplicationSession();
-  const { error } = await supabase.from('application_drafts').upsert({
-    draft_data: draftData,
-    event_id: eventId,
-    user_id: user.id,
+  const { data, error } = await supabase.functions.invoke('application-session-data', {
+    body: {
+      action: 'save-draft',
+      draftData,
+      eventId,
+      sessionToken: session.token,
+    },
   });
 
-  if (error) throw error;
+  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '임시저장에 실패했습니다.');
 }
 
 async function ensureAccountRow(userId: string, accountType: 'member' | 'guest') {
@@ -357,7 +413,7 @@ export async function fetchAdminApplicationsFromSupabase() {
 
 export async function updateApplicationReviewInSupabase(
   application: StoredApplication,
-  status: '결제 대기' | '참여 보류' | '반려' | '참가 확정',
+  status: '결제 대기' | '참여 보류' | '반려' | '참가 확정' | '자동 취소',
   values: {
     paymentDeadline?: string;
     paymentNoticeSentAt?: string;
@@ -390,7 +446,7 @@ export async function confirmBankTransferInSupabase(application: StoredApplicati
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { error } = await supabase.rpc('confirm_bank_transfer_for_session', {
-    application_id: application.dbId,
+    p_application_id: application.dbId,
     session_token: adminSession.token,
   });
 
@@ -404,8 +460,8 @@ export async function rejectBankTransferInSupabase(application: StoredApplicatio
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { error } = await supabase.rpc('reject_bank_transfer_for_session', {
-    application_id: application.dbId,
     failure_reason: reason,
+    p_application_id: application.dbId,
     session_token: adminSession.token,
   });
 
@@ -418,15 +474,26 @@ export async function fetchAdminApplicationFiles(application: StoredApplication)
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { data, error } = await supabase.functions.invoke('admin-application-files', {
-    body: {
-      applicationId: application.dbId,
-      sessionToken: adminSession.token,
-    },
+  const functionName = 'admin-application-files';
+  const requestBody = {
+    applicationId: application.dbId,
+    sessionToken: adminSession.token,
+  };
+
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: requestBody,
   });
 
   if (error || data?.ok !== true) {
-    throw new Error(data?.message || error?.message || '신청 자료를 불러오지 못했습니다.');
+    const status = readFunctionStatus(error);
+    console.error('Admin application file request failed', {
+      applicationId: application.dbId,
+      functionName,
+      hasAdminSession: Boolean(adminSession.token),
+      message: error?.message || data?.message,
+      status,
+    });
+    throw new Error(data?.message || functionErrorMessage(status, error?.message));
   }
 
   return {
@@ -436,6 +503,23 @@ export async function fetchAdminApplicationFiles(application: StoredApplication)
     representativeIndex: Number(data.representativeIndex ?? 0),
     voiceIntro: data.voiceIntro ?? undefined,
   } satisfies AdminApplicationFiles;
+}
+
+function readFunctionStatus(error: unknown) {
+  const context = typeof error === 'object' && error !== null && 'context' in error ? (error as { context?: unknown }).context : null;
+  if (context && typeof context === 'object' && 'status' in context) {
+    const status = Number((context as { status?: unknown }).status);
+    return Number.isFinite(status) ? status : undefined;
+  }
+  return undefined;
+}
+
+function functionErrorMessage(status?: number, rawMessage?: string) {
+  if (status === 401 || status === 403) return '관리자 인증이 만료되었거나 권한이 없습니다. 다시 관리자 인증 후 시도해주세요.';
+  if (status === 404) return '심사 자료 조회 함수가 배포되지 않았습니다. admin-application-files 배포 상태를 확인해주세요.';
+  if (status && status >= 500) return '심사 자료 서버에서 오류가 발생했습니다. Function 로그를 확인해주세요.';
+  if (rawMessage?.includes('Failed to send')) return '심사 자료 요청을 보내지 못했습니다. Edge Function 배포와 Supabase 프로젝트 설정을 확인해주세요.';
+  return '심사 자료를 불러오지 못했습니다. 다시 시도해주세요.';
 }
 
 export async function fetchPublicEventsFromSupabase() {
@@ -480,6 +564,62 @@ export async function fetchPublicParticipantsFromSupabase(eventId: string) {
     nickname: participant.nickname,
     tags: [`${participant.age}세`, participant.job],
   })) satisfies ParticipantData[];
+}
+
+export async function fetchAdminEventModeSummaries() {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_mode_summaries', {
+    session_token: adminSession.token,
+  });
+
+  if (error) {
+    if (isMissingRpcError(error)) {
+      return fetchAdminEventModeSummariesFromExistingSupabaseData();
+    }
+    throw error;
+  }
+  return (data as AdminEventModeSummaryRow[]).map((event) => ({
+    checkinCount: event.checkin_count,
+    confirmedCount: event.confirmed_count,
+    date: event.event_date,
+    endTime: event.end_time.slice(0, 5),
+    id: event.id,
+    isTestEvent: event.is_test_event,
+    location: event.location,
+    requiredTablets: event.required_tablets,
+    startTime: event.start_time.slice(0, 5),
+    tabletCount: event.tablet_count,
+    title: event.title,
+  })) satisfies AdminEventModeSummary[];
+}
+
+async function fetchAdminEventModeSummariesFromExistingSupabaseData() {
+  const [events, applications] = await Promise.all([
+    fetchPublicEventsFromSupabase(),
+    fetchAdminApplicationsFromSupabase(),
+  ]);
+
+  return events.map((event) => {
+    const eventApplications = applications.filter((application) => application.eventDate.includes(formatKoreanMonthDay(event.date)));
+    const confirmedApplications = eventApplications.filter((application) => application.status === '참가 확정');
+
+    return {
+      checkinCount: confirmedApplications.filter((application) => Boolean(application.checkedInAt)).length,
+      confirmedCount: event.currentParticipants,
+      date: event.date,
+      endTime: event.endTime,
+      id: event.id,
+      isTestEvent: false,
+      location: event.location,
+      requiredTablets: 10,
+      startTime: event.startTime,
+      tabletCount: 0,
+      title: event.title,
+    };
+  }) satisfies AdminEventModeSummary[];
 }
 
 export async function upsertEventToSupabase(event: EventData) {
@@ -538,6 +678,25 @@ export function subscribeToSupabaseChanges(onChange: () => void) {
   };
 }
 
+export function subscribeToAdminEventModeChanges(onChange: () => void) {
+  if (!supabase) return () => undefined;
+
+  const client = supabase;
+  const channel = supabase
+    .channel('time2meet-admin-event-mode')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'application_tickets' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'event_tablets' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, onChange)
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') onChange();
+    });
+
+  return () => {
+    void client.removeChannel(channel);
+  };
+}
+
 export async function fetchMyPaymentInvitations() {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
@@ -570,8 +729,9 @@ export async function requestBankTransferConfirmation(applicationId: string, dep
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('request_bank_transfer_confirmation', {
-    application_id: applicationId,
     depositor_name_value: depositorName,
+    p_application_id: applicationId,
+    refund_policy_confirmed_value: true,
     session_token: session.token,
   });
 
@@ -695,7 +855,7 @@ export function subscribeToPaymentInvitationChanges(onChange: () => void) {
 }
 
 function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
-  const age = getAge(row.birth_date);
+  const age = getAge(row.birth_date, row.event_date);
   const profile = mapProfile(row);
 
   return {
@@ -703,16 +863,21 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     appliedAt: formatShortDateTime(row.submitted_at),
     dbId: row.id,
     accountType: row.account_type ?? 'member',
-    eventDate: formatApplicationEventDate(row.event_date ?? '2026-08-16'),
+    eventDate: row.event_date ? formatApplicationEventDate(row.event_date) : '행사 날짜 미정',
     eventType: row.short_name ?? '로테이션',
     gender: row.gender,
-    id: row.application_no,
+    id: formatApplicationNo(row.application_no),
     isNew: row.is_new,
     checkedInAt: row.checked_in_at ?? undefined,
     depositFailedAt: row.deposit_failed_at ?? undefined,
     depositFailureReason: row.deposit_failure_reason ?? undefined,
     depositRequestedAt: row.deposit_requested_at ?? undefined,
     depositorName: row.depositor_name ?? undefined,
+    paymentMethod: row.payment_method ?? undefined,
+    refundPolicyConfirmed: Boolean(row.refund_policy_confirmed),
+    refundPolicyConfirmedAt: row.refund_policy_confirmed_at ?? undefined,
+    transferGuideConfirmedAt: row.transfer_guide_confirmed_at ?? undefined,
+    transferIntentConfirmed: Boolean(row.transfer_intent_confirmed),
     paymentDeadline: row.payment_deadline ?? undefined,
     paymentCompletedAt: row.payment_completed_at ?? undefined,
     paymentNoticeSentAt: row.payment_notice_sent_at ?? undefined,
@@ -746,7 +911,7 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     age: row.age,
     applicantName: row.applicant_name,
     applicationId: row.application_id,
-    applicationNo: row.application_no,
+    applicationNo: formatApplicationNo(row.application_no),
     bankAccountHolder: row.bank_account_holder,
     bankAccountNumber: row.bank_account_number,
     bankName: row.bank_name,
@@ -755,6 +920,11 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     depositFailureReason: row.deposit_failure_reason ?? undefined,
     depositRequestedAt: row.deposit_requested_at ?? undefined,
     depositorName: row.depositor_name ?? undefined,
+    paymentMethod: row.payment_method ?? undefined,
+    refundPolicyConfirmed: Boolean(row.refund_policy_confirmed),
+    refundPolicyConfirmedAt: row.refund_policy_confirmed_at ?? undefined,
+    transferGuideConfirmedAt: row.transfer_guide_confirmed_at ?? undefined,
+    transferIntentConfirmed: Boolean(row.transfer_intent_confirmed),
     endTime: row.end_time.slice(0, 5),
     eventDate: row.event_date,
     eventId: row.event_id,
@@ -797,8 +967,22 @@ function mapProfile(row: SupabaseApplicationRow): ParticipantProfile {
   };
 }
 
-function getAge(birthDate: string) {
-  const eventDate = new Date(2026, 7, 16);
+function formatApplicationNo(value: string) {
+  return value.replace(/^TTM-(\d{4})-(\d{3})$/, 'TTM_$1_$2');
+}
+
+function formatKoreanMonthDay(value: string) {
+  const [, rawMonth, rawDay] = value.split('-');
+  return `${Number(rawMonth)}월 ${Number(rawDay)}일`;
+}
+
+function isMissingRpcError(error: { code?: string; message?: string }) {
+  return error.code === 'PGRST202' || Boolean(error.message?.includes('Could not find the function'));
+}
+
+function getAge(birthDate: string, eventDateValue?: string) {
+  const [year, month, day] = (eventDateValue ?? new Date().toISOString().slice(0, 10)).split('-').map(Number);
+  const eventDate = new Date(year, month - 1, day);
   const birth = new Date(birthDate);
   let age = eventDate.getFullYear() - birth.getFullYear();
   const monthDiff = eventDate.getMonth() - birth.getMonth();

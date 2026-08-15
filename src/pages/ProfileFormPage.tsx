@@ -1,13 +1,14 @@
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
+import { RefundPolicyBox } from '../data/refundPolicy';
+import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
 
-const eventDate = new Date(2026, 7, 16);
-const defaultEventId = 'seongnam-rotation-2026-08-16';
 const requiredConsentText = [
   {
     id: 'privacy',
@@ -40,8 +41,12 @@ const requiredConsentText = [
 
 const routeOptions = ['지인', '인스타그램', '검색', '유튜브', '네이버 블로그', '기타'];
 
-function getAgeOnEventDate(birthDate: string) {
+function getAgeOnEventDate(birthDate: string, eventDateValue?: string) {
   if (!birthDate) return null;
+  if (!eventDateValue) return null;
+  const [year, month, day] = eventDateValue.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const eventDate = new Date(year, month - 1, day);
   const birth = new Date(birthDate);
   let age = eventDate.getFullYear() - birth.getFullYear();
   const monthDiff = eventDate.getMonth() - birth.getMonth();
@@ -192,6 +197,10 @@ function UploadBox({
 
 export default function ProfileFormPage() {
   const navigate = useNavigate();
+  const { eventId: routeEventId } = useParams();
+  const [searchParams] = useSearchParams();
+  const eventId = routeEventId ?? searchParams.get('eventId') ?? '';
+  const { error: eventError, events, loading: eventLoading, reload: reloadEvents } = useOperationalData({ eventId: eventId || undefined });
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const countdownTimerRef = useRef<number | null>(null);
@@ -239,8 +248,9 @@ export default function ProfileFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [saveAsDefaultProfile, setSaveAsDefaultProfile] = useState(false);
   const isMemberSession = getAppSession()?.role === 'member';
+  const selectedEvent = events.find((event) => event.id === eventId);
 
-  const age = useMemo(() => getAgeOnEventDate(birthDate), [birthDate]);
+  const age = useMemo(() => getAgeOnEventDate(birthDate, selectedEvent?.date), [birthDate, selectedEvent?.date]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
   const idPreview = useObjectUrl(idPhoto);
   const employmentPreview = useObjectUrl(employmentProof);
@@ -248,9 +258,13 @@ export default function ProfileFormPage() {
   const allConsentsRead = consentRead.privacy && consentRead.thirdParty;
 
   useEffect(() => {
+    if (!eventId) {
+      draftLoadedRef.current = true;
+      return;
+    }
     const loadDraft = async () => {
       try {
-        const draft = await fetchApplicationDraft(defaultEventId);
+        const draft = await fetchApplicationDraft(eventId);
         if (!draft) {
           draftLoadedRef.current = true;
           return;
@@ -283,7 +297,7 @@ export default function ProfileFormPage() {
     };
 
     void loadDraft();
-  }, []);
+  }, [eventId]);
 
   useEffect(() => {
     return () => {
@@ -294,10 +308,10 @@ export default function ProfileFormPage() {
   }, [audioUrl]);
 
   useEffect(() => {
-    if (!draftLoadedRef.current) return;
+    if (!draftLoadedRef.current || !eventId) return;
 
     const timeoutId = window.setTimeout(() => {
-      void saveApplicationDraft(defaultEventId, {
+      void saveApplicationDraft(eventId, {
         accessRoute,
         accessRouteEtc,
         birthDate,
@@ -341,6 +355,7 @@ export default function ProfileFormPage() {
     phone,
     refundConsent,
     singleConfirmed,
+    eventId,
   ]);
 
   const isRequiredComplete = Boolean(
@@ -427,6 +442,14 @@ export default function ProfileFormPage() {
     if (submitting) return;
     setTouched(true);
     setSubmitError('');
+    if (!eventId) {
+      setSubmitError('신청할 행사를 찾을 수 없습니다. 행사 선택 화면에서 다시 시작해주세요.');
+      return;
+    }
+    if (!selectedEvent) {
+      setSubmitError('선택한 행사 정보를 확인할 수 없습니다. 행사 선택 화면에서 다시 시작해주세요.');
+      return;
+    }
     if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
 
     setSubmitting(true);
@@ -436,7 +459,7 @@ export default function ProfileFormPage() {
         window.alert('전화번호 형식을 확인해주세요.');
         return;
       }
-      const existingApplication = await fetchOwnApplicationForEvent(defaultEventId);
+      const existingApplication = await fetchOwnApplicationForEvent(eventId);
       if (existingApplication) {
         window.alert('이미 이 행사에 신청한 내역이 있습니다.');
         navigate('/application-complete');
@@ -454,7 +477,7 @@ export default function ProfileFormPage() {
         birthDate,
         consents,
         employmentProof,
-        eventId: defaultEventId,
+        eventId,
         filmingConsent,
         gender,
         height,
@@ -571,6 +594,26 @@ export default function ProfileFormPage() {
     event.preventDefault();
     setRepresentativeScale((current) => Math.min(2.6, Math.max(1, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))));
   };
+
+  if (eventLoading) return <DataLoadingState />;
+  if (eventError) return <DataErrorState message={eventError} onRetry={reloadEvents} />;
+  if (!eventId || !selectedEvent) {
+    return (
+      <main className="app-page min-h-screen bg-white px-4 py-12 text-black">
+        <div className="mobile-container mx-auto">
+          <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+            <h1 className="text-[24px] font-black leading-tight">신청할 행사를 찾을 수 없습니다</h1>
+            <p className="mt-4 text-[14px] font-extrabold leading-relaxed text-[#777]">
+              행사 선택 화면에서 신청할 날짜를 다시 선택해주세요. 임의의 행사로 신청되지는 않습니다.
+            </p>
+            <Link className="mt-6 block h-14 rounded-[18px] bg-meet-blue px-5 py-4 text-[16px] font-extrabold text-white" to="/">
+              행사 선택하러 가기
+            </Link>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="app-page min-h-screen w-full max-w-full min-w-0 bg-white px-3 py-12 text-black min-[380px]:px-4">
@@ -829,11 +872,7 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="19. 환불규정">
-            <div className="rounded-[22px] bg-meet-blueSoft p-4 text-[14px] font-extrabold leading-relaxed text-[#555]">
-              <p>행사 8일 전까지: 100% 환불</p>
-              <p>행사 4~7일 전: 50% 환불</p>
-              <p>행사 3일 전부터 당일: 환불 불가</p>
-            </div>
+            <RefundPolicyBox />
             <label className="mt-4 flex items-start gap-2 text-fluid-safe text-[14px] font-black">
               <input checked={refundConsent} onChange={(event) => setRefundConsent(event.target.checked)} type="checkbox" />
               환불규정을 확인했습니다.

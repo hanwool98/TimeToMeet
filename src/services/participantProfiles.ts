@@ -4,6 +4,7 @@ import { getAppSession } from './appAuth';
 export interface MyPageSummary {
   accountType: 'member' | 'guest' | null;
   avatarIndex: number;
+  guestDisplayId?: string;
   hasProfile: boolean;
   nickname: string;
   phoneMasked: string;
@@ -35,9 +36,17 @@ export interface MyParticipantProfile {
 interface MyPageSummaryRow {
   account_type: 'member' | 'guest' | null;
   avatar_index: number | null;
+  guest_display_id?: string | null;
   has_profile: boolean | null;
   nickname: string | null;
   phone_masked: string | null;
+}
+
+interface MySessionPhoneResponse {
+  accountType?: 'member' | 'guest' | null;
+  guestDisplayId?: string | null;
+  ok?: boolean;
+  phoneMasked?: string | null;
 }
 
 interface MyParticipantProfileRow {
@@ -76,14 +85,36 @@ export async function fetchMyPageSummary(): Promise<MyPageSummary | null> {
   if (!row?.account_type) return null;
 
   const profilePhotoUrl = Boolean(row.has_profile) ? await fetchMyProfilePhotoUrl(session.token) : undefined;
+  const phoneFallback =
+    row.account_type === 'guest' && (!row.phone_masked || !row.guest_display_id)
+      ? await fetchMySessionPhone(session.token)
+      : null;
 
   return {
     accountType: row.account_type,
     avatarIndex: Number(row.avatar_index ?? 0),
+    guestDisplayId: row.guest_display_id || phoneFallback?.guestDisplayId || undefined,
     hasProfile: Boolean(row.has_profile),
     nickname: row.nickname || (row.account_type === 'member' ? '회원' : '비회원'),
-    phoneMasked: row.phone_masked || '',
+    phoneMasked: row.phone_masked || phoneFallback?.phoneMasked || '',
     profilePhotoUrl,
+  };
+}
+
+export async function fetchMySessionPhone(sessionToken?: string): Promise<Pick<MyPageSummary, 'accountType' | 'guestDisplayId' | 'phoneMasked'> | null> {
+  if (!supabase || !sessionToken) return null;
+
+  const { data, error } = await supabase.functions.invoke('my-session-phone', {
+    body: { sessionToken },
+  });
+
+  const response = data as MySessionPhoneResponse | null;
+  if (error || response?.ok !== true) return null;
+
+  return {
+    accountType: response.accountType ?? null,
+    guestDisplayId: response.guestDisplayId || undefined,
+    phoneMasked: response.phoneMasked || '',
   };
 }
 

@@ -78,7 +78,12 @@ async function signFile(supabase: ReturnType<typeof createClient>, path: string 
 
   if (error) {
     console.error('Signed URL creation failed', { error, path });
-    return null;
+    return {
+      errorMessage: '파일 URL을 발급하지 못했습니다.',
+      fileName: decodeURIComponent(path.split('/').pop() ?? '첨부파일'),
+      path,
+      signedUrl: null,
+    };
   }
 
   return {

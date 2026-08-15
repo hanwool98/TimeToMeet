@@ -4,6 +4,7 @@ returns table (
   has_profile boolean,
   nickname text,
   phone_masked text,
+  guest_display_id text,
   avatar_index integer
 )
 language plpgsql
@@ -30,6 +31,7 @@ begin
     return query select
       null::text,
       false,
+      null::text,
       null::text,
       null::text,
       0;
@@ -75,6 +77,12 @@ begin
     case
       when chosen.phone_value is null or length(regexp_replace(chosen.phone_value, '\D', '', 'g')) < 8 then null
       else left(regexp_replace(chosen.phone_value, '\D', '', 'g'), 3) || '-****-' || right(regexp_replace(chosen.phone_value, '\D', '', 'g'), 4)
+    end,
+    case
+      when session_row.resolved_role <> 'guest' or chosen.phone_value is null or length(regexp_replace(chosen.phone_value, '\D', '', 'g')) < 8 then null
+      else substring(regexp_replace(chosen.phone_value, '\D', '', 'g') from char_length(regexp_replace(chosen.phone_value, '\D', '', 'g')) - 7 for 4)
+        || '-' ||
+        substring(regexp_replace(chosen.phone_value, '\D', '', 'g') from char_length(regexp_replace(chosen.phone_value, '\D', '', 'g')) - 3 for 4)
     end,
     chosen.avatar_index
   from chosen;

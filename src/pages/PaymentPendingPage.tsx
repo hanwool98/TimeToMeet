@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import EventTicket, { formatDeadline, formatKoreanDate, formatWon } from '../components/EventTicket';
 import PrimaryButton from '../components/PrimaryButton';
+import { RefundPolicyBox } from '../data/refundPolicy';
 import {
   fetchMyEventTickets,
   requestBankTransferConfirmation,
@@ -17,9 +18,12 @@ export default function PaymentPendingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [refundChecked, setRefundChecked] = useState(false);
+  const [refundExpanded, setRefundExpanded] = useState(false);
   const ticket = useMemo(() => tickets.find((item) => item.applicationId === invitationId), [invitationId, tickets]);
   const [depositorName, setDepositorName] = useState('');
   const isExpired = ticket?.paymentDeadline ? new Date(ticket.paymentDeadline).getTime() < Date.now() : false;
+  const canSubmit = Boolean(depositorName.trim()) && refundChecked && !isExpired && !submitting && ticket?.status === '결제 대기';
 
   const loadTickets = useCallback(async () => {
     setError('');
@@ -45,6 +49,10 @@ export default function PaymentPendingPage() {
     if (ticket && !depositorName) setDepositorName(ticket.depositorName || ticket.applicantName);
   }, [depositorName, ticket]);
 
+  useEffect(() => {
+    if (ticket?.refundPolicyConfirmed) setRefundChecked(true);
+  }, [ticket?.refundPolicyConfirmed]);
+
   const submitDepositRequest = async () => {
     if (!ticket || submitting) return;
     setSubmitting(true);
@@ -52,8 +60,9 @@ export default function PaymentPendingPage() {
     try {
       await requestBankTransferConfirmation(ticket.applicationId, depositorName.trim() || ticket.applicantName);
       await loadTickets();
+      navigate('/my-events');
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : '입금 확인 요청에 실패했습니다.');
+      setError(caughtError instanceof Error ? caughtError.message : '결제 확인 정보 저장에 실패했습니다.');
     } finally {
       setSubmitting(false);
     }
@@ -90,7 +99,7 @@ export default function PaymentPendingPage() {
               <p className="w-fit rounded-full bg-meet-pinkSoft px-4 py-2 text-[14px] font-black text-meet-pink">{ticket.status}</p>
               <div>
                 <h2 className="text-fluid-safe text-[29px] font-black leading-tight">참가자로 선정되었어요</h2>
-                <p className="mt-3 text-[15px] font-extrabold leading-relaxed text-[#777]">아래 기한까지 입금하면 참가가 확정됩니다.</p>
+                <p className="mt-3 text-[15px] font-extrabold leading-relaxed text-[#777]">아래 기한까지 결제를 완료하면 참가가 확정됩니다.</p>
               </div>
 
               {ticket.paymentDeadline ? (
@@ -118,9 +127,6 @@ export default function PaymentPendingPage() {
               </section>
 
               <section className="space-y-4 rounded-[20px] bg-meet-blueSoft p-4">
-                <p className="rounded-[16px] bg-white/85 p-3 text-[14px] font-black leading-relaxed text-[#4d5d6d]">
-                  빠른 입금 확인을 위해 신청자 본인 명의의 계좌에서 송금해주세요.
-                </p>
                 <p className="text-[15px] font-black text-black">확인할 입금자명: {ticket.applicantName}</p>
                 <AccountRow label="은행명" value={ticket.bankName} />
                 <AccountRow label="계좌번호" value={ticket.bankAccountNumber} copyable />
@@ -135,6 +141,16 @@ export default function PaymentPendingPage() {
                 </label>
               </section>
 
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-[19px] font-black">환불 규정</h3>
+                  <button className="shrink-0 text-[13px] font-black text-meet-blue" onClick={() => setRefundExpanded((value) => !value)} type="button">
+                    {refundExpanded ? '접기' : '전체 내용 보기'}
+                  </button>
+                </div>
+                <RefundPolicyBox expanded={refundExpanded} />
+              </section>
+
               {ticket.depositFailureReason ? (
                 <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-[14px] font-black leading-relaxed text-meet-pink">
                   입금 내역을 확인하지 못했어요. {ticket.depositFailureReason}
@@ -142,16 +158,19 @@ export default function PaymentPendingPage() {
               ) : null}
 
               <label className="flex items-center gap-3 text-[15px] font-black text-[#555]">
-                <input className="h-5 w-5" type="checkbox" defaultChecked />
-                환불 규정을 확인했습니다
+                <input checked={refundChecked} className="h-5 w-5" onChange={(event) => setRefundChecked(event.target.checked)} type="checkbox" />
+                위 환불 규정을 확인했습니다
               </label>
-              <p className="text-center text-[13px] font-extrabold leading-relaxed text-[#999]">운영자가 입금 내역을 확인한 후 참가가 최종 확정됩니다.</p>
+              <p className="rounded-[18px] bg-[#f8f9fb] p-4 text-[14px] font-extrabold leading-relaxed text-[#666]">
+                계좌 정보를 확인한 후 ‘확인했습니다’를 눌러주세요. 원활한 입금 확인을 위해 이후 1시간 이내에 계좌이체를 진행해 주시길 권장드립니다.
+              </p>
               <PrimaryButton
-                disabled={isExpired || submitting || ticket.status === '입금 확인 중'}
+                disabled={!canSubmit}
                 onClick={submitDepositRequest}
               >
-                {ticket.status === '입금 확인 중' ? '입금 확인 중' : submitting ? '요청 중' : '입금 완료했어요'}
+                {submitting ? '저장 중' : '확인했습니다'}
               </PrimaryButton>
+              <p className="text-center text-[13px] font-extrabold leading-relaxed text-[#999]">입금이 확인되면 참가가 최종 확정됩니다.</p>
               {isExpired ? <p className="text-center text-[13px] font-black text-meet-pink">결제 기한이 지나 입금 확인을 요청할 수 없습니다.</p> : null}
             </section>
           )

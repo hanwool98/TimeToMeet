@@ -11,62 +11,59 @@ interface EventTicketProps {
 export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProps) {
   const isConfirmed = ticket.status === '참가 확정';
   const ageBand = getAgeBand(ticket.age);
+  const shortCode = getTicketShortCode(ticket.applicationNo);
 
   return (
-    <article className="relative grid w-full max-w-full min-w-0 grid-cols-[minmax(0,3fr)_minmax(86px,1fr)] overflow-hidden rounded-[22px] border border-[#f2dfe2] bg-white shadow-calendar">
-      <div className="min-w-0 px-4 py-4 min-[390px]:px-5">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-[#888]">Boarding Pass</p>
+    <article className="relative left-1/2 grid aspect-[9/5] w-[calc(100vw_-_36px)] max-w-[400px] min-w-0 -translate-x-1/2 grid-cols-[minmax(0,74%)_minmax(0,26%)] overflow-visible rounded-[12px] border border-[#f2dfe2] bg-white shadow-calendar before:absolute before:left-[74%] before:top-[-10px] before:z-10 before:h-5 before:w-5 before:-translate-x-1/2 before:rounded-full before:border before:border-[#f2dfe2] before:bg-white after:absolute after:bottom-[-10px] after:left-[74%] after:z-10 after:h-5 after:w-5 after:-translate-x-1/2 after:rounded-full after:border after:border-[#f2dfe2] after:bg-white">
+      <div className="flex min-w-0 flex-col justify-between px-3 py-2.5 min-[375px]:px-3.5 min-[390px]:px-4">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="shrink-0 text-[8px] font-black uppercase tracking-[0.12em] text-[#8b8b8b] min-[390px]:text-[9px]">Boarding Pass</p>
           <span className="h-px min-w-0 flex-1 border-t border-dashed border-meet-pink" />
-          <span aria-hidden="true" className="shrink-0 text-[16px] text-meet-pink">✈</span>
+          <span aria-hidden="true" className="shrink-0 text-[12px] leading-none text-meet-pink min-[390px]:text-[14px]">✈</span>
         </div>
-        <div className="mt-4 flex min-w-0 flex-wrap items-start gap-2">
-          <h2 className="min-w-0 flex-1 text-fluid-safe text-[24px] font-black leading-tight text-black">{ticket.eventTitle}</h2>
-          <span className="shrink-0 rounded-full bg-meet-blueSoft px-2.5 py-1 text-[11px] font-black text-meet-blue">
-            {getDDay(ticket.eventDate)}
-          </span>
-        </div>
+        <h2 className="mt-1.5 min-w-0 whitespace-nowrap text-fluid-safe font-black leading-tight text-black [font-size:clamp(16px,4.7vw,22px)]">
+          {ticket.eventTitle}
+        </h2>
 
-        <dl className="mt-5 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-3 border-b border-meet-pink/25 pb-4">
+        <dl className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,0.8fr)] gap-1.5 border-b border-meet-pink/25 pb-1.5 min-[390px]:gap-2.5">
           <TicketInfo label="Date" value={formatTicketDate(ticket.eventDate)} />
-          <TicketInfo label="Time" value={`${ticket.startTime}-${ticket.endTime}`} />
+          <TicketInfo label="Time" value={ticket.startTime} />
           <TicketInfo label="Area" value={ticket.location} />
         </dl>
 
-        <dl className="mt-4 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-3">
+        <dl className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,0.8fr)] gap-1.5 min-[390px]:gap-2.5">
           <TicketInfo label="Nickname" value={ticket.nickname} />
           <TicketInfo label="Job" value={ticket.job} />
           <TicketInfo label="Age" value={ageBand} />
         </dl>
 
-        <div className="mt-4 flex min-w-0 items-end gap-3">
-          <TicketInfo label="Ticket No." value={ticket.applicationNo} />
-          <p className="shrink-0 text-[10px] font-black text-meet-pink">{ticket.applicationNo.replace('TTM_', 'TTM ')}</p>
-          <div className="h-5 min-w-[72px] flex-1 bg-[repeating-linear-gradient(90deg,#111_0_2px,transparent_2px_4px,#111_4px_7px,transparent_7px_10px)]" />
+        <div className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1.15fr)_auto_minmax(42px,0.95fr)] items-end gap-1.5 min-[390px]:gap-2.5">
+          <TicketInfo label="Ticket No." value={ticket.applicationNo} compact />
+          <p className="shrink-0 whitespace-nowrap text-[7px] font-black text-meet-pink min-[390px]:text-[8px]">{shortCode}</p>
+          <div className="h-4 min-w-0 bg-[repeating-linear-gradient(90deg,#111_0_1.5px,transparent_1.5px_3px,#111_3px_5px,transparent_5px_7px)]" />
         </div>
       </div>
 
-      <div className="relative grid min-w-0 place-items-center border-l border-dashed border-meet-pink/45 bg-gradient-to-b from-white to-meet-pinkSoft/45 px-2 py-4 text-center">
-        <span className="absolute -left-3 top-[-12px] h-6 w-6 rounded-full bg-white" />
-        <span className="absolute -left-3 bottom-[-12px] h-6 w-6 rounded-full bg-white" />
+      <div className="relative grid min-w-0 place-items-center border-l border-dashed border-meet-pink/45 bg-gradient-to-b from-white to-meet-pinkSoft/35 px-1.5 py-2.5 text-center min-[390px]:px-2">
         {isConfirmed && ticket.qrToken ? (
           <button className="w-full min-w-0" onClick={onQrOpen} type="button">
             <TicketQr token={ticket.qrToken} />
-            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.08em] text-meet-pink">Entry QR</p>
+            <p className="mt-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-meet-pink min-[390px]:text-[10px]">Entry QR</p>
           </button>
         ) : (
-          <div className="w-full min-w-0">
-            <p className="text-[14px] font-black text-meet-pink">{ticket.status}</p>
+          <div className="flex h-full w-full min-w-0 flex-col items-center justify-center">
+            <p className="text-[12px] font-black text-meet-pink min-[390px]:text-[14px]">{ticket.status}</p>
             {ticket.paymentDeadline ? (
-              <p className="mt-4 text-[11px] font-black text-[#888]">
+              <p className="mt-2 text-[9px] font-black leading-tight text-[#777] min-[390px]:mt-3 min-[390px]:text-[10px]">
                 결제 기한
                 <br />
-                <span className="text-[16px] text-[#666]">{formatShortDeadline(ticket.paymentDeadline)}</span>
+                <span className="mt-1 block whitespace-nowrap text-[13px] text-[#666] min-[390px]:text-[15px]">{formatShortDeadline(ticket.paymentDeadline)}</span>
+                <span className="mt-0.5 block whitespace-nowrap text-[9px] text-[#777] min-[390px]:text-[10px]">{formatShortDeadlineTime(ticket.paymentDeadline)}</span>
               </p>
             ) : null}
-            <p className="mt-4 text-fluid-safe text-[17px] font-black text-[#666]">{formatWon(ticket.paymentAmount)}</p>
+            <p className="mt-2 whitespace-nowrap text-fluid-safe text-[14px] font-black text-[#666] min-[390px]:mt-3 min-[390px]:text-[16px]">{formatWon(ticket.paymentAmount)}</p>
             <button
-              className="mt-4 h-10 w-full max-w-full rounded-[10px] bg-meet-pink px-2 text-[13px] font-black text-white disabled:bg-[#d8d8d8]"
+              className="mt-2 h-7 w-full max-w-[64px] rounded-[7px] bg-[#db7894] px-1.5 text-[11px] font-black text-white disabled:bg-[#d8d8d8] min-[390px]:mt-3 min-[390px]:h-8 min-[390px]:max-w-[70px] min-[390px]:text-[12px]"
               disabled={!onPay || ticket.status !== '결제 대기'}
               onClick={onPay}
               type="button"
@@ -80,11 +77,13 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
   );
 }
 
-function TicketInfo({ label, value }: { label: string; value: string }) {
+function TicketInfo({ compact = false, label, value }: { compact?: boolean; label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[9px] font-black uppercase tracking-[0.08em] text-[#888]">{label}</dt>
-      <dd className="mt-1 truncate text-[13px] font-black text-[#333] min-[390px]:text-[14px]">{value}</dd>
+      <dt className="text-[7px] font-black uppercase tracking-[0.08em] text-[#888] min-[390px]:text-[8px]">{label}</dt>
+      <dd className={`mt-0.5 whitespace-nowrap text-fluid-safe font-black leading-tight text-[#333] ${compact ? 'text-[9px] min-[390px]:text-[11px]' : 'text-[10px] min-[390px]:text-[12px]'}`}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -191,10 +190,24 @@ function formatShortDeadline(value: string) {
   return `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')} ${dayNames[date.getDay()]}`;
 }
 
+function formatShortDeadlineTime(value: string) {
+  const date = new Date(value);
+  const rawHour = date.getHours();
+  const hour = rawHour === 0 ? 12 : rawHour;
+  return `${String(hour).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}까지`;
+}
+
 function getAgeBand(age: number) {
   const decade = Math.floor(age / 10) * 10;
   const half = age % 10 < 5 ? '초반' : '후반';
   return `${decade}대 ${half}`;
+}
+
+function getTicketShortCode(applicationNo: string) {
+  const normalized = applicationNo.replace(/-/g, '_');
+  const parts = normalized.split('_');
+  if (parts.length >= 2) return `${parts[0]} ${parts[1]}`;
+  return applicationNo;
 }
 
 function toTwelveHour(timeValue: string) {

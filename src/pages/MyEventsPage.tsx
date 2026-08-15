@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
-import EventTicket, { QrModal, formatDeadline } from '../components/EventTicket';
+import EventTicket, { QrModal } from '../components/EventTicket';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
@@ -89,9 +89,9 @@ export default function MyEventsPage() {
                     onQrOpen={ticket.status === '참가 확정' ? () => setQrTicket(ticket) : undefined}
                     ticket={ticket}
                   />
-                  {ticket.status === '입금 확인 중' ? (
+                  {ticket.status === '결제중' || ticket.status === '입금 확인 중' ? (
                     <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
-                      입금 확인을 요청했어요. 운영자가 통장 내역을 확인하면 참가 확정 티켓으로 바뀝니다.
+                      입금 확인 후 참가가 최종 확정됩니다.
                     </p>
                   ) : null}
                   {ticket.depositFailureReason ? (
@@ -108,8 +108,6 @@ export default function MyEventsPage() {
                         <p className="text-center text-[13px] font-black text-[#999]">행사 당일 QR 인증 후 입장할 수 있어요</p>
                       ) : null}
                     </div>
-                  ) : ticket.paymentDeadline ? (
-                    <p className="text-[13px] font-black text-[#777]">결제 기한 {formatDeadline(ticket.paymentDeadline)}</p>
                   ) : null}
                 </section>
               ))}

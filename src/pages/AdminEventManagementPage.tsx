@@ -5,8 +5,7 @@ import { DataErrorState, DataLoadingState } from '../components/DataState';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 
-const initialSelectedDate = new Date(2026, 7, 16);
-const today = new Date(2026, 7, 3);
+const today = new Date();
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -22,13 +21,13 @@ function formatKoreanDate(date: Date) {
 
 export default function AdminEventManagementPage() {
   const navigate = useNavigate();
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
-  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+  const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(() => today);
   const { error, events, loading, reload } = useOperationalData();
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.date === toDateKey(selectedDate)),
-    [selectedDate],
+    [events, selectedDate],
   );
   const isEarlyBird = selectedEvent ? getDaysUntilEvent(selectedEvent.date) >= 8 : false;
   const isRecruiting = selectedEvent ? selectedEvent.currentParticipants < selectedEvent.targetParticipants : false;
@@ -109,7 +108,8 @@ export default function AdminEventManagementPage() {
 }
 
 function getDaysUntilEvent(dateValue: string) {
-  const today = new Date(2026, 7, 7);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const eventDate = new Date(`${dateValue}T00:00:00`);
   return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
 }

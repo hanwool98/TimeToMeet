@@ -41,6 +41,11 @@ type SubmitPayload = {
   voiceIntro: UploadedFile;
 };
 
+const maxImageBytes = 8 * 1024 * 1024;
+const maxAudioBytes = 8 * 1024 * 1024;
+const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+const audioTypes = ['audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-m4a'];
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ message: 'Method not allowed.' }, 405);
@@ -56,6 +61,9 @@ Deno.serve(async (request) => {
   }
   if (payload.profilePhotos.length > 3) return json({ message: '프로필 사진은 최대 3장까지 첨부할 수 있습니다.' }, 400);
 
+  const fileValidationError = validateSubmissionFiles(payload);
+  if (fileValidationError) return json({ message: fileValidationError }, 400);
+
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const tokenHash = await sha256(payload.sessionToken);
   const { data: session, error: sessionError } = await supabase
@@ -70,6 +78,15 @@ Deno.serve(async (request) => {
   }
 
   const userId = session.user_id as string;
+  const { data: event, error: eventError } = await supabase
+    .from('events')
+    .select('id')
+    .eq('id', payload.eventId)
+    .maybeSingle();
+
+  if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.' }, 500);
+  if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.' }, 404);
+
   const { data: existing, error: existingError } = await supabase
     .from('applications')
     .select('id')
@@ -84,18 +101,25 @@ Deno.serve(async (request) => {
   let employmentProofPath = '';
   let voiceIntroPath = '';
   let profilePhotoPaths: string[] = [];
+  const uploadedPaths: string[] = [];
   try {
     const basePath = `${userId}/${crypto.randomUUID()}`;
     idPhotoPath = await uploadPrivateFile(supabase, `${basePath}/id-${sanitizeFileName(payload.idPhoto.fileName)}`, payload.idPhoto);
+    uploadedPaths.push(idPhotoPath);
     employmentProofPath = await uploadPrivateFile(supabase, `${basePath}/employment-${sanitizeFileName(payload.employmentProof.fileName)}`, payload.employmentProof);
+    uploadedPaths.push(employmentProofPath);
     voiceIntroPath = await uploadPrivateFile(supabase, `${basePath}/voice-${sanitizeFileName(payload.voiceIntro.fileName)}`, payload.voiceIntro);
+    uploadedPaths.push(voiceIntroPath);
     profilePhotoPaths = [];
     for (let index = 0; index < payload.profilePhotos.length; index += 1) {
       const file = payload.profilePhotos[index];
-      profilePhotoPaths.push(await uploadPrivateFile(supabase, `${basePath}/profile-${index + 1}-${sanitizeFileName(file.fileName)}`, file));
+      const uploadedPath = await uploadPrivateFile(supabase, `${basePath}/profile-${index + 1}-${sanitizeFileName(file.fileName)}`, file);
+      profilePhotoPaths.push(uploadedPath);
+      uploadedPaths.push(uploadedPath);
     }
   } catch (error) {
     console.error('Application file upload failed', error);
+    await cleanupUploadedFiles(supabase, uploadedPaths);
     return json({ message: error instanceof Error ? error.message : '파일 업로드에 실패했습니다.' }, 500);
   }
 
@@ -136,6 +160,7 @@ Deno.serve(async (request) => {
 
   if (insertError) {
     console.error('Application insert failed', insertError);
+    await cleanupUploadedFiles(supabase, uploadedPaths);
     return json({ message: `신청서 저장에 실패했습니다. ${insertError.message}` }, 500);
   }
 
@@ -147,6 +172,8 @@ Deno.serve(async (request) => {
 
     if (profileError) {
       console.error('Default participant profile save failed', profileError);
+      await supabase.from('applications').delete().eq('id', insertedApplication.id);
+      await cleanupUploadedFiles(supabase, uploadedPaths);
       return json({ message: `신청서는 저장됐지만 기본 프로필 저장에 실패했습니다. ${profileError.message}` }, 500);
     }
   }
@@ -154,6 +181,45 @@ Deno.serve(async (request) => {
   await supabase.from('application_drafts').delete().eq('event_id', payload.eventId).eq('user_id', userId);
   return json({ ok: true });
 });
+
+function validateSubmissionFiles(payload: SubmitPayload) {
+  const requiredImages: Array<[string, UploadedFile]> = [
+    ['신분증 사진', payload.idPhoto],
+    ['재직 증명 사진', payload.employmentProof],
+  ];
+
+  for (const [label, file] of requiredImages) {
+    const error = validateFile(file, imageTypes, maxImageBytes, label);
+    if (error) return error;
+  }
+
+  for (let index = 0; index < payload.profilePhotos.length; index += 1) {
+    const error = validateFile(payload.profilePhotos[index], imageTypes, maxImageBytes, `프로필 사진 ${index + 1}`);
+    if (error) return error;
+  }
+
+  return validateFile(payload.voiceIntro, audioTypes, maxAudioBytes, '자기소개 음성');
+}
+
+function validateFile(file: UploadedFile | undefined, allowedTypes: string[], maxBytes: number, label: string) {
+  if (!file?.base64 || !file.fileName) return `${label} 파일을 첨부해주세요.`;
+  const contentType = normalizeContentType(file.contentType);
+  if (!allowedTypes.includes(contentType)) return `${label} 파일 형식이 올바르지 않습니다.`;
+  const size = estimateBase64Bytes(file.base64);
+  if (size <= 0) return `${label} 파일이 비어 있습니다.`;
+  if (size > maxBytes) return `${label} 파일은 ${Math.floor(maxBytes / 1024 / 1024)}MB 이하로 첨부해주세요.`;
+  return '';
+}
+
+function normalizeContentType(value: string) {
+  return value.split(';')[0].trim().toLowerCase();
+}
+
+function estimateBase64Bytes(base64: string) {
+  const cleanValue = base64.replace(/\s/g, '');
+  const padding = cleanValue.endsWith('==') ? 2 : cleanValue.endsWith('=') ? 1 : 0;
+  return Math.floor((cleanValue.length * 3) / 4) - padding;
+}
 
 async function saveMemberDefaultProfile(supabase: ReturnType<typeof createClient>, snapshot: Record<string, unknown>) {
   const userId = snapshot.user_id as string;
@@ -204,6 +270,18 @@ async function uploadPrivateFile(supabase: ReturnType<typeof createClient>, path
     throw new Error(`파일 업로드에 실패했습니다. ${error.message}`);
   }
   return path;
+}
+
+async function cleanupUploadedFiles(supabase: ReturnType<typeof createClient>, paths: string[]) {
+  const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
+  if (uniquePaths.length === 0) return;
+  const { error } = await supabase.storage.from('application-files').remove(uniquePaths);
+  if (error) {
+    console.error('Uploaded file rollback cleanup failed', {
+      message: error.message,
+      paths: uniquePaths,
+    });
+  }
 }
 
 function decodeBase64(base64: string) {

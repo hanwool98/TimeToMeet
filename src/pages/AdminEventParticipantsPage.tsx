@@ -1,20 +1,22 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
-import ParticipantList, { getAvatarPosition } from '../components/ParticipantList';
+import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { deleteEventFromSupabase } from '../services/supabaseApplications';
+import { deleteEventFromSupabase, fetchAdminApplicationFiles, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
-
-const adminProfileSheet = '/assets/admin-profile-photos.svg';
 
 export default function AdminEventParticipantsPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [previewParticipant, setPreviewParticipant] = useState<ParticipantData | null>(null);
+  const [previewFiles, setPreviewFiles] = useState<AdminApplicationFiles | null>(null);
+  const [previewFilesLoading, setPreviewFilesLoading] = useState(false);
+  const [previewFilesError, setPreviewFilesError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
@@ -23,6 +25,29 @@ export default function AdminEventParticipantsPage() {
     .map(applicationToParticipant);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
+  const previewApplication = previewParticipant
+    ? applications.find((application) => (application.dbId ?? application.id) === previewParticipant.id) ?? null
+    : null;
+
+  const loadPreviewFiles = useCallback(async () => {
+    if (!previewApplication) return;
+    setPreviewFilesLoading(true);
+    setPreviewFilesError('');
+    try {
+      setPreviewFiles(await fetchAdminApplicationFiles(previewApplication));
+    } catch (caughtError) {
+      setPreviewFiles(null);
+      setPreviewFilesError(caughtError instanceof Error ? caughtError.message : '제출 자료를 불러오지 못했습니다.');
+    } finally {
+      setPreviewFilesLoading(false);
+    }
+  }, [previewApplication]);
+
+  useEffect(() => {
+    setPreviewFiles(null);
+    setPreviewFilesError('');
+    if (previewApplication) void loadPreviewFiles();
+  }, [loadPreviewFiles, previewApplication]);
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
@@ -41,6 +66,16 @@ export default function AdminEventParticipantsPage() {
     } finally {
       setDeleting(false);
     }
+  };
+
+  const updatePreviewApplicationStatus = async (status: '자동 취소' | '참여 보류', reason: string) => {
+    if (!previewApplication) return;
+    await updateApplicationReviewInSupabase(previewApplication, status, {
+      reason,
+      reviewedAt: new Date().toISOString(),
+    });
+    await reload();
+    setPreviewParticipant(null);
   };
 
   return (
@@ -121,20 +156,35 @@ export default function AdminEventParticipantsPage() {
                 <ProfileRow label="7. 전화번호" value={previewParticipant.profile.phone} />
                 <ProfileRow label="8. 결혼 및 교제 여부" value={previewParticipant.profile.relationshipStatus} />
                 <ProfileImageSection
+                  file={previewFiles?.idPhoto}
+                  filesError={previewFilesError}
+                  filesLoading={previewFilesLoading}
                   label="9. 본인확인용 신분증 사진 첨부"
-                  participant={previewParticipant}
-                  type="id"
+                  onRetry={loadPreviewFiles}
                   value={previewParticipant.profile.idPhotoStatus}
                 />
                 <ProfileRow label="10. 닉네임" value={previewParticipant.profile.nickname} />
-                <ProfilePhotoGallery participant={previewParticipant} value={previewParticipant.profile.profilePhotos} />
-                <ProfileVoicePreview />
+                <ProfilePhotoGallery
+                  files={previewFiles}
+                  filesError={previewFilesError}
+                  filesLoading={previewFilesLoading}
+                  onRetry={loadPreviewFiles}
+                  value={previewParticipant.profile.profilePhotos}
+                />
+                <ProfileVoicePreview
+                  file={previewFiles?.voiceIntro}
+                  filesError={previewFilesError}
+                  filesLoading={previewFilesLoading}
+                  onRetry={loadPreviewFiles}
+                />
                 <ProfileRow label="13. 키" value={previewParticipant.profile.height} />
                 <ProfileRow label="14. 직업" value={previewParticipant.profile.job} />
                 <ProfileImageSection
+                  file={previewFiles?.employmentProof}
+                  filesError={previewFilesError}
+                  filesLoading={previewFilesLoading}
                   label="15. 재직 증명"
-                  participant={previewParticipant}
-                  type="employment"
+                  onRetry={loadPreviewFiles}
                   value={previewParticipant.profile.employmentProof}
                 />
                 <ProfileRow label="16. 접속 경로" value={previewParticipant.profile.accessRoute} />
@@ -155,7 +205,9 @@ export default function AdminEventParticipantsPage() {
                 className="h-12 rounded-[18px] bg-meet-pink text-[14px] font-black text-white transition active:scale-[0.99]"
                 onClick={() => {
                   if (window.confirm('참여 취소 처리하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-                    window.alert('참여 취소 처리 준비중!');
+                    void updatePreviewApplicationStatus('자동 취소', '관리자 참여 취소 처리').catch((caughtError) => {
+                      window.alert(caughtError instanceof Error ? caughtError.message : '참여 취소 처리에 실패했습니다.');
+                    });
                   }
                 }}
                 type="button"
@@ -166,7 +218,9 @@ export default function AdminEventParticipantsPage() {
                 className="h-12 rounded-[18px] bg-[#d9d9d9] text-[14px] font-black text-black transition active:scale-[0.99]"
                 onClick={() => {
                   if (window.confirm('참여 대기로 전환하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-                    window.alert('참여 대기 전환 준비중!');
+                    void updatePreviewApplicationStatus('참여 보류', '관리자 참여 대기 전환').catch((caughtError) => {
+                      window.alert(caughtError instanceof Error ? caughtError.message : '참여 대기 전환에 실패했습니다.');
+                    });
                   }
                 }}
                 type="button"
@@ -240,72 +294,121 @@ function ProfileRow({ label, value }: { label: string; value: string }) {
 }
 
 function ProfileImageSection({
+  file,
+  filesError,
+  filesLoading,
   label,
-  participant,
-  type,
+  onRetry,
   value,
 }: {
+  file?: SignedApplicationFile;
+  filesError: string;
+  filesLoading: boolean;
   label: string;
-  participant: ParticipantData;
-  type: 'id' | 'employment';
+  onRetry: () => void;
   value: string;
 }) {
   return (
     <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">{label}</p>
       <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
-      <div className="mt-3 overflow-hidden rounded-[18px] bg-white shadow-sm">
-        <div
-          className="h-[160px] bg-cover bg-center"
-          style={{
-            backgroundImage: `url(${adminProfileSheet})`,
-            backgroundPosition: getAvatarPosition(participant.avatarIndex + (type === 'id' ? 1 : 2)),
-            backgroundSize: '440% 330%',
-          }}
-        />
-      </div>
+      <FilePreview file={file} filesError={filesError} filesLoading={filesLoading} kind="image" onRetry={onRetry} />
     </section>
   );
 }
 
-function ProfilePhotoGallery({ participant, value }: { participant: ParticipantData; value: string }) {
-  const labels = ['대표사진', '사진 2', '사진 3'];
-
+function ProfilePhotoGallery({
+  files,
+  filesError,
+  filesLoading,
+  onRetry,
+  value,
+}: {
+  files: AdminApplicationFiles | null;
+  filesError: string;
+  filesLoading: boolean;
+  onRetry: () => void;
+  value: string;
+}) {
   return (
     <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">11. 프로필 사진</p>
       <p className="mt-1 text-fluid-safe text-[16px] font-black leading-snug text-black">{value}</p>
-      <div className="mt-3 space-y-3">
-        {labels.map((label, index) => (
-          <div className="overflow-hidden rounded-[20px] bg-white shadow-sm" key={label}>
-            <div
-              className="aspect-[4/5] bg-cover bg-center saturate-[0.95]"
-              style={{
-                backgroundImage: `url(${adminProfileSheet})`,
-                backgroundPosition: getAvatarPosition(participant.avatarIndex + index),
-                backgroundSize: '440% 330%',
-              }}
-            />
-            <p className="px-4 py-3 text-[13px] font-black text-black">{label}</p>
-          </div>
-        ))}
-      </div>
+      {filesLoading || filesError || !files ? (
+        <FilePreview filesError={filesError} filesLoading={filesLoading} kind="image" onRetry={onRetry} />
+      ) : files.profilePhotos.length > 0 ? (
+        <div className="mt-3 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
+          {files.profilePhotos.map((file, index) => (
+            <a className="relative block overflow-hidden rounded-[16px] bg-white shadow-sm" href={file.signedUrl} key={file.path} rel="noreferrer" target="_blank">
+              {file.signedUrl ? <img alt={`프로필 사진 ${index + 1}`} className="aspect-square w-full object-cover" src={file.signedUrl} /> : <MissingFile text={file.errorMessage ?? '파일을 불러오지 못했습니다.'} />}
+              {index === files.representativeIndex ? <span className="absolute left-2 top-2 rounded-full bg-meet-blue px-2 py-1 text-[10px] font-black text-white">대표사진</span> : null}
+            </a>
+          ))}
+        </div>
+      ) : (
+        <MissingFile text="제출된 사진이 없습니다." />
+      )}
     </section>
   );
 }
 
-function ProfileVoicePreview() {
+function ProfileVoicePreview({
+  file,
+  filesError,
+  filesLoading,
+  onRetry,
+}: {
+  file?: SignedApplicationFile;
+  filesError: string;
+  filesLoading: boolean;
+  onRetry: () => void;
+}) {
   return (
     <section className="w-full max-w-full min-w-0 rounded-[20px] bg-meet-blueSoft px-4 py-3">
       <p className="text-[13px] font-black text-[#8a8a8a]">12. 너의 목소리가 보여</p>
-      <button
-        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[18px] bg-white text-[15px] font-black text-meet-pink shadow-sm"
-        onClick={() => window.alert('샘플 음성입니다.')}
-        type="button"
-      >
-        <span className="h-0 w-0 border-y-[6px] border-l-[10px] border-y-transparent border-l-meet-pink" />
-        5초 자기소개 재생
-      </button>
+      <FilePreview file={file} filesError={filesError} filesLoading={filesLoading} kind="audio" onRetry={onRetry} />
     </section>
+  );
+}
+
+function FilePreview({
+  file,
+  filesError,
+  filesLoading,
+  kind,
+  onRetry,
+}: {
+  file?: SignedApplicationFile;
+  filesError: string;
+  filesLoading: boolean;
+  kind: 'audio' | 'image';
+  onRetry: () => void;
+}) {
+  if (filesLoading) return <MissingFile text="제출 자료를 불러오는 중입니다." />;
+  if (filesError) {
+    return (
+      <div className="mt-3 rounded-[18px] bg-white p-4 text-center text-[13px] font-black text-meet-pink shadow-sm">
+        <p>{filesError}</p>
+        <button className="mt-3 text-meet-blue underline" onClick={onRetry} type="button">
+          다시 불러오기
+        </button>
+      </div>
+    );
+  }
+  if (!file) return <MissingFile text={kind === 'audio' ? '제출된 음성이 없습니다.' : '제출된 사진이 없습니다.'} />;
+  if (!file.signedUrl) return <MissingFile text={file.errorMessage ?? '파일을 불러오지 못했습니다.'} />;
+  if (kind === 'audio') return <audio className="mt-3 w-full" controls src={file.signedUrl} />;
+  return (
+    <a className="mt-3 block overflow-hidden rounded-[18px] bg-white shadow-sm" href={file.signedUrl} rel="noreferrer" target="_blank">
+      <img alt={file.fileName} className="max-h-[280px] w-full object-contain" src={file.signedUrl} />
+    </a>
+  );
+}
+
+function MissingFile({ text }: { text: string }) {
+  return (
+    <div className="mt-3 grid min-h-[120px] place-items-center rounded-[18px] border border-dashed border-[#d7e2ee] bg-white p-4 text-center text-[13px] font-black text-[#8a8a8a]">
+      {text}
+    </div>
   );
 }

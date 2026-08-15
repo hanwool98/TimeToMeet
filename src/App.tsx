@@ -7,8 +7,7 @@ import EventCard from './components/EventCard';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
 
-const initialSelectedDate = new Date(2026, 7, 16);
-const today = new Date(2026, 7, 3);
+const today = new Date();
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -25,8 +24,8 @@ function formatKoreanDate(date: Date) {
 export default function App() {
   const navigate = useNavigate();
   const eventCardRef = useRef<HTMLDivElement>(null);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
-  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+  const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(() => today);
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');

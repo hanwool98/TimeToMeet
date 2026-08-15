@@ -6,6 +6,7 @@ import AdminRoute from './components/AdminRoute';
 import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminCheckInPage from './pages/AdminCheckInPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
+import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminPage from './pages/AdminPage';
@@ -40,6 +41,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/events" element={<AdminEventManagementPage />} />
             <Route path="/admin/events/new" element={<AdminEventCreatePage />} />
+            <Route path="/admin/event-mode" element={<AdminEventModeHomePage />} />
             <Route path="/admin/events/:eventId" element={<AdminEventParticipantsPage />} />
             <Route path="/admin/events/:eventId/edit" element={<AdminEventCreatePage />} />
             <Route path="/admin/events/:eventId/check-in" element={<AdminCheckInPage />} />
@@ -50,6 +52,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/mypage" element={<MyPage />} />
           <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
           <Route path="/profile/new" element={<ProfileFormPage />} />
+          <Route path="/events/:eventId/apply/profile" element={<ProfileFormPage />} />
           <Route path="/application-complete" element={<ApplicationCompletePage />} />
           <Route path="/events/:eventId" element={<EventDetailPage />} />
           <Route path="/events/:eventId/info" element={<EventInfoPage />} />
