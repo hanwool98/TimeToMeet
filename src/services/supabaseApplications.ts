@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { getAdminSession } from './adminAuth';
 import { getAppSession } from './appAuth';
@@ -342,9 +343,31 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
   });
 
   if (error || data?.ok !== true) {
-    const message = data?.message || error?.message || '신청서 저장에 실패했습니다.';
-    throw new Error(message);
+    throw new Error(await resolveFunctionErrorMessage(error, data, '신청서 저장에 실패했습니다.'));
   }
+}
+
+/**
+ * On a non-2xx response, supabase-js discards the response body and returns
+ * `data: null` with a generic `FunctionsHttpError` ("Edge Function returned a
+ * non-2xx status code") — the actual Korean message our Edge Function sent
+ * back (e.g. "파일 업로드에 실패했습니다...") is only reachable via
+ * `error.context`, the raw Response object. Without reading it, every server
+ * failure surfaces to the user as that one opaque SDK message no matter what
+ * actually went wrong.
+ */
+async function resolveFunctionErrorMessage(error: unknown, data: { message?: string } | null | undefined, fallback: string) {
+  if (data?.message) return data.message;
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.json();
+      if (body?.message) return String(body.message);
+    } catch {
+      // Response body wasn't JSON (e.g. an infra/gateway error page) -
+      // fall through to the generic fallback rather than surface raw HTML.
+    }
+  }
+  return fallback;
 }
 
 export async function fetchOwnApplicationForEvent(eventId: string) {
