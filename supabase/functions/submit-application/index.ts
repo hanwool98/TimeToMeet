@@ -107,12 +107,16 @@ Deno.serve(async (request) => {
     }
   }
 
+  // Statuses that mean the applicant's previous attempt is over and shouldn't
+  // block a new one - kept in sync with the same terminal-status set used for
+  // guest cleanup eligibility (see get_expired_guest_cleanup_targets).
+  const terminalStatuses = ['반려', '자동 취소', '환불 완료', '신청 취소'];
   const { data: existing, error: existingError } = await supabase
     .from('applications')
     .select('id')
     .eq('event_id', payload.eventId)
     .eq('user_id', userId)
-    .neq('status', '반려')
+    .not('status', 'in', `(${terminalStatuses.join(',')})`)
     .maybeSingle();
 
   if (existingError) return json({ message: '기존 신청 내역 확인에 실패했습니다.' }, 500);
