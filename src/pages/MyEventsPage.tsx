@@ -98,6 +98,18 @@ export default function MyEventsPage() {
                       입금 확인이 보류됐어요. {ticket.depositFailureReason}
                     </p>
                   ) : null}
+                  {ticket.status === '참여 보류' ? (
+                    <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
+                      현재 참가가 보류되었습니다.
+                      {ticket.reviewReason ? <><br />{ticket.reviewReason}</> : null}
+                    </p>
+                  ) : null}
+                  {ticket.status === '반려' ? (
+                    <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-[14px] font-black leading-relaxed text-meet-pink">
+                      이번 행사 참가 신청이 승인되지 않았습니다.
+                      {ticket.reviewReason ? <><br />{ticket.reviewReason}</> : null}
+                    </p>
+                  ) : null}
                   {ticket.status === '참가 확정' ? (
                     <div className="space-y-2">
                       <PrimaryButton disabled={!ticket.checkedInAt} onClick={() => navigate(`/events/${ticket.eventId}/mode`)}>

@@ -98,6 +98,11 @@ export default function AdminEventCreatePage() {
   const [femaleCapacity, setFemaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
   const [malePrice, setMalePrice] = useState(editingEvent ? String(editingEvent.malePrice) : '50000');
   const [femalePrice, setFemalePrice] = useState(editingEvent ? String(editingEvent.femalePrice) : '40000');
+  const [earlyBirdDeadline, setEarlyBirdDeadline] = useState(
+    editingEvent?.earlyBirdDeadline ? toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline)) : '',
+  );
+  const [earlyBirdDiscountMale, setEarlyBirdDiscountMale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountMale ?? 0) : '0');
+  const [earlyBirdDiscountFemale, setEarlyBirdDiscountFemale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountFemale ?? 0) : '0');
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
@@ -116,6 +121,9 @@ export default function AdminEventCreatePage() {
     setFemaleCapacity(String(editingEvent.femaleCapacity ?? editingEvent.targetParticipants / 2));
     setMalePrice(String(editingEvent.malePrice));
     setFemalePrice(String(editingEvent.femalePrice));
+    setEarlyBirdDeadline(editingEvent.earlyBirdDeadline ? toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline)) : '');
+    setEarlyBirdDiscountMale(String(editingEvent.earlyBirdDiscountMale ?? 0));
+    setEarlyBirdDiscountFemale(String(editingEvent.earlyBirdDiscountFemale ?? 0));
     setRegion(toRegionOption(editingEvent.location));
     setVenueBooked(editingEvent.venueBooked);
     setDeadline(
@@ -145,6 +153,9 @@ export default function AdminEventCreatePage() {
         setFemaleCapacity(String(details.femaleCapacity));
         setMalePrice(String(details.malePrice));
         setFemalePrice(String(details.femalePrice));
+        setEarlyBirdDeadline(details.earlyBirdDeadline ? toDateTimeInputValue(new Date(details.earlyBirdDeadline)) : '');
+        setEarlyBirdDiscountMale(String(details.earlyBirdDiscountMale ?? 0));
+        setEarlyBirdDiscountFemale(String(details.earlyBirdDiscountFemale ?? 0));
         setRegion(toRegionOption(details.location));
         setVenueDetail(details.venueDetail);
         setVenueBooked(details.venueBooked);
@@ -168,8 +179,16 @@ export default function AdminEventCreatePage() {
   }, [eventId]);
 
   const handleCreate = async () => {
+    if (!editingEvent && eventDate < toDateInputValue(new Date())) {
+      setSaveError('행사 날짜는 오늘 이후여야 합니다.');
+      return;
+    }
+
     const nextEvent: EventData = {
       applicationDeadline: deadline ? new Date(deadline).toISOString() : undefined,
+      earlyBirdDeadline: earlyBirdDeadline ? new Date(earlyBirdDeadline).toISOString() : undefined,
+      earlyBirdDiscountMale: Number(earlyBirdDiscountMale) || 0,
+      earlyBirdDiscountFemale: Number(earlyBirdDiscountFemale) || 0,
       id: editingEvent?.id ?? createEventId(eventDate, eventName),
       title: eventName.trim() || '타임투밋 로테이션 소개팅',
       shortName: eventType.includes('로테이션') ? '로테이션' : eventType,
@@ -234,7 +253,13 @@ export default function AdminEventCreatePage() {
             </Field>
 
             <Field label="행사 날짜">
-              <input className={inputClassName} onChange={(event) => setEventDate(event.target.value)} type="date" value={eventDate} />
+              <input
+                className={inputClassName}
+                min={editingEvent ? undefined : toDateInputValue(new Date())}
+                onChange={(event) => setEventDate(event.target.value)}
+                type="date"
+                value={eventDate}
+              />
             </Field>
 
             <div>
@@ -296,6 +321,39 @@ export default function AdminEventCreatePage() {
                   />
                 </Field>
               </div>
+            </div>
+
+            <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">
+              <h2 className="text-[17px] font-black">얼리버드 할인 (선택)</h2>
+              <Field label="얼리버드 마감">
+                <input
+                  className="mt-1 h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                  onChange={(event) => setEarlyBirdDeadline(event.target.value)}
+                  type="datetime-local"
+                  value={earlyBirdDeadline}
+                />
+              </Field>
+              <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2 min-[380px]:gap-3">
+                <Field label="할인액(남성)">
+                  <input
+                    className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    inputMode="numeric"
+                    onChange={(event) => setEarlyBirdDiscountMale(event.target.value.replace(/\D/g, ''))}
+                    placeholder="0"
+                    value={earlyBirdDiscountMale}
+                  />
+                </Field>
+                <Field label="할인액(여성)">
+                  <input
+                    className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    inputMode="numeric"
+                    onChange={(event) => setEarlyBirdDiscountFemale(event.target.value.replace(/\D/g, ''))}
+                    placeholder="0"
+                    value={earlyBirdDiscountFemale}
+                  />
+                </Field>
+              </div>
+              <p className="mt-3 text-[12px] font-extrabold text-[#777]">마감을 비워두면 얼리버드 할인이 적용되지 않습니다.</p>
             </div>
 
             <Field label="공개 지역">
@@ -363,6 +421,9 @@ function createEventId(dateValue: string, eventName: string) {
 
 function getEventSaveErrorMessage(caughtError: unknown) {
   const message = caughtError instanceof Error ? caughtError.message : '';
+  if (message.includes('Event date cannot be in the past')) {
+    return '행사 날짜는 오늘 이후여야 합니다.';
+  }
   if (message.includes('row-level security') || message.includes('permission') || message.includes('policy')) {
     return '행사를 저장하지 못했습니다. Supabase 관리자 권한 또는 RLS 정책을 확인해주세요.';
   }

@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
+import { verifyAppSession } from '../services/appAuth';
 
 const reasons = [
   {
@@ -109,6 +111,7 @@ export default function EventInfoPage() {
   const location = useLocation();
   const { eventId } = useParams();
   const { error, events, loading, reload } = useOperationalData();
+  const [checkingSession, setCheckingSession] = useState(false);
   const isTabEventInfo = location.pathname === '/event-info';
   const event = eventId
     ? events.find((item) => item.id === eventId)
@@ -117,6 +120,12 @@ export default function EventInfoPage() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
   const isApplicationClosed = Boolean(event?.applicationDeadline && new Date(event.applicationDeadline).getTime() <= Date.now());
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
+  const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
+  const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;
+  const earlyBirdDiscountFemale = isEarlyBirdActive ? event?.earlyBirdDiscountFemale ?? 0 : 0;
+  const finalMalePrice = Math.max((event?.malePrice ?? 50000) - earlyBirdDiscountMale, 0);
+  const finalFemalePrice = Math.max((event?.femalePrice ?? 40000) - earlyBirdDiscountFemale, 0);
+  const hasActiveEarlyBirdDiscount = isEarlyBirdActive && (earlyBirdDiscountMale > 0 || earlyBirdDiscountFemale > 0);
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
@@ -192,9 +201,38 @@ export default function EventInfoPage() {
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
             <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-              <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
-              <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
-              <p className="mt-5">얼리버드 신청 시 5,000원 할인</p>
+              {hasActiveEarlyBirdDiscount ? (
+                <>
+                  <p>
+                    남성{' '}
+                    {earlyBirdDiscountMale > 0 ? (
+                      <>
+                        <span className="text-[#aab0b8] line-through">{formatWon(event?.malePrice ?? 50000)}</span>{' '}
+                        {formatWon(finalMalePrice)}
+                      </>
+                    ) : (
+                      formatWon(finalMalePrice)
+                    )}
+                  </p>
+                  <p>
+                    여성{' '}
+                    {earlyBirdDiscountFemale > 0 ? (
+                      <>
+                        <span className="text-[#aab0b8] line-through">{formatWon(event?.femalePrice ?? 40000)}</span>{' '}
+                        {formatWon(finalFemalePrice)}
+                      </>
+                    ) : (
+                      formatWon(finalFemalePrice)
+                    )}
+                  </p>
+                  <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
+                </>
+              ) : (
+                <>
+                  <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
+                  <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
+                </>
+              )}
             </div>
           </section>
 
@@ -211,11 +249,21 @@ export default function EventInfoPage() {
           {!isTabEventInfo ? (
             <div className="sticky bottom-4 mt-10">
               <PrimaryButton
-                disabled={!eventId || isApplicationClosed}
-                onClick={() => {
-                  if (!eventId || isApplicationClosed) return;
+                disabled={!eventId || isApplicationClosed || checkingSession}
+                onClick={async () => {
+                  if (!eventId || isApplicationClosed || checkingSession) return;
                   const returnTo = `/events/${eventId}/apply/profile`;
-                  navigate(`/guest-phone?entry=tab&returnTo=${encodeURIComponent(returnTo)}`);
+                  setCheckingSession(true);
+                  try {
+                    const hasValidSession = await verifyAppSession();
+                    if (hasValidSession) {
+                      navigate(returnTo);
+                      return;
+                    }
+                    navigate(`/guest-phone?entry=tab&returnTo=${encodeURIComponent(returnTo)}`);
+                  } finally {
+                    setCheckingSession(false);
+                  }
                 }}
               >
                 {isApplicationClosed ? '신청 마감' : '내 프로필 만들기'}

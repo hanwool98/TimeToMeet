@@ -81,7 +81,7 @@ Deno.serve(async (request) => {
   const userId = session.user_id as string;
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, event_date, application_deadline')
+    .select('id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female')
     .eq('id', payload.eventId)
     .maybeSingle();
 
@@ -112,6 +112,7 @@ Deno.serve(async (request) => {
     .select('id')
     .eq('event_id', payload.eventId)
     .eq('user_id', userId)
+    .neq('status', '반려')
     .maybeSingle();
 
   if (existingError) return json({ message: '기존 신청 내역 확인에 실패했습니다.' }, 500);
@@ -143,6 +144,13 @@ Deno.serve(async (request) => {
     return json({ message: error instanceof Error ? error.message : '파일 업로드에 실패했습니다.' }, 500);
   }
 
+  const basePrice = payload.gender === '남성' ? Number(event.male_price ?? 0) : Number(event.female_price ?? 0);
+  const isEarlyBird = Boolean(event.early_bird_deadline) && new Date(event.early_bird_deadline as string).getTime() > Date.now();
+  const earlyBirdDiscount = isEarlyBird
+    ? Number((payload.gender === '남성' ? event.early_bird_discount_male : event.early_bird_discount_female) ?? 0)
+    : 0;
+  const paymentAmount = Math.max(basePrice - earlyBirdDiscount, 0);
+
   const applicationSnapshot = {
     access_route: payload.accessRoute.trim(),
     applicant_kind: session.role,
@@ -159,6 +167,7 @@ Deno.serve(async (request) => {
     job: payload.job.trim(),
     name: payload.name.trim(),
     nickname: payload.nickname.trim(),
+    payment_amount: paymentAmount,
     phone: normalizePhone(payload.phone),
     profile_photo_paths: profilePhotoPaths,
     refund_agreement: payload.refundAgreement,

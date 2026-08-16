@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import useOperationalData from '../hooks/useOperationalData';
-import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -377,7 +377,23 @@ function ReviewProfileModal({
   const [filesLoading, setFilesLoading] = useState(true);
   const [expandedPhoto, setExpandedPhoto] = useState<{ photos: SignedApplicationFile[]; index: number; title: string } | null>(null);
   const [deciding, setDeciding] = useState(false);
-  const canReview = application.status === '심사 대기';
+  const canReview = application.status === '심사 대기' || application.status === '참여 보류';
+  const [resettingPin, setResettingPin] = useState(false);
+
+  const handleResetGuestPin = async () => {
+    if (!application.userUuid || resettingPin) return;
+    const ok = window.confirm(`${application.userId}의 PIN을 초기화할까요? 기존 PIN은 더 이상 사용할 수 없습니다.`);
+    if (!ok) return;
+    setResettingPin(true);
+    try {
+      const newPin = await resetGuestPinForAdmin(application.userUuid);
+      window.alert(`새 PIN: ${newPin}\n참가자에게 안내해주세요.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'PIN을 초기화하지 못했습니다.');
+    } finally {
+      setResettingPin(false);
+    }
+  };
   const filesReady = !filesLoading && !filesError && files !== null;
   const canDecide = canReview && filesReady;
 
@@ -447,6 +463,16 @@ function ReviewProfileModal({
             </div>
             <p className="mt-2 text-[17px] font-black leading-snug text-[#263149]">{application.eventDate} {application.eventType} 소개팅</p>
             <p className="mt-2 text-[15px] font-extrabold text-[#7a828c]">{application.accountType === 'guest' ? '비회원' : '회원'} {application.userId}</p>
+            {application.accountType === 'guest' && application.userUuid ? (
+              <button
+                className="mt-2 h-9 rounded-[10px] border border-meet-blue px-3 text-[12px] font-black text-meet-blue disabled:opacity-50"
+                disabled={resettingPin}
+                onClick={() => void handleResetGuestPin()}
+                type="button"
+              >
+                {resettingPin ? 'PIN 초기화 중' : 'PIN 초기화'}
+              </button>
+            ) : null}
           </div>
 
           {profile ? (
@@ -459,7 +485,7 @@ function ReviewProfileModal({
                       <p className="truncate text-[22px] font-black">{profile.name}</p>
                       <p className="mt-1 text-[15px] font-extrabold text-[#747b84]">{profile.nickname}</p>
                     </div>
-                    <p className="shrink-0 text-[15px] font-black text-[#263149]">{maskPhone(profile.phone)}</p>
+                    <p className="shrink-0 text-[15px] font-black text-[#263149]">{profile.phone}</p>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-extrabold text-[#5d6672]">
                     <span>📅 {formatBirthDate(profile.birthDate)}</span>
@@ -538,7 +564,7 @@ function ReviewProfileModal({
                   <ReviewField label="4. 생년월일" value={formatBirthDate(profile.birthDate)} />
                   <ReviewField label="5. 성별" value={profile.genderLabel} />
                   <ReviewField label="6. 거주지" value={profile.residence} />
-                  <ReviewField label="7. 전화번호" value={maskPhone(profile.phone)} />
+                  <ReviewField label="7. 전화번호" value={profile.phone} />
                   <ReviewField label="8. 결혼 및 교제 여부" value={profile.relationshipStatus} />
                   <ReviewField label="10. 닉네임" value={profile.nickname} />
                   <ReviewField label="13. 키" value={`${profile.height}cm`} />
@@ -921,12 +947,6 @@ function RetryCard({ onRetry, text }: { onRetry: () => void; text: string }) {
       </div>
     </div>
   );
-}
-
-function maskPhone(value: string) {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 8) return value;
-  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
 function formatBirthDate(value: string) {

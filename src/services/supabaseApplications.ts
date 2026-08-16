@@ -106,6 +106,9 @@ interface PublicEventSummaryRow {
   application_deadline: string | null;
   male_capacity: number;
   female_capacity: number;
+  early_bird_deadline: string | null;
+  early_bird_discount_male: number | null;
+  early_bird_discount_female: number | null;
 }
 
 interface AdminEventDetailsRow {
@@ -123,6 +126,9 @@ interface AdminEventDetailsRow {
   female_capacity: number;
   male_price: number;
   female_price: number;
+  early_bird_deadline: string | null;
+  early_bird_discount_male: number | null;
+  early_bird_discount_female: number | null;
 }
 
 interface PublicParticipantPreviewRow {
@@ -193,6 +199,7 @@ export interface MyEventTicket {
   applicantName: string;
   paymentDeadline?: string;
   paymentAmount: number;
+  reviewReason?: string;
   depositRequestedAt?: string;
   depositFailedAt?: string;
   depositFailureReason?: string;
@@ -228,6 +235,7 @@ interface MyEventTicketRow {
   applicant_name: string;
   payment_deadline: string | null;
   payment_amount: number;
+  review_reason: string | null;
   deposit_requested_at: string | null;
   deposit_failed_at: string | null;
   deposit_failure_reason: string | null;
@@ -450,13 +458,27 @@ export async function updateApplicationReviewInSupabase(
     application_id: application.dbId,
     next_payment_deadline: values.paymentDeadline ?? application.paymentDeadline ?? null,
     next_payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
+    next_review_reason: values.reason ?? null,
     next_reviewed_at: values.reviewedAt ?? application.reviewedAt ?? new Date().toISOString(),
     next_status: status,
-    review_reason: values.reason ?? null,
     session_token: adminSession.token,
   });
 
   if (error) throw error;
+}
+
+export async function resetGuestPinForAdmin(userId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('reset_guest_pin_for_admin_session', {
+    session_token: adminSession.token,
+    target_user_id: userId,
+  });
+
+  if (error || typeof data !== 'string') throw error ?? new Error('PIN을 초기화하지 못했습니다.');
+  return data;
 }
 
 export async function confirmBankTransferInSupabase(application: StoredApplication) {
@@ -552,6 +574,9 @@ export async function fetchPublicEventsFromSupabase() {
     applicationDeadline: event.application_deadline ?? undefined,
     currentParticipants: event.current_participants,
     date: event.event_date,
+    earlyBirdDeadline: event.early_bird_deadline ?? undefined,
+    earlyBirdDiscountMale: event.early_bird_discount_male ?? 0,
+    earlyBirdDiscountFemale: event.early_bird_discount_female ?? 0,
     endTime: event.end_time.slice(0, 5),
     id: event.id,
     location: event.location,
@@ -588,6 +613,9 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
   return {
     applicationDeadline: row.application_deadline ?? undefined,
     date: row.event_date,
+    earlyBirdDeadline: row.early_bird_deadline ?? undefined,
+    earlyBirdDiscountMale: row.early_bird_discount_male ?? 0,
+    earlyBirdDiscountFemale: row.early_bird_discount_female ?? 0,
     endTime: row.end_time.slice(0, 5),
     femaleCapacity: row.female_capacity,
     femalePrice: row.female_price,
@@ -685,6 +713,9 @@ export async function upsertEventToSupabase(event: EventData) {
   const { error } = await supabase.rpc('upsert_event_for_admin_session', {
     event_application_deadline: event.applicationDeadline ?? null,
     event_date_value: event.date,
+    event_early_bird_deadline: event.earlyBirdDeadline ?? null,
+    event_early_bird_discount_female: event.earlyBirdDiscountFemale ?? 0,
+    event_early_bird_discount_male: event.earlyBirdDiscountMale ?? 0,
     event_end_time: event.endTime,
     event_female_price: event.femalePrice,
     event_id_value: event.id,
@@ -996,6 +1027,7 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     paymentDeadline: row.payment_deadline ?? undefined,
     qrIssuedAt: row.qr_issued_at ?? undefined,
     qrToken: row.qr_token ?? undefined,
+    reviewReason: row.review_reason ?? undefined,
     startTime: row.start_time.slice(0, 5),
     status: row.status,
   };

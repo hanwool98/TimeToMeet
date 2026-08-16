@@ -70,6 +70,23 @@ export function clearAppSession() {
   clearSession(appSessionKey);
 }
 
+export async function verifyAppSession() {
+  if (!supabase) return false;
+  const session = getAppSession();
+  if (!session) return false;
+
+  const { data, error } = await supabase.rpc('is_app_session_valid', {
+    session_token: session.token,
+  });
+
+  if (error || data !== true) {
+    clearAppSession();
+    return false;
+  }
+
+  return true;
+}
+
 export async function fetchMyTabProfileAvatar() {
   try {
     const summary = await fetchMyPageSummary();

@@ -55,6 +55,7 @@ Deno.serve(async (request) => {
       .select('id, application_no, status, submitted_at')
       .eq('event_id', payload.eventId)
       .eq('user_id', userId)
+      .neq('status', '반려')
       .maybeSingle();
 
     if (error) return json({ message: '기존 신청 내역 확인에 실패했습니다.' }, 500);
