@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
-import EventTicket, { QrModal } from '../components/EventTicket';
-import ParticipantList from '../components/ParticipantList';
+import EventTicket from '../components/EventTicket';
 import PrimaryButton from '../components/PrimaryButton';
-import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import {
   cancelMyHeldApplication,
@@ -20,7 +18,6 @@ export default function MyEventsPage() {
   const [tickets, setTickets] = useState<MyEventTicket[]>([]);
   const [loading, setLoading] = useState(isLoggedIn);
   const [error, setError] = useState('');
-  const [qrTicket, setQrTicket] = useState<MyEventTicket | null>(null);
   const [reasonModalTicket, setReasonModalTicket] = useState<MyEventTicket | null>(null);
   const [canceling, setCanceling] = useState(false);
   const shownReasonTicketIdsRef = useRef<Set<string>>(new Set());
@@ -109,54 +106,59 @@ export default function MyEventsPage() {
               </div>
             ) : null}
             <div className="mt-5 space-y-6">
-              {tickets.map((ticket) => (
-                <section className="space-y-4" key={ticket.applicationId}>
-                  <EventTicket
-                    onPay={ticket.status === '결제 대기' ? () => void openPayment(ticket) : undefined}
-                    onQrOpen={ticket.status === '참가 확정' ? () => setQrTicket(ticket) : undefined}
-                    ticket={ticket}
-                  />
-                  {ticket.status === '결제중' || ticket.status === '입금 확인 중' ? (
-                    <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
-                      입금 확인 후 참가가 최종 확정됩니다.
-                    </p>
-                  ) : null}
-                  {ticket.depositFailureReason ? (
-                    <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-[14px] font-black leading-relaxed text-meet-pink">
-                      입금 확인이 보류됐어요. {ticket.depositFailureReason}
-                    </p>
-                  ) : null}
-                  {ticket.status === '참여 보류' ? (
-                    <button
-                      className="w-full rounded-[18px] bg-meet-blueSoft p-4 text-left text-[14px] font-black leading-relaxed text-[#555]"
-                      onClick={() => setReasonModalTicket(ticket)}
-                      type="button"
+              {tickets.map((ticket) => {
+                const openTicketDetail =
+                  ticket.status === '결제 대기' || ticket.status === '참가 확정' || ticket.status === '참여 보류'
+                    ? () => navigate(`/my-events/ticket/${ticket.eventId}`)
+                    : undefined;
+
+                return (
+                  <section className="space-y-4" key={ticket.applicationId}>
+                    <div
+                      className={openTicketDetail ? 'cursor-pointer' : undefined}
+                      onClick={openTicketDetail}
+                      onKeyDown={(event) => {
+                        if (openTicketDetail && (event.key === 'Enter' || event.key === ' ')) openTicketDetail();
+                      }}
+                      role={openTicketDetail ? 'button' : undefined}
+                      tabIndex={openTicketDetail ? 0 : undefined}
                     >
-                      현재 참가가 보류되었습니다. 자세히 보기 →
-                    </button>
-                  ) : null}
-                  {ticket.status === '반려' ? (
-                    <button
-                      className="w-full rounded-[18px] bg-meet-pinkSoft p-4 text-left text-[14px] font-black leading-relaxed text-meet-pink"
-                      onClick={() => setReasonModalTicket(ticket)}
-                      type="button"
-                    >
-                      이번 행사 참가 신청이 승인되지 않았습니다. 자세히 보기 →
-                    </button>
-                  ) : null}
-                  {ticket.status === '참가 확정' ? (
-                    <div className="space-y-2">
-                      <PrimaryButton disabled={!ticket.checkedInAt} onClick={() => navigate(`/events/${ticket.eventId}/mode`)}>
-                        행사 입장
-                      </PrimaryButton>
-                      {!ticket.checkedInAt ? (
-                        <p className="text-center text-[13px] font-black text-[#999]">행사 당일 QR 인증 후 입장할 수 있어요</p>
-                      ) : null}
+                      <EventTicket
+                        onPay={ticket.status === '결제 대기' ? () => void openPayment(ticket) : undefined}
+                        ticket={ticket}
+                      />
                     </div>
-                  ) : null}
-                  <TicketParticipantPreview eventId={ticket.eventId} />
-                </section>
-              ))}
+                    {ticket.status === '결제중' || ticket.status === '입금 확인 중' ? (
+                      <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
+                        입금 확인 후 참가가 최종 확정됩니다.
+                      </p>
+                    ) : null}
+                    {ticket.depositFailureReason ? (
+                      <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-[14px] font-black leading-relaxed text-meet-pink">
+                        입금 확인이 보류됐어요. {ticket.depositFailureReason}
+                      </p>
+                    ) : null}
+                    {ticket.status === '참여 보류' ? (
+                      <button
+                        className="w-full rounded-[18px] bg-meet-blueSoft p-4 text-left text-[14px] font-black leading-relaxed text-[#555]"
+                        onClick={() => setReasonModalTicket(ticket)}
+                        type="button"
+                      >
+                        현재 참가가 보류되었습니다. 자세히 보기 →
+                      </button>
+                    ) : null}
+                    {ticket.status === '반려' ? (
+                      <button
+                        className="w-full rounded-[18px] bg-meet-pinkSoft p-4 text-left text-[14px] font-black leading-relaxed text-meet-pink"
+                        onClick={() => setReasonModalTicket(ticket)}
+                        type="button"
+                      >
+                        이번 행사 참가 신청이 승인되지 않았습니다. 자세히 보기 →
+                      </button>
+                    ) : null}
+                  </section>
+                );
+              })}
             </div>
           </section>
         ) : (
@@ -169,7 +171,6 @@ export default function MyEventsPage() {
         )}
       </div>
       <BottomTabs />
-      {qrTicket ? <QrModal onClose={() => setQrTicket(null)} ticket={qrTicket} /> : null}
       {reasonModalTicket ? (
         <ReasonModal
           canceling={canceling}
@@ -238,20 +239,5 @@ function ReasonModal({
         </div>
       </section>
     </div>
-  );
-}
-
-function TicketParticipantPreview({ eventId }: { eventId: string }) {
-  const { participants } = useOperationalData({ eventId });
-
-  if (participants.length === 0) return null;
-
-  return (
-    <section className="rounded-[26px] bg-meet-blueSoft p-1.5">
-      <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
-        <ParticipantList participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
-        <ParticipantList participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
-      </div>
-    </section>
   );
 }

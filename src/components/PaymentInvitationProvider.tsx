@@ -150,7 +150,7 @@ export default function PaymentInvitationProvider({ children }: { children: Reac
 
   const confirm = useCallback(async (invitation: PaymentInvitation) => {
     await markRead(invitation.id);
-    navigate(`/my-events/payment/${invitation.applicationId}`);
+    navigate('/my-events');
   }, [markRead, navigate]);
 
   const value = useMemo(

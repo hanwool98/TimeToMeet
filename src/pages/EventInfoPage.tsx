@@ -127,8 +127,8 @@ export default function EventInfoPage() {
   const finalFemalePrice = Math.max((event?.femalePrice ?? 40000) - earlyBirdDiscountFemale, 0);
   const hasActiveEarlyBirdDiscount = isEarlyBirdActive && (earlyBirdDiscountMale > 0 || earlyBirdDiscountFemale > 0);
 
-  if (loading) return <DataLoadingState />;
-  if (error) return <DataErrorState message={error} onRetry={reload} />;
+  if (!isTabEventInfo && loading) return <DataLoadingState />;
+  if (!isTabEventInfo && error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-3 with-bottom-tabs pt-12 text-black min-[380px]:px-4">
@@ -179,19 +179,34 @@ export default function EventInfoPage() {
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">핵심정보</h2>
-            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-              <p className="font-black text-black">일시</p>
-              <p>{event ? `${formatKoreanWeekday(event.date)} ${event.startTime}~${event.endTime}` : '행사 일정 미정'}</p>
-              <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
-              <p className="mt-5 font-black text-black">장소</p>
-              <p>{event ? `${event.location} 내 프라이빗 카페` : '장소 미정'}</p>
-              <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
-              <p className="mt-5 font-black text-black">모집 대상</p>
-              <p>25~35세 미혼 남녀</p>
-              <p className="mt-5 font-black text-black">모집 인원</p>
-              <p>남성 {counts.male}/10 · 여성 {counts.female}/10</p>
-              <p>※ 최소 6:6부터 진행됩니다.</p>
-            </div>
+            {isTabEventInfo ? (
+              <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                <p className="font-black text-black">일시</p>
+                <p>매주 주말</p>
+                <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
+                <p className="mt-5 font-black text-black">장소</p>
+                <p>수도권 내 프라이빗 카페</p>
+                <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
+                <p className="mt-5 font-black text-black">모집 대상</p>
+                <p>25~35세 미혼 남녀</p>
+                <p className="mt-5 font-black text-black">모집 인원</p>
+                <p>최소 6:6의 인원이 모였을 시 진행됩니다.</p>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                <p className="font-black text-black">일시</p>
+                <p>{event ? `${formatKoreanWeekday(event.date)} ${event.startTime}~${event.endTime}` : '행사 일정 미정'}</p>
+                <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
+                <p className="mt-5 font-black text-black">장소</p>
+                <p>{event ? `${event.location} 내 프라이빗 카페` : '장소 미정'}</p>
+                <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
+                <p className="mt-5 font-black text-black">모집 대상</p>
+                <p>25~35세 미혼 남녀</p>
+                <p className="mt-5 font-black text-black">모집 인원</p>
+                <p>남성 {counts.male}/10 · 여성 {counts.female}/10</p>
+                <p>※ 최소 6:6부터 진행됩니다.</p>
+              </div>
+            )}
           </section>
 
           <SwipeSection items={reasons} title="왜 타임투밋인가요?" />
@@ -200,40 +215,48 @@ export default function EventInfoPage() {
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
-            <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-              {hasActiveEarlyBirdDiscount ? (
-                <>
-                  <p>
-                    남성{' '}
-                    {earlyBirdDiscountMale > 0 ? (
-                      <>
-                        <span className="text-[#aab0b8] line-through">{formatWon(event?.malePrice ?? 50000)}</span>{' '}
-                        {formatWon(finalMalePrice)}
-                      </>
-                    ) : (
-                      formatWon(finalMalePrice)
-                    )}
-                  </p>
-                  <p>
-                    여성{' '}
-                    {earlyBirdDiscountFemale > 0 ? (
-                      <>
-                        <span className="text-[#aab0b8] line-through">{formatWon(event?.femalePrice ?? 40000)}</span>{' '}
-                        {formatWon(finalFemalePrice)}
-                      </>
-                    ) : (
-                      formatWon(finalFemalePrice)
-                    )}
-                  </p>
-                  <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
-                </>
-              ) : (
-                <>
-                  <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
-                  <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
-                </>
-              )}
-            </div>
+            {isTabEventInfo ? (
+              <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                <p>남성 {formatWon(50000)}</p>
+                <p>여성 {formatWon(40000)}</p>
+                <p className="mt-5">얼리버드 신청 시 5,000원 할인</p>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[24px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                {hasActiveEarlyBirdDiscount ? (
+                  <>
+                    <p>
+                      남성{' '}
+                      {earlyBirdDiscountMale > 0 ? (
+                        <>
+                          <span className="text-[#aab0b8] line-through">{formatWon(event?.malePrice ?? 50000)}</span>{' '}
+                          {formatWon(finalMalePrice)}
+                        </>
+                      ) : (
+                        formatWon(finalMalePrice)
+                      )}
+                    </p>
+                    <p>
+                      여성{' '}
+                      {earlyBirdDiscountFemale > 0 ? (
+                        <>
+                          <span className="text-[#aab0b8] line-through">{formatWon(event?.femalePrice ?? 40000)}</span>{' '}
+                          {formatWon(finalFemalePrice)}
+                        </>
+                      ) : (
+                        formatWon(finalFemalePrice)
+                      )}
+                    </p>
+                    <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
+                  </>
+                ) : (
+                  <>
+                    <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
+                    <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
+                  </>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="mt-10">

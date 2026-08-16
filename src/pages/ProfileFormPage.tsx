@@ -8,6 +8,7 @@ import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
+import { representativeCropTransform } from '../utils/representativeCrop';
 
 const requiredConsentText = [
   {
@@ -222,12 +223,16 @@ export default function ProfileFormPage() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [representativeIndex, setRepresentativeIndex] = useState(0);
   const [representativeScale, setRepresentativeScale] = useState(1);
+  const [representativeMinScale, setRepresentativeMinScale] = useState(1);
   const [representativeOffsetX, setRepresentativeOffsetX] = useState(0);
   const [representativeOffsetY, setRepresentativeOffsetY] = useState(0);
   const [showRepresentativeEditor, setShowRepresentativeEditor] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const [pinchStart, setPinchStart] = useState<{ distance: number; scale: number } | null>(null);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const beforeEditRepresentativeRef = useRef({ offsetX: 0, offsetY: 0, scale: 1 });
+  const representativePreviewRef = useRef<HTMLDivElement | null>(null);
+  const [representativePreviewWidth, setRepresentativePreviewWidth] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saved'>('idle');
@@ -307,6 +312,17 @@ export default function ProfileFormPage() {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, [audioUrl]);
+
+  useEffect(() => {
+    const element = representativePreviewRef.current;
+    if (!element) return;
+    setRepresentativePreviewWidth(element.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => {
+      setRepresentativePreviewWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [photoPreviews[representativeIndex]]);
 
   useEffect(() => {
     if (!draftLoadedRef.current || !eventId) return;
@@ -520,7 +536,7 @@ export default function ProfileFormPage() {
   };
 
   const resetRepresentativeAdjustment = () => {
-    setRepresentativeScale(1);
+    setRepresentativeScale(representativeMinScale);
     setRepresentativeOffsetX(0);
     setRepresentativeOffsetY(0);
   };
@@ -580,13 +596,17 @@ export default function ProfileFormPage() {
     if (activePointersRef.current.size >= 2 && pinchStart) {
       const distance = getPointerDistance();
       if (pinchStart.distance > 0) {
-        setRepresentativeScale(Math.min(2.6, Math.max(1, Number((pinchStart.scale * (distance / pinchStart.distance)).toFixed(2)))));
+        const maxScale = Math.max(2.6, representativeMinScale + 1.5);
+        setRepresentativeScale(
+          Math.min(maxScale, Math.max(representativeMinScale, Number((pinchStart.scale * (distance / pinchStart.distance)).toFixed(2)))),
+        );
       }
       return;
     }
     if (!dragStart) return;
-    setRepresentativeOffsetX(dragStart.offsetX + event.clientX - dragStart.x);
-    setRepresentativeOffsetY(dragStart.offsetY + event.clientY - dragStart.y);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setRepresentativeOffsetX(dragStart.offsetX + (event.clientX - dragStart.x) / bounds.width);
+    setRepresentativeOffsetY(dragStart.offsetY + (event.clientY - dragStart.y) / bounds.height);
   };
 
   const handleRepresentativePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -597,14 +617,17 @@ export default function ProfileFormPage() {
 
   const handleRepresentativeWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
-    setRepresentativeScale((current) => Math.min(2.6, Math.max(1, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))));
+    const maxScale = Math.max(2.6, representativeMinScale + 1.5);
+    setRepresentativeScale((current) =>
+      Math.min(maxScale, Math.max(representativeMinScale, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))),
+    );
   };
 
   if (eventLoading) return <DataLoadingState />;
   if (eventError) return <DataErrorState message={eventError} onRetry={reloadEvents} />;
   if (!eventId || !selectedEvent) {
     return (
-      <main className="app-page min-h-screen bg-white px-4 py-12 text-black">
+      <main className="app-page min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black">
         <div className="mobile-container mx-auto">
           <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
             <h1 className="text-[24px] font-black leading-tight">신청할 행사를 찾을 수 없습니다</h1>
@@ -622,7 +645,7 @@ export default function ProfileFormPage() {
 
   if (isApplicationClosed) {
     return (
-      <main className="app-page min-h-screen bg-white px-4 py-12 text-black">
+      <main className="app-page min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black">
         <div className="mobile-container mx-auto">
           <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
             <h1 className="text-[24px] font-black leading-tight">신청이 마감되었습니다</h1>
@@ -637,7 +660,7 @@ export default function ProfileFormPage() {
   }
 
   return (
-    <main className="app-page min-h-screen w-full max-w-full min-w-0 bg-white px-3 py-12 text-black min-[380px]:px-4">
+    <main className="app-page min-h-screen w-full max-w-full min-w-0 overflow-x-hidden bg-white px-3 py-12 text-black min-[380px]:px-4">
       <div className="mobile-container mx-auto w-full max-w-full min-w-0">
         <header className="relative mb-8 rounded-[30px] border border-[#f0f3f6] bg-white px-4 pb-7 pt-16 text-center shadow-calendar min-[380px]:px-5">
           <button aria-label="뒤로 가기" className="absolute left-5 top-5 grid h-10 w-10 place-items-center text-black" onClick={() => navigate(-1)} type="button">
@@ -775,8 +798,16 @@ export default function ProfileFormPage() {
           <Section title="11. 프로필 사진">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진으로 지정한 사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
             {photoPreviews[representativeIndex] ? (
-              <div className="relative aspect-square w-full overflow-hidden rounded-[22px] bg-meet-blueSoft">
-                <img alt="대표사진 미리보기" className="h-full w-full object-cover" src={photoPreviews[representativeIndex]} />
+              <div className="relative aspect-square w-full overflow-hidden rounded-[22px] bg-meet-blueSoft" ref={representativePreviewRef}>
+                <img
+                  alt="대표사진 미리보기"
+                  className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
+                  src={photoPreviews[representativeIndex]}
+                  style={representativeCropTransform(
+                    { offsetX: representativeOffsetX, offsetY: representativeOffsetY, scale: representativeScale },
+                    representativePreviewWidth,
+                  )}
+                />
                 <span className="absolute bottom-3 left-3 rounded-full bg-meet-blue px-3 py-1.5 text-[12px] font-black text-white">대표사진</span>
               </div>
             ) : (
@@ -948,9 +979,14 @@ export default function ProfileFormPage() {
         <div className="fixed inset-0 z-50 flex flex-col bg-[#080d13] text-white">
           <div className="flex h-[86px] shrink-0 items-center justify-between px-5">
             <button
-              aria-label="대표사진 조정 닫기"
+              aria-label="대표사진 조정 취소"
               className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/10 text-[34px] font-light leading-none"
-              onClick={() => setShowRepresentativeEditor(false)}
+              onClick={() => {
+                setRepresentativeOffsetX(beforeEditRepresentativeRef.current.offsetX);
+                setRepresentativeOffsetY(beforeEditRepresentativeRef.current.offsetY);
+                setRepresentativeScale(beforeEditRepresentativeRef.current.scale);
+                setShowRepresentativeEditor(false);
+              }}
               type="button"
             >
               ×
@@ -965,6 +1001,15 @@ export default function ProfileFormPage() {
               ✓
             </button>
           </div>
+          <div className="flex shrink-0 justify-center pb-3">
+            <button
+              className="rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-[13px] font-extrabold text-white/85"
+              onClick={resetRepresentativeAdjustment}
+              type="button"
+            >
+              초기화
+            </button>
+          </div>
           <div
             className="relative min-h-0 flex-1 touch-none overflow-hidden bg-black"
             onPointerCancel={handleRepresentativePointerUp}
@@ -977,10 +1022,22 @@ export default function ProfileFormPage() {
               alt="대표사진 조정"
               className="absolute left-1/2 top-1/2 max-w-none select-none"
               draggable={false}
+              onLoad={(event) => {
+                const { naturalHeight, naturalWidth } = event.currentTarget;
+                if (!naturalWidth || !naturalHeight) return;
+                const aspect = naturalWidth / naturalHeight;
+                const minScale = Number((aspect >= 1 ? 1 : 1 / aspect).toFixed(2));
+                setRepresentativeMinScale(minScale);
+                setRepresentativeScale((current) => {
+                  const nextScale = Math.max(current, minScale);
+                  beforeEditRepresentativeRef.current = { offsetX: representativeOffsetX, offsetY: representativeOffsetY, scale: nextScale };
+                  return nextScale;
+                });
+              }}
               src={photoPreviews[representativeIndex]}
               style={{
                 height: '100%',
-                transform: `translate(calc(-50% + ${representativeOffsetX}px), calc(-50% + ${representativeOffsetY}px)) scale(${representativeScale})`,
+                transform: `translate(calc(-50% + ${representativeOffsetX * window.innerWidth}px), calc(-50% + ${representativeOffsetY * (window.innerHeight - 86)}px)) scale(${representativeScale})`,
                 touchAction: 'none',
               }}
             />

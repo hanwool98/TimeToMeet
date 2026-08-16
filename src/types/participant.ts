@@ -4,6 +4,8 @@ export interface ParticipantData {
   nickname: string;
   tags: string[];
   avatarIndex: number;
+  photoUrl?: string;
+  representativeCrop?: { scale: number; offsetX: number; offsetY: number };
   audioIntroUrl?: string;
   profile?: ParticipantProfile;
 }

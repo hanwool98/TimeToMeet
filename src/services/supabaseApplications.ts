@@ -455,13 +455,13 @@ export async function updateApplicationReviewInSupabase(
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { error } = await supabase.rpc('update_application_review_for_session', {
-    application_id: application.dbId,
     next_payment_deadline: values.paymentDeadline ?? application.paymentDeadline ?? null,
     next_payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
     next_review_reason: values.reason ?? null,
     next_reviewed_at: values.reviewedAt ?? application.reviewedAt ?? new Date().toISOString(),
     next_status: status,
     session_token: adminSession.token,
+    target_application_id: application.dbId,
   });
 
   if (error) throw error;
@@ -644,22 +644,43 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
   };
 }
 
+interface PublicParticipantMediaRow {
+  id: string;
+  audioUrl: string | null;
+  photoUrl: string | null;
+  representativeCrop: { scale: number; offsetX: number; offsetY: number } | null;
+}
+
 export async function fetchPublicParticipantsFromSupabase(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
 
-  const { data, error } = await supabase.rpc('get_public_participant_previews', {
-    target_event_id: eventId,
-  });
+  const [previewResult, mediaResult] = await Promise.all([
+    supabase.rpc('get_public_participant_previews', { target_event_id: eventId }),
+    supabase.functions.invoke('public-participant-media', { body: { eventId } }).catch(() => null),
+  ]);
 
-  if (error) throw error;
+  if (previewResult.error) throw previewResult.error;
 
-  return (data as PublicParticipantPreviewRow[]).map((participant) => ({
-    avatarIndex: participant.avatar_index,
-    gender: participant.gender === '여성' ? 'female' : 'male',
-    id: participant.id,
-    nickname: participant.nickname,
-    tags: [`${participant.age}세`, participant.job],
-  })) satisfies ParticipantData[];
+  const mediaById = new Map<string, PublicParticipantMediaRow>();
+  if (mediaResult && mediaResult.error === null && mediaResult.data?.ok === true) {
+    for (const row of mediaResult.data.media as PublicParticipantMediaRow[]) {
+      mediaById.set(row.id, row);
+    }
+  }
+
+  return (previewResult.data as PublicParticipantPreviewRow[]).map((participant) => {
+    const media = mediaById.get(participant.id);
+    return {
+      audioIntroUrl: media?.audioUrl ?? undefined,
+      avatarIndex: participant.avatar_index,
+      gender: participant.gender === '여성' ? 'female' : 'male',
+      id: participant.id,
+      nickname: participant.nickname,
+      photoUrl: media?.photoUrl ?? undefined,
+      representativeCrop: media?.representativeCrop ?? undefined,
+      tags: [`${participant.age}세`, participant.job],
+    };
+  }) satisfies ParticipantData[];
 }
 
 export async function fetchAdminEventModeSummaries() {

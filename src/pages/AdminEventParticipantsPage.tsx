@@ -116,14 +116,6 @@ export default function AdminEventParticipantsPage() {
               {deleting ? '삭제 중' : '행사 삭제'}
             </button>
           </div>
-          <button
-            className="mt-3 h-14 w-full rounded-[18px] bg-meet-blueSoft px-5 text-[16px] font-black text-meet-blue shadow-sm transition active:scale-[0.99] disabled:opacity-50"
-            disabled={!event}
-            onClick={() => navigate(`/admin/events/${eventId}/check-in`)}
-            type="button"
-          >
-            입장 관리 · QR 스캔
-          </button>
         </section>
         <Link className="mx-auto mt-5 text-sm font-extrabold text-meet-blue" to="/admin/events">
           행사관리로 돌아가기

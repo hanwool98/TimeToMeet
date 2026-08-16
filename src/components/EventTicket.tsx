@@ -10,7 +10,6 @@ interface EventTicketProps {
 
 export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProps) {
   const isConfirmed = ticket.status === '참가 확정';
-  const ageBand = getAgeBand(ticket.age);
   const shortCode = getTicketShortCode(ticket.applicationNo);
 
   return (
@@ -34,7 +33,7 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
         <dl className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,0.8fr)] gap-1.5 min-[390px]:gap-2.5">
           <TicketInfo label="Nickname" value={ticket.nickname} />
           <TicketInfo label="Job" value={ticket.job} />
-          <TicketInfo label="Age" value={ageBand} />
+          <TicketInfo label="Age" value={`${ticket.age}세`} />
         </dl>
 
         <div className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1.15fr)_auto_minmax(42px,0.95fr)] items-end gap-1.5 min-[390px]:gap-2.5">
@@ -65,7 +64,10 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
             <button
               className="mt-2 h-7 w-full max-w-[64px] rounded-[7px] bg-[#db7894] px-1.5 text-[11px] font-black text-white disabled:bg-[#d8d8d8] min-[390px]:mt-3 min-[390px]:h-8 min-[390px]:max-w-[70px] min-[390px]:text-[12px]"
               disabled={!onPay || ticket.status !== '결제 대기'}
-              onClick={onPay}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPay?.();
+              }}
               type="button"
             >
               결제하기
@@ -108,7 +110,7 @@ function TicketQr({ token }: { token: string }) {
   return dataUrl ? <img alt="참가자 전용 QR" className="mx-auto h-auto w-full max-w-[98px] bg-white" src={dataUrl} /> : <div className="mx-auto h-[92px] w-[92px] bg-white" />;
 }
 
-export function QrModal({ onClose, ticket }: { onClose: () => void; ticket: MyEventTicket }) {
+export function TicketQrDisplay({ ticket }: { ticket: MyEventTicket }) {
   const [dataUrl, setDataUrl] = useState('');
 
   useEffect(() => {
@@ -120,6 +122,16 @@ export function QrModal({ onClose, ticket }: { onClose: () => void; ticket: MyEv
     }).then(setDataUrl);
   }, [ticket.qrToken]);
 
+  return (
+    <div className="text-center">
+      <h2 className="mt-1 text-[22px] font-black">입장 QR</h2>
+      <p className="mt-2 text-[14px] font-extrabold text-[#777]">{ticket.applicationNo} · {ticket.nickname}</p>
+      {dataUrl ? <img alt="확대된 참가자 전용 QR" className="mx-auto mt-5 w-full max-w-[280px] bg-white" src={dataUrl} /> : null}
+    </div>
+  );
+}
+
+export function QrModal({ onClose, ticket }: { onClose: () => void; ticket: MyEventTicket }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -130,13 +142,11 @@ export function QrModal({ onClose, ticket }: { onClose: () => void; ticket: MyEv
 
   return (
     <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onClose} role="dialog">
-      <section className="w-full max-w-[340px] rounded-[28px] bg-white p-5 text-center shadow-calendar" onClick={(event) => event.stopPropagation()}>
+      <section className="w-full max-w-[340px] rounded-[28px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
         <button aria-label="QR 닫기" className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-[#f2f2f2] text-[20px] font-black" onClick={onClose} type="button">
           ×
         </button>
-        <h2 className="mt-1 text-[22px] font-black">입장 QR</h2>
-        <p className="mt-2 text-[14px] font-extrabold text-[#777]">{ticket.applicationNo} · {ticket.nickname}</p>
-        {dataUrl ? <img alt="확대된 참가자 전용 QR" className="mx-auto mt-5 w-full max-w-[280px] bg-white" src={dataUrl} /> : null}
+        <TicketQrDisplay ticket={ticket} />
       </section>
     </div>
   );
@@ -195,12 +205,6 @@ function formatShortDeadlineTime(value: string) {
   const rawHour = date.getHours();
   const hour = rawHour === 0 ? 12 : rawHour;
   return `${String(hour).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}까지`;
-}
-
-function getAgeBand(age: number) {
-  const decade = Math.floor(age / 10) * 10;
-  const half = age % 10 < 5 ? '초반' : '후반';
-  return `${decade}대 ${half}`;
 }
 
 function getTicketShortCode(applicationNo: string) {

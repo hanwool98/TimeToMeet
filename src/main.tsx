@@ -23,6 +23,7 @@ import PaymentPendingPage from './pages/PaymentPendingPage';
 import ParticipantProfilePage from './pages/ParticipantProfilePage';
 import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
+import TicketDetailPage from './pages/TicketDetailPage';
 import { getSupabaseDiagnostics } from './lib/supabase';
 import './styles.css';
 
@@ -49,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/event-info" element={<EventInfoPage />} />
           <Route path="/my-events" element={<MyEventsPage />} />
           <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />
+          <Route path="/my-events/ticket/:eventId" element={<TicketDetailPage />} />
           <Route path="/mypage" element={<MyPage />} />
           <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
           <Route path="/profile/new" element={<ProfileFormPage />} />
