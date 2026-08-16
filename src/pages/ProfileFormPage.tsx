@@ -9,6 +9,7 @@ import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
+import { compressImageIfNeeded } from '../utils/imageCompression';
 import { representativeCropTransform } from '../utils/representativeCrop';
 
 const requiredConsentText = [
@@ -521,23 +522,29 @@ export default function ProfileFormPage() {
           return;
         }
       }
+      const [compressedIdPhoto, compressedEmploymentProof, compressedProfilePhotos] = await Promise.all([
+        compressImageIfNeeded(idPhoto),
+        compressImageIfNeeded(employmentProof),
+        Promise.all(profilePhotos.map(compressImageIfNeeded)),
+      ]);
+
       await submitApplicationToSupabase({
         accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
         birthDate,
         consents,
-        employmentProof,
+        employmentProof: compressedEmploymentProof,
         eventId,
         filmingConsent,
         gender,
         height,
-        idPhoto,
+        idPhoto: compressedIdPhoto,
         inquiry,
         interviewConsent: interview,
         job,
         name,
         nickname,
         phone: normalizedContactPhone,
-        profilePhotos,
+        profilePhotos: compressedProfilePhotos,
         refundAgreement: refundConsent,
         relationshipStatus: '미혼이며 교제하는 인원 없음',
         representativeCrop: {
@@ -845,6 +852,7 @@ export default function ProfileFormPage() {
                     representativePreviewWidth,
                   )}
                 />
+                <div className="pointer-events-none absolute inset-0 rounded-full border-2 border-white/90 shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
                 <span className="absolute bottom-3 left-3 rounded-full bg-meet-blue px-3 py-1.5 text-[12px] font-black text-white">대표사진</span>
               </div>
             ) : (
