@@ -70,17 +70,17 @@ export default function AdminPage() {
         <section className="mt-8">
           <h2 className="text-[22px] font-black">관리 메뉴</h2>
           <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
-            <MenuCard icon={<Icon name="calendar" />} label="행사 관리" onClick={() => navigate('/admin/events')} />
-            <MenuCard icon={<Icon name="file" />} label="참가신청 관리" onClick={() => navigate('/admin/applications')} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="calendar" />} label="행사 관리" onClick={() => navigate('/admin/events')} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="file" />} label="참가신청 관리" onClick={() => navigate('/admin/applications')} />
             <MenuCard
               active
-              icon={<Icon name="radio" />}
+              icon={<Icon className="h-5 w-5" name="radio" />}
               label="행사 모드"
               onClick={() => navigate('/admin/event-mode')}
             />
-            <MenuCard icon={<Icon name="user" />} label="회원 관리" onClick={showPreparing} />
-            <MenuCard icon={<Icon name="shield" />} label="신고 관리" onClick={showPreparing} />
-            <MenuCard icon={<Icon name="video" />} label="콘텐츠 관리" onClick={showPreparing} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="회원 관리" onClick={showPreparing} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="shield" />} label="신고 관리" onClick={showPreparing} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="video" />} label="콘텐츠 관리" onClick={showPreparing} />
           </div>
           <button
             className="mt-5 h-14 w-full rounded-[18px] border border-[#dce8f4] bg-white text-[17px] font-black text-[#555] shadow-sm transition active:scale-[0.99]"
@@ -159,28 +159,6 @@ function DashboardEventSwiper({
             }}
           />
         </div>
-        {events.length > 1 ? (
-          <>
-            <button
-              aria-label="이전 행사"
-              className="absolute left-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#5f6670] shadow-calendar transition disabled:opacity-30"
-              disabled={safeIndex === 0}
-              onClick={() => goTo(safeIndex - 1)}
-              type="button"
-            >
-              <ChevronRight className="h-5 w-5 rotate-180" />
-            </button>
-            <button
-              aria-label="다음 행사"
-              className="absolute right-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#5f6670] shadow-calendar transition disabled:opacity-30"
-              disabled={safeIndex === events.length - 1}
-              onClick={() => goTo(safeIndex + 1)}
-              type="button"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </>
-        ) : null}
       </div>
       {events.length > 1 ? (
         <div className="mt-3 flex items-center justify-center gap-1.5">
@@ -279,20 +257,26 @@ function MenuCard({ active = false, icon, label, onClick }: { active?: boolean; 
   return (
     <button
       className={[
-        'flex min-h-[76px] w-full max-w-full min-w-0 items-center gap-4 rounded-[18px] border bg-white px-4 py-3 text-left shadow-calendar transition active:scale-[0.98]',
+        'flex min-h-[76px] w-full max-w-full min-w-0 items-center gap-2 rounded-[18px] border bg-white px-2.5 py-3 text-left shadow-calendar transition active:scale-[0.98]',
         active ? 'border-meet-blue/25 bg-meet-blueSoft/30' : 'border-[#eef3f7]',
       ].join(' ')}
       onClick={onClick}
       type="button"
     >
       <span className="shrink-0 text-meet-blue">{icon}</span>
-      <span className="min-w-0 flex-1 truncate text-[16px] font-black text-black">{label}</span>
-      <ChevronRight className="h-5 w-5 shrink-0 text-[#a7adb5]" />
+      <span className="min-w-0 flex-1 whitespace-nowrap text-[12px] font-black text-black min-[360px]:text-[14px] min-[380px]:text-[16px]">{label}</span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#a7adb5]" />
     </button>
   );
 }
 
-function Icon({ name }: { name: 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'radio' | 'shield' | 'user' | 'users' | 'video' }) {
+function Icon({
+  className = 'h-8 w-8',
+  name,
+}: {
+  className?: string;
+  name: 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'radio' | 'shield' | 'user' | 'users' | 'video';
+}) {
   const common = {
     fill: 'none',
     stroke: 'currentColor',
@@ -302,7 +286,7 @@ function Icon({ name }: { name: 'calendar' | 'card' | 'clipboard' | 'file' | 'lo
   };
 
   return (
-    <svg aria-hidden="true" className="h-8 w-8" viewBox="0 0 32 32">
+    <svg aria-hidden="true" className={className} viewBox="0 0 32 32">
       {name === 'calendar' ? (
         <>
           <rect {...common} height="21" rx="3" width="22" x="5" y="7" />

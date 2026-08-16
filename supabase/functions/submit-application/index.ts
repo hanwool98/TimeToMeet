@@ -122,26 +122,47 @@ Deno.serve(async (request) => {
   let employmentProofPath = '';
   let voiceIntroPath = '';
   let profilePhotoPaths: string[] = [];
-  const uploadedPaths: string[] = [];
-  try {
+  let uploadedPaths: string[] = [];
+  {
     const basePath = `${userId}/${crypto.randomUUID()}`;
-    idPhotoPath = await uploadPrivateFile(supabase, `${basePath}/id-${sanitizeFileName(payload.idPhoto.fileName)}`, payload.idPhoto);
-    uploadedPaths.push(idPhotoPath);
-    employmentProofPath = await uploadPrivateFile(supabase, `${basePath}/employment-${sanitizeFileName(payload.employmentProof.fileName)}`, payload.employmentProof);
-    uploadedPaths.push(employmentProofPath);
-    voiceIntroPath = await uploadPrivateFile(supabase, `${basePath}/voice-${sanitizeFileName(payload.voiceIntro.fileName)}`, payload.voiceIntro);
-    uploadedPaths.push(voiceIntroPath);
-    profilePhotoPaths = [];
-    for (let index = 0; index < payload.profilePhotos.length; index += 1) {
-      const file = payload.profilePhotos[index];
-      const uploadedPath = await uploadPrivateFile(supabase, `${basePath}/profile-${index + 1}-${sanitizeFileName(file.fileName)}`, file);
-      profilePhotoPaths.push(uploadedPath);
-      uploadedPaths.push(uploadedPath);
+    const uploadTasks = [
+      { key: 'idPhoto' as const, file: payload.idPhoto, path: `${basePath}/id-${sanitizeFileName(payload.idPhoto.fileName)}` },
+      { key: 'employmentProof' as const, file: payload.employmentProof, path: `${basePath}/employment-${sanitizeFileName(payload.employmentProof.fileName)}` },
+      { key: 'voiceIntro' as const, file: payload.voiceIntro, path: `${basePath}/voice-${sanitizeFileName(payload.voiceIntro.fileName)}` },
+      ...payload.profilePhotos.map((file, index) => ({
+        key: 'profilePhoto' as const,
+        file,
+        path: `${basePath}/profile-${index + 1}-${sanitizeFileName(file.fileName)}`,
+      })),
+    ];
+
+    // Uploaded concurrently (with a retry each) instead of one-at-a-time: six
+    // sequential round-trips to Storage were slow enough on real mobile photos
+    // to trip client/gateway timeouts, surfacing as "failed to send a
+    // request" or a bare non-2xx with no message once the function itself
+    // got cut off mid-upload.
+    const uploadResults = await Promise.allSettled(
+      uploadTasks.map((task) => uploadPrivateFileWithRetry(supabase, task.path, task.file)),
+    );
+
+    const succeededPaths = uploadResults
+      .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+      .map((result) => result.value);
+    const firstFailure = uploadResults.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+    if (firstFailure) {
+      console.error('Application file upload failed', firstFailure.reason);
+      await cleanupUploadedFiles(supabase, succeededPaths);
+      const message = firstFailure.reason instanceof Error ? firstFailure.reason.message : '파일 업로드에 실패했습니다.';
+      return json({ message }, 500);
     }
-  } catch (error) {
-    console.error('Application file upload failed', error);
-    await cleanupUploadedFiles(supabase, uploadedPaths);
-    return json({ message: error instanceof Error ? error.message : '파일 업로드에 실패했습니다.' }, 500);
+
+    const paths = uploadResults.map((result) => (result as PromiseFulfilledResult<string>).value);
+    idPhotoPath = paths[0];
+    employmentProofPath = paths[1];
+    voiceIntroPath = paths[2];
+    profilePhotoPaths = paths.slice(3);
+    uploadedPaths = succeededPaths;
   }
 
   const basePrice = payload.gender === '남성' ? Number(event.male_price ?? 0) : Number(event.female_price ?? 0);
@@ -417,6 +438,20 @@ async function uploadPrivateFile(supabase: ReturnType<typeof createClient>, path
     throw new Error(`파일 업로드에 실패했습니다. ${error.message}`);
   }
   return path;
+}
+
+async function uploadPrivateFileWithRetry(supabase: ReturnType<typeof createClient>, path: string, file: UploadedFile) {
+  const maxAttempts = 2;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await uploadPrivateFile(supabase, path, file);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+  }
+  throw lastError;
 }
 
 async function cleanupUploadedFiles(supabase: ReturnType<typeof createClient>, paths: string[]) {

@@ -1,7 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
+import DatePicker from '../components/DatePicker';
+import DateTimePicker from '../components/DateTimePicker';
 import PrimaryButton from '../components/PrimaryButton';
+import TimeSelect from '../components/TimeSelect';
 import useOperationalData from '../hooks/useOperationalData';
 import { fetchAdminEventDetailsFromSupabase, upsertEventToSupabase } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
@@ -269,11 +272,10 @@ export default function AdminEventCreatePage() {
             </Field>
 
             <Field label="행사 날짜">
-              <input
-                className={inputClassName}
+              <DatePicker
                 min={editingEvent ? undefined : toDateInputValue(new Date())}
-                onChange={(event) => setEventDate(event.target.value)}
-                type="date"
+                onChange={setEventDate}
+                triggerClassName={inputClassName}
                 value={eventDate}
               />
             </Field>
@@ -281,14 +283,24 @@ export default function AdminEventCreatePage() {
             <div>
               <span className="mb-2 block text-[15px] font-black text-black">진행 시간</span>
               <div className="grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-                <input className={inputClassName} onChange={(event) => setStartTime(event.target.value)} type="time" value={startTime} />
+                <TimeSelect
+                  className="flex h-12 w-full max-w-full min-w-0 items-center justify-center gap-1 rounded-[18px] bg-meet-blueSoft px-2 focus-within:ring-2 focus-within:ring-meet-blue min-[380px]:px-3"
+                  onChange={setStartTime}
+                  selectClassName="w-full appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none min-[380px]:text-[16px]"
+                  value={startTime}
+                />
                 <span className="shrink-0 text-[18px] font-black text-[#777]">~</span>
-                <input className={inputClassName} onChange={(event) => setEndTime(event.target.value)} type="time" value={endTime} />
+                <TimeSelect
+                  className="flex h-12 w-full max-w-full min-w-0 items-center justify-center gap-1 rounded-[18px] bg-meet-blueSoft px-2 focus-within:ring-2 focus-within:ring-meet-blue min-[380px]:px-3"
+                  onChange={setEndTime}
+                  selectClassName="w-full appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none min-[380px]:text-[16px]"
+                  value={endTime}
+                />
               </div>
             </div>
 
             <Field label="신청 마감">
-              <input className={inputClassName} onChange={(event) => setDeadline(event.target.value)} type="datetime-local" value={deadline} />
+              <DateTimePicker onChange={setDeadline} triggerClassName={inputClassName} value={deadline} />
             </Field>
 
             <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">
@@ -370,10 +382,9 @@ export default function AdminEventCreatePage() {
                 </button>
               </div>
               <Field label="얼리버드 마감">
-                <input
-                  className="mt-1 h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
-                  onChange={(event) => setEarlyBirdDeadline(event.target.value)}
-                  type="datetime-local"
+                <DateTimePicker
+                  onChange={setEarlyBirdDeadline}
+                  triggerClassName="mt-1 h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
                   value={earlyBirdDeadline}
                 />
               </Field>

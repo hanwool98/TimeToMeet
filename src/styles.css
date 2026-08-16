@@ -78,41 +78,9 @@ button {
   box-sizing: border-box;
 }
 
-.admin-page input[type='date'],
-.admin-page input[type='time'],
-.admin-page input[type='datetime-local'],
 .admin-page select {
   -webkit-appearance: none;
   appearance: none;
-}
-
-.admin-page input[type='date']::-webkit-date-and-time-value,
-.admin-page input[type='time']::-webkit-date-and-time-value,
-.admin-page input[type='datetime-local']::-webkit-date-and-time-value {
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  line-height: normal;
-  padding-top: 0;
-  padding-bottom: 0;
-  text-align: inherit;
-}
-
-.admin-page input[type='date']::-webkit-calendar-picker-indicator,
-.admin-page input[type='time']::-webkit-calendar-picker-indicator,
-.admin-page input[type='datetime-local']::-webkit-calendar-picker-indicator {
-  margin-inline-start: 0;
-  flex-shrink: 0;
-}
-
-.admin-page input[type='date'],
-.admin-page input[type='time'],
-.admin-page input[type='datetime-local'] {
-  display: flex;
-  align-items: center;
-  line-height: 1;
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 .app-page,
@@ -150,32 +118,9 @@ button {
   box-sizing: border-box;
 }
 
-.app-page input[type='date'],
-.app-page input[type='time'],
-.app-page input[type='datetime-local'],
 .app-page select {
   -webkit-appearance: auto;
   appearance: auto;
-}
-
-.app-page input[type='date']::-webkit-date-and-time-value,
-.app-page input[type='time']::-webkit-date-and-time-value,
-.app-page input[type='datetime-local']::-webkit-date-and-time-value {
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  line-height: normal;
-  padding-top: 0;
-  padding-bottom: 0;
-  text-align: center;
-}
-
-.app-page input[type='date'] {
-  display: flex;
-  align-items: center;
-  line-height: 1;
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 .min-h-screen {

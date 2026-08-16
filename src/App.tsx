@@ -38,27 +38,29 @@ export default function App() {
     () => events.find((event) => event.date === toDateKey(selectedDate)),
     [events, selectedDate],
   );
-  const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const [existingApplicationStatus, setExistingApplicationStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     if (!selectedEvent || !getAppSession()) {
-      setAlreadyApplied(false);
+      setExistingApplicationStatus(null);
       return;
     }
 
     fetchOwnApplicationForEvent(selectedEvent.id)
       .then((application) => {
-        if (active) setAlreadyApplied(Boolean(application));
+        if (active) setExistingApplicationStatus(application?.status ?? null);
       })
       .catch(() => {
-        if (active) setAlreadyApplied(false);
+        if (active) setExistingApplicationStatus(null);
       });
 
     return () => {
       active = false;
     };
   }, [selectedEvent]);
+
+  const alreadyApplied = Boolean(existingApplicationStatus);
 
   const handleApply = () => {
     if (!selectedEvent || alreadyApplied) return;
@@ -130,7 +132,7 @@ export default function App() {
         />
         <div className="mt-8 scroll-mt-8" ref={eventCardRef}>
           <EventCard
-            blockedMessage={alreadyApplied ? '이미 참여확정된 소개팅입니다' : undefined}
+            blockedMessage={existingApplicationStatus === '참가 확정' ? '이미 참여확정된 소개팅입니다' : alreadyApplied ? '이미 신청한 소개팅입니다' : undefined}
             event={selectedEvent}
             onApply={handleApply}
             selectedDateLabel={formatKoreanDate(selectedDate)}

@@ -1,5 +1,6 @@
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import DatePicker from '../components/DatePicker';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
@@ -41,6 +42,13 @@ const requiredConsentText = [
 ];
 
 const routeOptions = ['지인', '인스타그램', '검색', '유튜브', '네이버 블로그', '기타'];
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function getAgeOnEventDate(birthDate: string, eventDateValue?: string) {
   if (!birthDate) return null;
@@ -318,11 +326,20 @@ export default function ProfileFormPage() {
 
   useEffect(() => {
     return () => {
-      if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
-      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, [audioUrl]);
+
+  // Only clear recording timers when the page itself unmounts — not on every
+  // audioUrl change. Re-recording sets audioUrl before starting new timers,
+  // and an audioUrl-scoped cleanup here would immediately kill the timers
+  // that startRecording() just created for the new take.
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const element = representativePreviewRef.current;
@@ -758,7 +775,12 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="4. 생년월일">
-            <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setBirthDate(event.target.value)} type="date" value={birthDate} />
+            <DatePicker
+              max={toDateInputValue(new Date())}
+              onChange={setBirthDate}
+              triggerClassName="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-center text-[16px] font-bold outline-none"
+              value={birthDate}
+            />
             {age !== null && !ageError ? <p className="mt-3 text-[13px] font-extrabold text-[#777]">행사일 기준 만 {age}세입니다.</p> : null}
             <ErrorText>{ageError || (touched && !birthDate ? '생년월일을 선택해주세요.' : '')}</ErrorText>
           </Section>
