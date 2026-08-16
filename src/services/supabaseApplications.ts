@@ -683,6 +683,31 @@ export async function fetchPublicParticipantsFromSupabase(eventId: string) {
   }) satisfies ParticipantData[];
 }
 
+export async function fetchAdminEventParticipantMedia(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-event-participant-media', {
+    body: { eventId, sessionToken: adminSession.token },
+  });
+
+  const mediaById = new Map<string, PublicParticipantMediaRow>();
+  if (error || data?.ok !== true) {
+    console.error('Admin event participant media request failed', {
+      eventId,
+      message: error?.message || data?.message,
+      status: readFunctionStatus(error),
+    });
+    return mediaById;
+  }
+
+  for (const row of data.media as PublicParticipantMediaRow[]) {
+    mediaById.set(row.id, row);
+  }
+  return mediaById;
+}
+
 export async function fetchAdminEventModeSummaries() {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();

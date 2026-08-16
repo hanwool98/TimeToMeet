@@ -1,6 +1,5 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { ParticipantData } from '../types/participant';
-import { representativeCropTransform } from '../utils/representativeCrop';
 
 interface ParticipantListProps {
   title: string;
@@ -143,10 +142,13 @@ export default function ParticipantList({ title, participants, onProfileClick }:
 
 /**
  * Renders the real representative photo with a genuine pixel mosaic (not a
- * CSS blur): the image is painted into a small `cellPx` box — which forces
- * the browser to downsample it to that low resolution — then that box is
- * magnified back up to `sizePx` with `image-rendering: pixelated` so each
- * downsampled cell shows as a solid block instead of being smoothed out.
+ * CSS blur). A CSS-only version of this (paint into a tiny overflow-hidden
+ * box, then magnify that box with a transform: scale()) is unreliable —
+ * browsers are free to collapse the whole transform chain into a single
+ * direct sample from the full-resolution source image, which skips the
+ * intended low-res rasterization step and can render as a plain, undistorted
+ * photo. Drawing into an actual small <canvas> instead guarantees the pixels
+ * are genuinely downsampled before the CSS upscales the element for display.
  */
 function MosaicAvatarPhoto({
   crop,
@@ -157,22 +159,69 @@ function MosaicAvatarPhoto({
   photoUrl: string;
   sizePx: number;
 }) {
-  const cellPx = 10;
-  const magnification = sizePx / cellPx;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Mild enough that overall look, hairstyle, and face shape stay readable —
+  // strong enough that individual facial features don't resolve.
+  const cellPx = Math.max(10, Math.round(sizePx * 0.6));
+  const rawScale = crop?.scale ?? 1;
+  const rawOffsetX = crop?.offsetX ?? 0;
+  const rawOffsetY = crop?.offsetY ?? 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (!canvas || !ctx) return;
+
+      const { naturalHeight, naturalWidth } = image;
+      if (!naturalWidth || !naturalHeight) return;
+
+      // A crop captured at less than the image's own cover-fit minimum (older
+      // data from before that minimum was enforced) would ask drawImage for a
+      // source square bigger than the image actually is. Flooring the scale
+      // here — mirroring the same aspect-based minimum ProfileFormPage enforces
+      // when a photo is opened for editing — keeps the source rect in bounds.
+      const aspect = naturalWidth / naturalHeight;
+      const aspectMinScale = aspect >= 1 ? 1 : 1 / aspect;
+      const scale = Math.max(rawScale, aspectMinScale);
+      const maxOffsetFraction = Math.max(0, (scale - 1) / 2);
+      const offsetX = Math.max(-maxOffsetFraction, Math.min(maxOffsetFraction, rawOffsetX));
+      const offsetY = Math.max(-maxOffsetFraction, Math.min(maxOffsetFraction, rawOffsetY));
+
+      // Mirrors the same crop-box math as representativeCropTransform, but resolves
+      // it to a source rectangle for drawImage instead of a CSS translate/scale.
+      const box = cellPx;
+      const pxPerNaturalPx = (box * scale) / naturalHeight;
+      const displayedWidth = box * scale * aspect;
+      const displayedHeight = box * scale;
+      const imageTopLeftX = box / 2 + offsetX * box - displayedWidth / 2;
+      const imageTopLeftY = box / 2 + offsetY * box - displayedHeight / 2;
+      const sourceSize = box / pxPerNaturalPx;
+      const sourceX = Math.max(0, Math.min(-imageTopLeftX / pxPerNaturalPx, naturalWidth - sourceSize));
+      const sourceY = Math.max(0, Math.min(-imageTopLeftY / pxPerNaturalPx, naturalHeight - sourceSize));
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, cellPx, cellPx);
+      ctx.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, cellPx, cellPx);
+    };
+    image.src = photoUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [cellPx, photoUrl, rawOffsetX, rawOffsetY, rawScale]);
 
   return (
-    <span
-      className="absolute left-0 top-0 block overflow-hidden"
-      style={{ height: cellPx, transform: `scale(${magnification})`, transformOrigin: 'top left', width: cellPx }}
-    >
-      <img
-        alt=""
-        aria-hidden="true"
-        className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
-        src={photoUrl}
-        style={{ ...representativeCropTransform(crop, cellPx), imageRendering: 'pixelated' }}
-      />
-    </span>
+    <canvas
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full"
+      height={cellPx}
+      ref={canvasRef}
+      style={{ imageRendering: 'pixelated' }}
+      width={cellPx}
+    />
   );
 }
 

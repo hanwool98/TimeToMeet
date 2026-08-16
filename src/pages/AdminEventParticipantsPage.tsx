@@ -5,10 +5,21 @@ import LogoMark from '../components/LogoMark';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { deleteEventFromSupabase, fetchAdminApplicationFiles, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import {
+  deleteEventFromSupabase,
+  fetchAdminApplicationFiles,
+  fetchAdminEventParticipantMedia,
+  updateApplicationReviewInSupabase,
+} from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
+
+interface ParticipantMediaRow {
+  audioUrl: string | null;
+  photoUrl: string | null;
+  representativeCrop: { scale: number; offsetX: number; offsetY: number } | null;
+}
 
 export default function AdminEventParticipantsPage() {
   const navigate = useNavigate();
@@ -18,11 +29,28 @@ export default function AdminEventParticipantsPage() {
   const [previewFilesLoading, setPreviewFilesLoading] = useState(false);
   const [previewFilesError, setPreviewFilesError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [participantMedia, setParticipantMedia] = useState<Map<string, ParticipantMediaRow>>(new Map());
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let active = true;
+    fetchAdminEventParticipantMedia(eventId)
+      .then((media) => {
+        if (active) setParticipantMedia(media);
+      })
+      .catch(() => {
+        if (active) setParticipantMedia(new Map());
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
   const participants = applications
     .filter((application) => event && application.status === '참가 확정' && application.eventId === eventId)
-    .map(applicationToParticipant);
+    .map((application, index) => applicationToParticipant(application, index, participantMedia));
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
   const previewApplication = previewParticipant
@@ -235,15 +263,24 @@ function formatShortKoreanDate(dateValue: string) {
 }
 
 
-function applicationToParticipant(application: StoredApplication, index: number): ParticipantData {
+function applicationToParticipant(
+  application: StoredApplication,
+  index: number,
+  media: Map<string, ParticipantMediaRow>,
+): ParticipantData {
   const profile = application.profile ?? createEmptyProfile(application);
+  const id = application.dbId ?? application.id;
+  const participantMedia = media.get(id);
 
   return {
+    audioIntroUrl: participantMedia?.audioUrl ?? undefined,
     avatarIndex: index,
     gender: application.gender === '여성' ? 'female' : 'male',
-    id: application.dbId ?? application.id,
+    id,
     nickname: profile.nickname,
+    photoUrl: participantMedia?.photoUrl ?? undefined,
     profile,
+    representativeCrop: participantMedia?.representativeCrop ?? undefined,
     tags: [`${application.age}세`, profile.job],
   };
 }

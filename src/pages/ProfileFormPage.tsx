@@ -57,6 +57,18 @@ function getAgeOnEventDate(birthDate: string, eventDateValue?: string) {
   return age;
 }
 
+// Matches the circular crop target's CSS size (h-[96vw] max-h-[430px] w-[96vw] max-w-[430px]).
+function getRepresentativeCropBoxSize() {
+  if (typeof window === 'undefined') return 320;
+  return Math.min(window.innerWidth * 0.96, 430);
+}
+
+// A box rendered at `scale` only has (scale - 1) / 2 box-widths of pan slack per side.
+function clampRepresentativeOffset(offset: number, scale: number) {
+  const maxOffsetFraction = Math.max(0, (scale - 1) / 2);
+  return Math.max(-maxOffsetFraction, Math.min(maxOffsetFraction, offset));
+}
+
 function useObjectUrl(file?: Blob | null) {
   const [url, setUrl] = useState('');
 
@@ -220,7 +232,6 @@ export default function ProfileFormPage() {
   const [idPhoto, setIdPhoto] = useState<File | null>(null);
   const [nickname, setNickname] = useState('');
   const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [representativeIndex, setRepresentativeIndex] = useState(0);
   const [representativeScale, setRepresentativeScale] = useState(1);
   const [representativeMinScale, setRepresentativeMinScale] = useState(1);
@@ -543,14 +554,12 @@ export default function ProfileFormPage() {
 
   const addProfilePhotos = (files: File[]) => {
     if (files.length === 0) return;
-    const nextSelectedIndex = Math.min(profilePhotos.length, 2);
     const wasEmpty = profilePhotos.length === 0;
     setProfilePhotos((current) => {
       const nextPhotos = [...current, ...files].slice(0, 3);
       if (nextPhotos.length <= representativeIndex) setRepresentativeIndex(0);
       return nextPhotos;
     });
-    setSelectedPhotoIndex(nextSelectedIndex);
     if (wasEmpty) {
       setRepresentativeIndex(0);
       resetRepresentativeAdjustment();
@@ -561,7 +570,6 @@ export default function ProfileFormPage() {
     setProfilePhotos((current) => {
       const nextPhotos = current.filter((_, photoIndex) => photoIndex !== index);
       const nextLastIndex = Math.max(0, nextPhotos.length - 1);
-      setSelectedPhotoIndex((currentSelected) => Math.max(0, Math.min(currentSelected >= index ? currentSelected - 1 : currentSelected, nextLastIndex)));
       setRepresentativeIndex((currentRepresentative) => {
         if (nextPhotos.length === 0) return 0;
         if (currentRepresentative === index) return 0;
@@ -597,16 +605,20 @@ export default function ProfileFormPage() {
       const distance = getPointerDistance();
       if (pinchStart.distance > 0) {
         const maxScale = Math.max(2.6, representativeMinScale + 1.5);
-        setRepresentativeScale(
-          Math.min(maxScale, Math.max(representativeMinScale, Number((pinchStart.scale * (distance / pinchStart.distance)).toFixed(2)))),
+        const nextScale = Math.min(
+          maxScale,
+          Math.max(representativeMinScale, Number((pinchStart.scale * (distance / pinchStart.distance)).toFixed(2))),
         );
+        setRepresentativeScale(nextScale);
+        setRepresentativeOffsetX((current) => clampRepresentativeOffset(current, nextScale));
+        setRepresentativeOffsetY((current) => clampRepresentativeOffset(current, nextScale));
       }
       return;
     }
     if (!dragStart) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    setRepresentativeOffsetX(dragStart.offsetX + (event.clientX - dragStart.x) / bounds.width);
-    setRepresentativeOffsetY(dragStart.offsetY + (event.clientY - dragStart.y) / bounds.height);
+    const boxSize = getRepresentativeCropBoxSize();
+    setRepresentativeOffsetX(clampRepresentativeOffset(dragStart.offsetX + (event.clientX - dragStart.x) / boxSize, representativeScale));
+    setRepresentativeOffsetY(clampRepresentativeOffset(dragStart.offsetY + (event.clientY - dragStart.y) / boxSize, representativeScale));
   };
 
   const handleRepresentativePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -618,9 +630,12 @@ export default function ProfileFormPage() {
   const handleRepresentativeWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     const maxScale = Math.max(2.6, representativeMinScale + 1.5);
-    setRepresentativeScale((current) =>
-      Math.min(maxScale, Math.max(representativeMinScale, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))),
-    );
+    setRepresentativeScale((current) => {
+      const nextScale = Math.min(maxScale, Math.max(representativeMinScale, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2))));
+      setRepresentativeOffsetX((currentOffsetX) => clampRepresentativeOffset(currentOffsetX, nextScale));
+      setRepresentativeOffsetY((currentOffsetY) => clampRepresentativeOffset(currentOffsetY, nextScale));
+      return nextScale;
+    });
   };
 
   if (eventLoading) return <DataLoadingState />;
@@ -819,13 +834,14 @@ export default function ProfileFormPage() {
                   <button
                     className="block w-full"
                     onClick={() => {
-                      setSelectedPhotoIndex(index);
+                      setRepresentativeIndex(index);
+                      setShowRepresentativeEditor(true);
                     }}
                     type="button"
                   >
                     <img alt={`본인 사진 ${index + 1}`} className="aspect-square w-full rounded-[12px] object-cover" src={preview} />
                     <span className="block overflow-hidden text-ellipsis whitespace-nowrap py-1 text-[10px] font-black min-[380px]:text-[11px]">
-                      {representativeIndex === index ? '대표사진' : '사진 선택'}
+                      {representativeIndex === index ? '대표사진' : '대표사진으로 설정'}
                     </span>
                   </button>
                   <button
@@ -842,19 +858,6 @@ export default function ProfileFormPage() {
                 <UploadBox label="프로필 사진 추가" onFiles={addProfilePhotos} />
               ) : null}
             </div>
-            {profilePhotos.length > 0 ? (
-              <button
-                className="mt-3 h-11 w-full rounded-[16px] bg-meet-blue text-[14px] font-black text-white"
-                onClick={() => {
-                  const nextIndex = Math.max(0, Math.min(selectedPhotoIndex, profilePhotos.length - 1));
-                  setRepresentativeIndex(nextIndex);
-                  setShowRepresentativeEditor(true);
-                }}
-                type="button"
-              >
-                대표사진 설정
-              </button>
-            ) : null}
             <ErrorText>{touched && profilePhotos.length === 0 ? '프로필 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
@@ -1018,29 +1021,39 @@ export default function ProfileFormPage() {
             onPointerUp={handleRepresentativePointerUp}
             onWheel={handleRepresentativeWheel}
           >
-            <img
-              alt="대표사진 조정"
-              className="absolute left-1/2 top-1/2 max-w-none select-none"
-              draggable={false}
-              onLoad={(event) => {
-                const { naturalHeight, naturalWidth } = event.currentTarget;
-                if (!naturalWidth || !naturalHeight) return;
-                const aspect = naturalWidth / naturalHeight;
-                const minScale = Number((aspect >= 1 ? 1 : 1 / aspect).toFixed(2));
-                setRepresentativeMinScale(minScale);
-                setRepresentativeScale((current) => {
-                  const nextScale = Math.max(current, minScale);
-                  beforeEditRepresentativeRef.current = { offsetX: representativeOffsetX, offsetY: representativeOffsetY, scale: nextScale };
-                  return nextScale;
-                });
-              }}
-              src={photoPreviews[representativeIndex]}
-              style={{
-                height: '100%',
-                transform: `translate(calc(-50% + ${representativeOffsetX * window.innerWidth}px), calc(-50% + ${representativeOffsetY * (window.innerHeight - 86)}px)) scale(${representativeScale})`,
-                touchAction: 'none',
-              }}
-            />
+            <div className="absolute left-1/2 top-1/2 h-[96vw] max-h-[430px] w-[96vw] max-w-[430px] -translate-x-1/2 -translate-y-1/2">
+              <img
+                alt="대표사진 조정"
+                className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
+                draggable={false}
+                onLoad={(event) => {
+                  const { naturalHeight, naturalWidth } = event.currentTarget;
+                  if (!naturalWidth || !naturalHeight) return;
+                  const aspect = naturalWidth / naturalHeight;
+                  const minScale = Number((aspect >= 1 ? 1 : 1 / aspect).toFixed(2));
+                  setRepresentativeMinScale(minScale);
+                  setRepresentativeScale((current) => {
+                    const nextScale = Math.max(current, minScale);
+                    setRepresentativeOffsetX((offsetX) => clampRepresentativeOffset(offsetX, nextScale));
+                    setRepresentativeOffsetY((offsetY) => clampRepresentativeOffset(offsetY, nextScale));
+                    beforeEditRepresentativeRef.current = {
+                      offsetX: clampRepresentativeOffset(representativeOffsetX, nextScale),
+                      offsetY: clampRepresentativeOffset(representativeOffsetY, nextScale),
+                      scale: nextScale,
+                    };
+                    return nextScale;
+                  });
+                }}
+                src={photoPreviews[representativeIndex]}
+                style={{
+                  ...representativeCropTransform(
+                    { offsetX: representativeOffsetX, offsetY: representativeOffsetY, scale: representativeScale },
+                    getRepresentativeCropBoxSize(),
+                  ),
+                  touchAction: 'none',
+                }}
+              />
+            </div>
             <div className="pointer-events-none absolute inset-0 bg-black/45" />
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-[96vw] max-h-[430px] w-[96vw] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.38)]" />
           </div>
