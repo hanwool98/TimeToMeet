@@ -31,12 +31,15 @@ export default function AdminEventManagementPage() {
   );
   const isEarlyBird = selectedEvent ? getDaysUntilEvent(selectedEvent.date) >= 8 : false;
   const isRecruiting = selectedEvent ? selectedEvent.currentParticipants < selectedEvent.targetParticipants : false;
+  const isPastSelectedDate = toDateKey(selectedDate) < toDateKey(today);
+  const isNewEventBlocked = !selectedEvent && isPastSelectedDate;
 
   const handleEventAction = () => {
     if (selectedEvent) {
       navigate(`/admin/events/${selectedEvent.id}`);
       return;
     }
+    if (isPastSelectedDate) return;
     navigate(`/admin/events/new?date=${toDateKey(selectedDate)}`);
   };
 
@@ -90,9 +93,12 @@ export default function AdminEventManagementPage() {
               {isEarlyBird ? <span className="text-meet-blue">🕊️ 얼리버드</span> : null}
             </div>
           ) : null}
-          <PrimaryButton className="mt-6" onClick={handleEventAction}>
+          <PrimaryButton className="mt-6" disabled={isNewEventBlocked} onClick={handleEventAction}>
             {selectedEvent ? '참가자 확인 및 행사 수정' : '새 행사 만들기'}
           </PrimaryButton>
+          {isNewEventBlocked ? (
+            <p className="mt-2 text-center text-[13px] font-black text-meet-pink">지난 날짜에는 새 행사를 만들 수 없습니다.</p>
+          ) : null}
         </section>
 
         <button

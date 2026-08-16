@@ -41,6 +41,13 @@ function defaultDeadlineForDate(dateValue: string) {
   return toDateTimeInputValue(date);
 }
 
+function defaultEarlyBirdDeadlineForDate(dateValue: string) {
+  const date = parseDateParam(dateValue);
+  date.setDate(date.getDate() - 7);
+  date.setHours(23, 59, 0, 0);
+  return toDateTimeInputValue(date);
+}
+
 function toRegionOption(location: string) {
   if (regions.includes(location)) return location;
   const withCitySuffix = `${location}시`;
@@ -87,6 +94,12 @@ export default function AdminEventCreatePage() {
     deadline.setHours(23, 59, 0, 0);
     return deadline;
   }, [selectedDate]);
+  const defaultEarlyBirdDeadline = useMemo(() => {
+    const deadline = new Date(selectedDate);
+    deadline.setDate(deadline.getDate() - 7);
+    deadline.setHours(23, 59, 0, 0);
+    return deadline;
+  }, [selectedDate]);
 
   const [eventType, setEventType] = useState(eventTypes[0]);
   const [eventName, setEventName] = useState(editingEvent?.title ?? '');
@@ -98,11 +111,13 @@ export default function AdminEventCreatePage() {
   const [femaleCapacity, setFemaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
   const [malePrice, setMalePrice] = useState(editingEvent ? String(editingEvent.malePrice) : '50000');
   const [femalePrice, setFemalePrice] = useState(editingEvent ? String(editingEvent.femalePrice) : '40000');
-  const [earlyBirdDeadline, setEarlyBirdDeadline] = useState(
-    editingEvent?.earlyBirdDeadline ? toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline)) : '',
-  );
-  const [earlyBirdDiscountMale, setEarlyBirdDiscountMale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountMale ?? 0) : '0');
-  const [earlyBirdDiscountFemale, setEarlyBirdDiscountFemale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountFemale ?? 0) : '0');
+  const [earlyBirdDeadline, setEarlyBirdDeadline] = useState(() => {
+    if (editingEvent?.earlyBirdDeadline) return toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline));
+    if (editingEvent) return '';
+    return toDateTimeInputValue(defaultEarlyBirdDeadline);
+  });
+  const [earlyBirdDiscountMale, setEarlyBirdDiscountMale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountMale ?? 0) : '5000');
+  const [earlyBirdDiscountFemale, setEarlyBirdDiscountFemale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountFemale ?? 0) : '5000');
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
@@ -221,6 +236,7 @@ export default function AdminEventCreatePage() {
   const pageTitle = editingEvent ? '행사 수정' : '새 행사 만들기';
   const submitLabel = editingEvent ? '행사 수정' : '행사 만들기';
   const cancelPath = editingEvent ? `/admin/events/${editingEvent.id}` : '/admin/events';
+  const isPastDateBlocked = !editingEvent && Boolean(eventDate) && eventDate < toDateInputValue(new Date());
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
@@ -324,7 +340,21 @@ export default function AdminEventCreatePage() {
             </div>
 
             <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">
-              <h2 className="text-[17px] font-black">얼리버드 할인 (선택)</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-[17px] font-black">얼리버드 할인 (선택)</h2>
+                <button
+                  className="h-8 shrink-0 rounded-[10px] bg-white px-3 text-[12px] font-black text-[#777] disabled:opacity-40"
+                  disabled={!earlyBirdDeadline}
+                  onClick={() => {
+                    setEarlyBirdDeadline('');
+                    setEarlyBirdDiscountMale('0');
+                    setEarlyBirdDiscountFemale('0');
+                  }}
+                  type="button"
+                >
+                  얼리버드 비활성화
+                </button>
+              </div>
               <Field label="얼리버드 마감">
                 <input
                   className="mt-1 h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
@@ -339,7 +369,7 @@ export default function AdminEventCreatePage() {
                     className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
                     inputMode="numeric"
                     onChange={(event) => setEarlyBirdDiscountMale(event.target.value.replace(/\D/g, ''))}
-                    placeholder="0"
+                    placeholder="5000"
                     value={earlyBirdDiscountMale}
                   />
                 </Field>
@@ -348,7 +378,7 @@ export default function AdminEventCreatePage() {
                     className="h-12 w-full max-w-full min-w-0 rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
                     inputMode="numeric"
                     onChange={(event) => setEarlyBirdDiscountFemale(event.target.value.replace(/\D/g, ''))}
-                    placeholder="0"
+                    placeholder="5000"
                     value={earlyBirdDiscountFemale}
                   />
                 </Field>
@@ -404,9 +434,13 @@ export default function AdminEventCreatePage() {
               >
                 취소
               </button>
-              <PrimaryButton disabled={saving || editDetailsLoading} onClick={handleCreate}>{saving ? '저장 중' : editDetailsLoading ? '행사 정보 확인 중' : submitLabel}</PrimaryButton>
+              <PrimaryButton disabled={saving || editDetailsLoading || isPastDateBlocked} onClick={handleCreate}>{saving ? '저장 중' : editDetailsLoading ? '행사 정보 확인 중' : submitLabel}</PrimaryButton>
             </div>
-            {saveError ? <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">{saveError}</p> : null}
+            {isPastDateBlocked ? (
+              <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">행사 날짜는 오늘 이후여야 합니다.</p>
+            ) : saveError ? (
+              <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">{saveError}</p>
+            ) : null}
           </form>
         </section>
       </div>

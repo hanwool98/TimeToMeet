@@ -7,7 +7,8 @@ export type ApplicationStatus =
   | '반려'
   | '참여 보류'
   | '환불 완료'
-  | '자동 취소';
+  | '자동 취소'
+  | '신청 취소';
 
 export interface StoredApplication {
   dbId?: string;

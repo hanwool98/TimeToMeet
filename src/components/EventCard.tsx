@@ -5,12 +5,14 @@ interface EventCardProps {
   selectedDateLabel: string;
   event?: EventData;
   onApply: () => void;
+  blockedMessage?: string;
 }
 
-export default function EventCard({ selectedDateLabel, event, onApply }: EventCardProps) {
+export default function EventCard({ selectedDateLabel, event, onApply, blockedMessage }: EventCardProps) {
   const hasEvent = Boolean(event);
   const isEarlyBird = event ? getDaysUntilEvent(event.date) >= 8 : false;
   const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
+  const isBlocked = Boolean(blockedMessage);
 
   return (
     <section className="w-full rounded-[28px] bg-meet-blueSoft px-4 py-6 min-[380px]:px-5">
@@ -28,9 +30,10 @@ export default function EventCard({ selectedDateLabel, event, onApply }: EventCa
           {isEarlyBird ? <span className="text-meet-blue">🕊️ 얼리버드</span> : null}
         </div>
       ) : null}
-      <PrimaryButton className="mt-6" disabled={!hasEvent} onClick={onApply}>
+      <PrimaryButton className="mt-6" disabled={!hasEvent || isBlocked} onClick={onApply}>
         이 날짜로 소개팅 신청하기
       </PrimaryButton>
+      {isBlocked ? <p className="mt-2 text-center text-[13px] font-black text-meet-pink">{blockedMessage}</p> : null}
     </section>
   );
 }

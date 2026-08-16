@@ -467,6 +467,19 @@ export async function updateApplicationReviewInSupabase(
   if (error) throw error;
 }
 
+export async function cancelMyHeldApplication(applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('cancel_my_held_application', {
+    application_id: applicationId,
+    session_token: session.token,
+  });
+
+  if (error) throw error;
+}
+
 export async function resetGuestPinForAdmin(userId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();

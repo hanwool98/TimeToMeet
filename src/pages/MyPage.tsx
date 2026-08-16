@@ -18,6 +18,7 @@ export default function MyPage() {
   const [loading, setLoading] = useState(true);
   const session = getAppSession();
   const loggedIn = Boolean(session);
+  const visibleMenuItems = loggedIn ? menuItems : menuItems.filter((item) => item.label !== '로그아웃');
   const accountType = summary?.accountType ?? (session?.role === 'guest' || session?.role === 'member' ? session.role : null);
   const accountLabel =
     accountType === 'guest'
@@ -144,14 +145,14 @@ export default function MyPage() {
         </section>
 
         <section className="mt-7 overflow-hidden rounded-[24px] border border-[#f0f3f6] bg-white px-4 shadow-calendar min-[380px]:px-5">
-          {menuItems.map((item, index) => (
+          {visibleMenuItems.map((item) => (
             <button
               className="grid h-[62px] w-full grid-cols-[34px_minmax(0,1fr)_18px] items-center gap-3 border-b border-[#edf0f3] text-left last:border-b-0"
               key={item.label}
               onClick={() => handleMenu(item)}
               type="button"
             >
-              <span className={index === 3 ? 'text-[#aeb4bb]' : 'text-meet-blue'}>
+              <span className={item.label === '로그아웃' ? 'text-[#aeb4bb]' : 'text-meet-blue'}>
                 <MenuIcon name={item.icon} />
               </span>
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-extrabold">
@@ -162,13 +163,15 @@ export default function MyPage() {
           ))}
         </section>
 
-        <button
-          className="mx-auto mt-9 block text-[16px] font-bold text-[#9a9a9a]"
-          onClick={() => window.alert('준비중!')}
-          type="button"
-        >
-          회원 탈퇴
-        </button>
+        {loggedIn ? (
+          <button
+            className="mx-auto mt-9 block text-[16px] font-bold text-[#9a9a9a]"
+            onClick={() => window.alert('준비중!')}
+            type="button"
+          >
+            회원 탈퇴
+          </button>
+        ) : null}
       </div>
       <BottomTabs />
     </main>

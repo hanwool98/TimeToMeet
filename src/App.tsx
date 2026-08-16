@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import Calendar from './components/Calendar';
@@ -6,6 +6,8 @@ import { DataErrorState, DataLoadingState } from './components/DataState';
 import EventCard from './components/EventCard';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
+import { getAppSession } from './services/appAuth';
+import { fetchOwnApplicationForEvent } from './services/supabaseApplications';
 
 const today = new Date();
 
@@ -36,9 +38,30 @@ export default function App() {
     () => events.find((event) => event.date === toDateKey(selectedDate)),
     [events, selectedDate],
   );
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedEvent || !getAppSession()) {
+      setAlreadyApplied(false);
+      return;
+    }
+
+    fetchOwnApplicationForEvent(selectedEvent.id)
+      .then((application) => {
+        if (active) setAlreadyApplied(Boolean(application));
+      })
+      .catch(() => {
+        if (active) setAlreadyApplied(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedEvent]);
 
   const handleApply = () => {
-    if (!selectedEvent) return;
+    if (!selectedEvent || alreadyApplied) return;
     navigate(`/events/${selectedEvent.id}`);
   };
 
@@ -107,6 +130,7 @@ export default function App() {
         />
         <div className="mt-8 scroll-mt-8" ref={eventCardRef}>
           <EventCard
+            blockedMessage={alreadyApplied ? '이미 참여확정된 소개팅입니다' : undefined}
             event={selectedEvent}
             onApply={handleApply}
             selectedDateLabel={formatKoreanDate(selectedDate)}

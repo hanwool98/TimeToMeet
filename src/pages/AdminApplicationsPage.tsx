@@ -46,7 +46,7 @@ export default function AdminApplicationsPage() {
         if (activeTab === 'review') return item.status === '심사 대기';
         if (activeTab === 'waiting') return item.status === '참여 보류';
         if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소';
-        return item.status === '참가 확정' || item.status === '반려';
+        return item.status === '참가 확정' || item.status === '반려' || item.status === '신청 취소';
       })
       .filter((item) => (dateFilter === '전체' ? true : item.eventId === dateFilter))
       .filter((item) => {
@@ -69,7 +69,7 @@ export default function AdminApplicationsPage() {
   const reviewCount = applications.filter((item) => item.status === '심사 대기').length;
   const waitingCount = applications.filter((item) => item.status === '참여 보류').length;
   const paymentCount = applications.filter((item) => item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소').length;
-  const completedCount = applications.filter((item) => item.status === '참가 확정' || item.status === '반려').length;
+  const completedCount = applications.filter((item) => item.status === '참가 확정' || item.status === '반려' || item.status === '신청 취소').length;
   const newReviewCount = applications.filter((item) => item.status === '심사 대기' && item.isNew).length;
 
   const decideReview = async (status: '결제 대기' | '참여 보류' | '반려') => {
@@ -349,7 +349,7 @@ function DecisionTime({ application }: { application: StoredApplication }) {
 }
 
 function StatusBadge({ status }: { status: StoredApplication['status'] }) {
-  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : status === '결제중' || status === '입금 확인 중' ? 'bg-[#fff4e8] text-[#ba7a2a]' : 'bg-meet-blueSoft text-meet-blue';
+  const color = status === '심사 대기' ? 'bg-[#f2f3f5] text-[#555]' : status === '참가 확정' ? 'bg-meet-blueSoft text-meet-blue' : status === '반려' || status === '자동 취소' || status === '신청 취소' ? 'bg-meet-pinkSoft text-meet-pink' : status === '참여 보류' ? 'bg-[#f5f5f5] text-[#777]' : status === '결제중' || status === '입금 확인 중' ? 'bg-[#fff4e8] text-[#ba7a2a]' : 'bg-meet-blueSoft text-meet-blue';
   return <span className={`max-w-[44%] shrink-0 truncate rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
 }
 

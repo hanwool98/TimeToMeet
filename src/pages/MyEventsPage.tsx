@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import EventTicket, { QrModal } from '../components/EventTicket';
@@ -7,6 +7,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import {
+  cancelMyHeldApplication,
   fetchMyEventTickets,
   markPaymentInvitationReadByApplication,
   subscribeToMyApplicationChanges,
@@ -20,6 +21,9 @@ export default function MyEventsPage() {
   const [loading, setLoading] = useState(isLoggedIn);
   const [error, setError] = useState('');
   const [qrTicket, setQrTicket] = useState<MyEventTicket | null>(null);
+  const [reasonModalTicket, setReasonModalTicket] = useState<MyEventTicket | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const shownReasonTicketIdsRef = useRef<Set<string>>(new Set());
 
   const loadTickets = useCallback(async () => {
     if (!getAppSession()) return;
@@ -27,6 +31,15 @@ export default function MyEventsPage() {
     try {
       const nextTickets = await fetchMyEventTickets();
       setTickets(nextTickets);
+      const pendingReasonTicket = nextTickets.find(
+        (ticket) =>
+          (ticket.status === '참여 보류' || ticket.status === '반려') &&
+          !shownReasonTicketIdsRef.current.has(ticket.applicationId),
+      );
+      if (pendingReasonTicket) {
+        shownReasonTicketIdsRef.current.add(pendingReasonTicket.applicationId);
+        setReasonModalTicket((current) => current ?? pendingReasonTicket);
+      }
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : '내 행사 정보를 불러오지 못했습니다.';
       if (message.includes('get_my_event_tickets')) {
@@ -39,6 +52,21 @@ export default function MyEventsPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleCancelHeldApplication = async (ticket: MyEventTicket) => {
+    const ok = window.confirm('참가 신청을 취소할까요? 취소 후에는 되돌릴 수 없습니다.');
+    if (!ok) return;
+    setCanceling(true);
+    try {
+      await cancelMyHeldApplication(ticket.applicationId);
+      setReasonModalTicket(null);
+      await loadTickets();
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '신청취소에 실패했습니다.');
+    } finally {
+      setCanceling(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -99,16 +127,22 @@ export default function MyEventsPage() {
                     </p>
                   ) : null}
                   {ticket.status === '참여 보류' ? (
-                    <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
-                      현재 참가가 보류되었습니다.
-                      {ticket.reviewReason ? <><br />{ticket.reviewReason}</> : null}
-                    </p>
+                    <button
+                      className="w-full rounded-[18px] bg-meet-blueSoft p-4 text-left text-[14px] font-black leading-relaxed text-[#555]"
+                      onClick={() => setReasonModalTicket(ticket)}
+                      type="button"
+                    >
+                      현재 참가가 보류되었습니다. 자세히 보기 →
+                    </button>
                   ) : null}
                   {ticket.status === '반려' ? (
-                    <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-[14px] font-black leading-relaxed text-meet-pink">
-                      이번 행사 참가 신청이 승인되지 않았습니다.
-                      {ticket.reviewReason ? <><br />{ticket.reviewReason}</> : null}
-                    </p>
+                    <button
+                      className="w-full rounded-[18px] bg-meet-pinkSoft p-4 text-left text-[14px] font-black leading-relaxed text-meet-pink"
+                      onClick={() => setReasonModalTicket(ticket)}
+                      type="button"
+                    >
+                      이번 행사 참가 신청이 승인되지 않았습니다. 자세히 보기 →
+                    </button>
                   ) : null}
                   {ticket.status === '참가 확정' ? (
                     <div className="space-y-2">
@@ -136,7 +170,74 @@ export default function MyEventsPage() {
       </div>
       <BottomTabs />
       {qrTicket ? <QrModal onClose={() => setQrTicket(null)} ticket={qrTicket} /> : null}
+      {reasonModalTicket ? (
+        <ReasonModal
+          canceling={canceling}
+          onCancelApplication={() => void handleCancelHeldApplication(reasonModalTicket)}
+          onClose={() => setReasonModalTicket(null)}
+          ticket={reasonModalTicket}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ReasonModal({
+  canceling,
+  onCancelApplication,
+  onClose,
+  ticket,
+}: {
+  canceling: boolean;
+  onCancelApplication: () => void;
+  onClose: () => void;
+  ticket: MyEventTicket;
+}) {
+  const isHold = ticket.status === '참여 보류';
+  const title = isHold ? '참가 보류 안내' : '참가 신청 결과 안내';
+  const leadLine = isHold ? '현재 참가가 보류되었습니다.' : '이번 행사 참가 신청이 승인되지 않았습니다.';
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onClose} role="dialog">
+      <section
+        className="flex max-h-[85dvh] w-full max-w-[340px] flex-col overflow-hidden rounded-[28px] bg-white shadow-calendar"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="min-h-0 overflow-y-auto p-6 text-center">
+          <h2 className="text-[20px] font-black">{title}</h2>
+          <p className="mt-2 text-[15px] font-extrabold text-[#777]">{ticket.eventTitle}</p>
+          <p className="mt-5 text-[17px] font-black leading-relaxed text-black">{leadLine}</p>
+          {ticket.reviewReason ? (
+            <p className="mt-3 whitespace-pre-wrap rounded-[16px] bg-[#f5f5f5] p-4 text-left text-[14px] font-extrabold leading-relaxed text-[#555]">
+              {ticket.reviewReason}
+            </p>
+          ) : null}
+        </div>
+        <div className="shrink-0 px-6 pb-6 pt-2 text-center">
+          <button className="h-12 w-full rounded-[16px] bg-[#eee] text-[15px] font-black text-black" onClick={onClose} type="button">
+            닫기
+          </button>
+          {isHold ? (
+            <button
+              className="mt-3 text-[12px] font-bold text-[#aaa] underline decoration-[#ccc] underline-offset-2 disabled:opacity-50"
+              disabled={canceling}
+              onClick={onCancelApplication}
+              type="button"
+            >
+              {canceling ? '취소 처리 중…' : '신청취소하기'}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
