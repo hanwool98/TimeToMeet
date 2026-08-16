@@ -1,4 +1,4 @@
-import { FunctionsHttpError } from '@supabase/supabase-js';
+import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { getAdminSession } from './adminAuth';
 import { getAppSession } from './appAuth';
@@ -302,6 +302,37 @@ export async function ensureApplicationSession() {
   throw new Error('로그인이 필요합니다.');
 }
 
+export type ApplicationErrorStage =
+  | 'image_compression'
+  | 'file_validation'
+  | 'file_encoding'
+  | 'submit_request'
+  | 'storage_upload'
+  | 'application_insert'
+  | 'response'
+  | 'unknown';
+
+const knownApplicationErrorStages: ApplicationErrorStage[] = [
+  'image_compression',
+  'file_validation',
+  'file_encoding',
+  'submit_request',
+  'storage_upload',
+  'application_insert',
+  'response',
+  'unknown',
+];
+
+export class ApplicationSubmitError extends Error {
+  stage: ApplicationErrorStage;
+
+  constructor(message: string, stage: ApplicationErrorStage) {
+    super(message);
+    this.name = 'ApplicationSubmitError';
+    this.stage = stage;
+  }
+}
+
 export async function submitApplicationToSupabase(input: SubmitApplicationInput) {
   if (!supabase) throw new Error('Supabase is not configured.');
 
@@ -309,41 +340,48 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인 또는 비회원 세션이 필요합니다.');
 
-  const payload = {
-    accessRoute: input.accessRoute,
-    birthDate: input.birthDate,
-    consents: input.consents,
-    employmentProof: await fileToPayload(input.employmentProof),
-    eventId: input.eventId,
-    filmingConsent: input.filmingConsent,
-    gender: input.gender,
-    height: input.height,
-    idPhoto: await fileToPayload(input.idPhoto),
-    inquiry: input.inquiry,
-    interviewConsent: input.interviewConsent,
-    job: input.job,
-    name: input.name,
-    nickname: input.nickname,
-    phone: input.phone,
-    profilePhotos: await Promise.all(input.profilePhotos.map(fileToPayload)),
-    refundAgreement: input.refundAgreement,
-    relationshipStatus: input.relationshipStatus,
-    representativeCrop: input.representativeCrop,
-    representativeIndex: input.representativeIndex,
-    residence: input.residence,
-    returning: input.returning,
-    saveAsDefaultProfile: Boolean(input.saveAsDefaultProfile),
-    sessionToken: session.token,
-    userId: user.id,
-    voiceIntro: await blobToPayload(input.voiceIntro, input.voiceIntroFileName),
-  };
+  let payload: Record<string, unknown>;
+  try {
+    payload = {
+      accessRoute: input.accessRoute,
+      birthDate: input.birthDate,
+      consents: input.consents,
+      employmentProof: await fileToPayload(input.employmentProof),
+      eventId: input.eventId,
+      filmingConsent: input.filmingConsent,
+      gender: input.gender,
+      height: input.height,
+      idPhoto: await fileToPayload(input.idPhoto),
+      inquiry: input.inquiry,
+      interviewConsent: input.interviewConsent,
+      job: input.job,
+      name: input.name,
+      nickname: input.nickname,
+      phone: input.phone,
+      profilePhotos: await Promise.all(input.profilePhotos.map(fileToPayload)),
+      refundAgreement: input.refundAgreement,
+      relationshipStatus: input.relationshipStatus,
+      representativeCrop: input.representativeCrop,
+      representativeIndex: input.representativeIndex,
+      residence: input.residence,
+      returning: input.returning,
+      saveAsDefaultProfile: Boolean(input.saveAsDefaultProfile),
+      sessionToken: session.token,
+      userId: user.id,
+      voiceIntro: await blobToPayload(input.voiceIntro, input.voiceIntroFileName),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '첨부파일을 처리하지 못했습니다.';
+    throw new ApplicationSubmitError(message, 'file_encoding');
+  }
 
   const { data, error } = await supabase.functions.invoke('submit-application', {
     body: payload,
   });
 
   if (error || data?.ok !== true) {
-    throw new Error(await resolveFunctionErrorMessage(error, data, '신청서 저장에 실패했습니다.'));
+    const resolved = await resolveFunctionError(error, data, '신청서 저장에 실패했습니다.');
+    throw new ApplicationSubmitError(resolved.message, resolved.stage);
   }
 }
 
@@ -356,18 +394,102 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
  * failure surfaces to the user as that one opaque SDK message no matter what
  * actually went wrong.
  */
-async function resolveFunctionErrorMessage(error: unknown, data: { message?: string } | null | undefined, fallback: string) {
-  if (data?.message) return data.message;
+async function resolveFunctionError(
+  error: unknown,
+  data: { message?: string; stage?: string } | null | undefined,
+  fallback: string,
+): Promise<{ message: string; stage: ApplicationErrorStage }> {
+  const asStage = (value: unknown): ApplicationErrorStage =>
+    knownApplicationErrorStages.includes(value as ApplicationErrorStage) ? (value as ApplicationErrorStage) : 'response';
+
+  if (data?.message) return { message: data.message, stage: asStage(data.stage) };
   if (error instanceof FunctionsHttpError) {
     try {
       const body = await error.context.json();
-      if (body?.message) return String(body.message);
+      if (body?.message) return { message: String(body.message), stage: asStage(body.stage) };
     } catch {
       // Response body wasn't JSON (e.g. an infra/gateway error page) -
       // fall through to the generic fallback rather than surface raw HTML.
     }
+    return { message: fallback, stage: 'response' };
   }
-  return fallback;
+  if (error instanceof FunctionsFetchError) return { message: fallback, stage: 'submit_request' };
+  return { message: fallback, stage: 'unknown' };
+}
+
+/**
+ * Best-effort diagnostic log for a failed submission, so operators can see
+ * why real applicants' submissions failed (Safari especially) without
+ * relying on someone screenshotting an alert. Never throws - a logging
+ * failure must never compound the applicant's actual problem. Deliberately
+ * takes only non-sensitive metadata (never file bytes, PIN, or admin code).
+ */
+export async function logApplicationError(input: {
+  applicationId?: string;
+  eventId: string;
+  fileCount?: number;
+  message: string;
+  stage: ApplicationErrorStage;
+  totalBytes?: number;
+}) {
+  try {
+    if (!supabase) return;
+    const session = getAppSession();
+    await supabase.rpc('log_application_error', {
+      p_application_id: input.applicationId ?? null,
+      p_event_id: input.eventId,
+      p_file_count: input.fileCount ?? null,
+      p_message: input.message,
+      p_session_token: session?.token ?? '',
+      p_stage: input.stage,
+      p_total_bytes: input.totalBytes ?? null,
+      p_user_agent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
+    });
+  } catch {
+    // Fire-and-forget: logging is a side channel, not part of the submit flow.
+  }
+}
+
+export interface ApplicationErrorLogRow {
+  applicationId: string | null;
+  applicationNo: string | null;
+  createdAt: string;
+  eventDate: string | null;
+  eventId: string | null;
+  eventTitle: string | null;
+  fileCount: number | null;
+  id: string;
+  message: string | null;
+  stage: string;
+  totalBytes: number | null;
+  userAgent: string | null;
+}
+
+export async function fetchAdminApplicationErrorLogs(limit = 100): Promise<ApplicationErrorLogRow[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_application_error_logs', {
+    limit_count: limit,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    applicationId: (row.application_id as string) ?? null,
+    applicationNo: (row.application_no as string) ?? null,
+    createdAt: row.created_at as string,
+    eventDate: (row.event_date as string) ?? null,
+    eventId: (row.event_id as string) ?? null,
+    eventTitle: (row.event_title as string) ?? null,
+    fileCount: (row.file_count as number) ?? null,
+    id: row.id as string,
+    message: (row.message as string) ?? null,
+    stage: row.stage as string,
+    totalBytes: (row.total_bytes as number) ?? null,
+    userAgent: (row.user_agent as string) ?? null,
+  }));
 }
 
 export async function fetchOwnApplicationForEvent(eventId: string) {
@@ -1171,11 +1293,27 @@ async function blobToPayload(blob: Blob, fileName: string) {
   };
 }
 
+const fileReadTimeoutMs = 15000;
+
+// FileReader can stall without ever firing onload/onerror on some mobile
+// engines for a borderline-large blob - without a timeout, that leaves
+// submit() awaiting forever and the submit button stuck in a permanent
+// loading state.
 function blobToDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(reader.error ?? new Error('파일을 읽을 수 없습니다.'));
+    const timer = setTimeout(() => {
+      reader.abort();
+      reject(new Error('파일을 읽는 데 시간이 너무 오래 걸립니다. 잠시 후 다시 시도해주세요.'));
+    }, fileReadTimeoutMs);
+    reader.onload = () => {
+      clearTimeout(timer);
+      resolve(String(reader.result ?? ''));
+    };
+    reader.onerror = () => {
+      clearTimeout(timer);
+      reject(reader.error ?? new Error('파일을 읽을 수 없습니다.'));
+    };
     reader.readAsDataURL(blob);
   });
 }

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import App from './App';
 import AdminRoute from './components/AdminRoute';
+import AdminApplicationErrorsPage from './pages/AdminApplicationErrorsPage';
 import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminCheckInPage from './pages/AdminCheckInPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
@@ -39,6 +40,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/guest-phone" element={<GuestPhoneAuthPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/application-errors" element={<AdminApplicationErrorsPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/events" element={<AdminEventManagementPage />} />
             <Route path="/admin/events/new" element={<AdminEventCreatePage />} />

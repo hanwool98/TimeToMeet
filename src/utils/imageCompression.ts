@@ -5,7 +5,7 @@ const hardMaxBytesIfUncompressible = 10 * 1024 * 1024;
 const compressionTimeoutMs = 8000;
 
 /** Combined base64 payload budget across all files in one submission. */
-export const maxTotalUploadBytes = 15 * 1024 * 1024;
+export const maxTotalUploadBytes = 12 * 1024 * 1024;
 
 /**
  * Downscales/re-encodes an image client-side before it gets base64-encoded

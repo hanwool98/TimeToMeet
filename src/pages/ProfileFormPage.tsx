@@ -7,7 +7,14 @@ import PrimaryButton from '../components/PrimaryButton';
 import { RefundPolicyBox } from '../data/refundPolicy';
 import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
-import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
+import {
+  ApplicationSubmitError,
+  fetchApplicationDraft,
+  fetchOwnApplicationForEvent,
+  logApplicationError,
+  saveApplicationDraft,
+  submitApplicationToSupabase,
+} from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
 import { compressImageIfNeeded, maxTotalUploadBytes } from '../utils/imageCompression';
 import { representativeCropTransform } from '../utils/representativeCrop';
@@ -495,6 +502,11 @@ export default function ProfileFormPage() {
     }
     if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
 
+    const fileCount = 2 + profilePhotos.length + 1; // idPhoto + employmentProof + profile photos + voice
+    const reportError = (stage: Parameters<typeof logApplicationError>[0]['stage'], message: string, totalBytes?: number) => {
+      void logApplicationError({ eventId, fileCount, message, stage, totalBytes });
+    };
+
     setSubmitting(true);
     try {
       const normalizedContactPhone = normalizeKoreanPhone(phone);
@@ -515,11 +527,21 @@ export default function ProfileFormPage() {
           return;
         }
       }
-      const [compressedIdPhoto, compressedEmploymentProof, compressedProfilePhotos] = await Promise.all([
-        compressImageIfNeeded(idPhoto),
-        compressImageIfNeeded(employmentProof),
-        Promise.all(profilePhotos.map(compressImageIfNeeded)),
-      ]);
+
+      let compressedIdPhoto: File;
+      let compressedEmploymentProof: File;
+      let compressedProfilePhotos: File[];
+      try {
+        [compressedIdPhoto, compressedEmploymentProof, compressedProfilePhotos] = await Promise.all([
+          compressImageIfNeeded(idPhoto),
+          compressImageIfNeeded(employmentProof),
+          Promise.all(profilePhotos.map(compressImageIfNeeded)),
+        ]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '이미지 압축에 실패했습니다.';
+        reportError('image_compression', message);
+        throw new Error(message);
+      }
 
       // Each file can individually pass the per-file check yet still add up:
       // five compressed screenshots at a few MB each can combine into a
@@ -529,42 +551,71 @@ export default function ProfileFormPage() {
       const totalUploadBytes =
         compressedIdPhoto.size + compressedEmploymentProof.size + compressedProfilePhotos.reduce((sum, file) => sum + file.size, 0) + audioBlob.size;
       if (totalUploadBytes > maxTotalUploadBytes) {
-        throw new Error(
-          `첨부한 사진·음성 용량이 너무 큽니다(${(totalUploadBytes / 1024 / 1024).toFixed(1)}MB). 사진을 더 작은 것으로 바꾸거나 장수를 줄여주세요.`,
-        );
+        const message = `첨부한 사진·음성 용량이 너무 큽니다(${(totalUploadBytes / 1024 / 1024).toFixed(1)}MB). 사진을 더 작은 것으로 바꾸거나 장수를 줄여주세요.`;
+        reportError('file_validation', message, totalUploadBytes);
+        throw new Error(message);
       }
 
-      await submitApplicationToSupabase({
-        accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
-        birthDate,
-        consents,
-        employmentProof: compressedEmploymentProof,
-        eventId,
-        filmingConsent,
-        gender,
-        height,
-        idPhoto: compressedIdPhoto,
-        inquiry,
-        interviewConsent: interview,
-        job,
-        name,
-        nickname,
-        phone: normalizedContactPhone,
-        profilePhotos: compressedProfilePhotos,
-        refundAgreement: refundConsent,
-        relationshipStatus: '미혼이며 교제하는 인원 없음',
-        representativeCrop: {
-          offsetX: representativeOffsetX,
-          offsetY: representativeOffsetY,
-          scale: representativeScale,
-        },
-        representativeIndex,
-        residence: location,
-        returning: false,
-        saveAsDefaultProfile: isMemberSession && saveAsDefaultProfile,
-        voiceIntro: audioBlob,
-        voiceIntroFileName: getAudioFileName(audioBlob.type),
-      });
+      try {
+        await submitApplicationToSupabase({
+          accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
+          birthDate,
+          consents,
+          employmentProof: compressedEmploymentProof,
+          eventId,
+          filmingConsent,
+          gender,
+          height,
+          idPhoto: compressedIdPhoto,
+          inquiry,
+          interviewConsent: interview,
+          job,
+          name,
+          nickname,
+          phone: normalizedContactPhone,
+          profilePhotos: compressedProfilePhotos,
+          refundAgreement: refundConsent,
+          relationshipStatus: '미혼이며 교제하는 인원 없음',
+          representativeCrop: {
+            offsetX: representativeOffsetX,
+            offsetY: representativeOffsetY,
+            scale: representativeScale,
+          },
+          representativeIndex,
+          residence: location,
+          returning: false,
+          saveAsDefaultProfile: isMemberSession && saveAsDefaultProfile,
+          voiceIntro: audioBlob,
+          voiceIntroFileName: getAudioFileName(audioBlob.type),
+        });
+      } catch (error) {
+        // The request/response can fail (network drop, gateway timeout,
+        // Safari killing a stalled tab) even after the server has already
+        // saved the application. Re-check before telling the applicant it
+        // failed, so a real duplicate submit attempt is never necessary.
+        const stage = error instanceof ApplicationSubmitError ? error.stage : 'unknown';
+        const rawMessage = error instanceof Error ? error.message : '신청서 저장에 실패했습니다.';
+        reportError(stage, rawMessage, totalUploadBytes);
+
+        let confirmedExisting: Awaited<ReturnType<typeof fetchOwnApplicationForEvent>> = null;
+        try {
+          confirmedExisting = await fetchOwnApplicationForEvent(eventId);
+        } catch {
+          confirmedExisting = null; // Couldn't verify either way - don't claim success.
+        }
+
+        if (confirmedExisting) {
+          window.alert('신청이 정상적으로 접수되었습니다.');
+          navigate('/application-complete');
+          return;
+        }
+
+        const notCompletedMessage = '신청이 완료되지 않았습니다. 다시 시도해주세요.';
+        setSubmitError(notCompletedMessage);
+        window.alert(notCompletedMessage);
+        return;
+      }
+
       navigate('/application-complete');
     } catch (error) {
       console.error('Application submit failed', error);

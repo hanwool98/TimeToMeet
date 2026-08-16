@@ -50,12 +50,16 @@ Deno.serve(async (request) => {
   const userId = session.user_id as string;
 
   if (payload.action === 'get-existing') {
+    // Kept in sync with the terminal-status set submit-application's own
+    // duplicate check and the applications_event_user_unique DB index use -
+    // a rejected/canceled/refunded/self-canceled application is over and
+    // shouldn't be reported as "already applied".
     const { data: application, error } = await supabase
       .from('applications')
       .select('id, application_no, status, submitted_at')
       .eq('event_id', payload.eventId)
       .eq('user_id', userId)
-      .neq('status', '반려')
+      .not('status', 'in', '(반려,자동 취소,환불 완료,신청 취소)')
       .maybeSingle();
 
     if (error) return json({ message: '기존 신청 내역 확인에 실패했습니다.' }, 500);

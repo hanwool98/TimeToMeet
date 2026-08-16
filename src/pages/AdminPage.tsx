@@ -81,6 +81,7 @@ export default function AdminPage() {
             <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="회원 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="shield" />} label="신고 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="video" />} label="콘텐츠 관리" onClick={showPreparing} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="alert" />} label="신청 오류 로그" onClick={() => navigate('/admin/application-errors')} />
           </div>
           <button
             className="mt-5 h-14 w-full rounded-[18px] border border-[#dce8f4] bg-white text-[17px] font-black text-[#555] shadow-sm transition active:scale-[0.99]"
@@ -275,7 +276,7 @@ function Icon({
   name,
 }: {
   className?: string;
-  name: 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'radio' | 'shield' | 'user' | 'users' | 'video';
+  name: 'alert' | 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'radio' | 'shield' | 'user' | 'users' | 'video';
 }) {
   const common = {
     fill: 'none',
@@ -345,6 +346,13 @@ function Icon({
       {name === 'logout' ? (
         <>
           <path {...common} d="M14 6H7v20h7M18 11l5 5-5 5M11 16h12" />
+        </>
+      ) : null}
+      {name === 'alert' ? (
+        <>
+          <path {...common} d="M16 5 29 26H3L16 5Z" />
+          <path {...common} d="M16 14v6" />
+          <circle cx="16" cy="23" fill="currentColor" r="1.4" stroke="none" />
         </>
       ) : null}
     </svg>

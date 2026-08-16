@@ -49,21 +49,21 @@ const allowedGenders = new Set(['남성', '여성']);
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (request.method !== 'POST') return json({ message: 'Method not allowed.' }, 405);
+  if (request.method !== 'POST') return json({ message: 'Method not allowed.', stage: 'unknown' }, 405);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Supabase server configuration is missing.' }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Supabase server configuration is missing.', stage: 'unknown' }, 500);
 
   const payload = await request.json().catch(() => null) as SubmitPayload | null;
-  if (!payload?.sessionToken || !payload.eventId) return json({ message: '로그인 또는 비회원 세션이 필요합니다.' }, 401);
+  if (!payload?.sessionToken || !payload.eventId) return json({ message: '로그인 또는 비회원 세션이 필요합니다.', stage: 'submit_request' }, 401);
   if (!payload.idPhoto || !payload.employmentProof || !payload.voiceIntro || !Array.isArray(payload.profilePhotos) || payload.profilePhotos.length === 0) {
-    return json({ message: '필수 첨부 파일을 확인해주세요.' }, 400);
+    return json({ message: '필수 첨부 파일을 확인해주세요.', stage: 'file_validation' }, 400);
   }
-  if (payload.profilePhotos.length > 3) return json({ message: '프로필 사진은 최대 3장까지 첨부할 수 있습니다.' }, 400);
+  if (payload.profilePhotos.length > 3) return json({ message: '프로필 사진은 최대 3장까지 첨부할 수 있습니다.', stage: 'file_validation' }, 400);
 
   const fileValidationError = validateSubmissionFiles(payload);
-  if (fileValidationError) return json({ message: fileValidationError }, 400);
+  if (fileValidationError) return json({ message: fileValidationError, stage: 'file_validation' }, 400);
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const tokenHash = await sha256(payload.sessionToken);
@@ -75,7 +75,7 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (sessionError || !session || new Date(session.expires_at).getTime() <= Date.now()) {
-    return json({ message: '로그인 또는 비회원 세션이 만료되었습니다. 다시 로그인해주세요.' }, 401);
+    return json({ message: '로그인 또는 비회원 세션이 만료되었습니다. 다시 로그인해주세요.', stage: 'response' }, 401);
   }
 
   const userId = session.user_id as string;
@@ -85,14 +85,14 @@ Deno.serve(async (request) => {
     .eq('id', payload.eventId)
     .maybeSingle();
 
-  if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.' }, 500);
-  if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.' }, 404);
+  if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.', stage: 'response' }, 500);
+  if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.', stage: 'response' }, 404);
   if (event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
-    return json({ message: '이 행사의 신청이 마감되었습니다.' }, 409);
+    return json({ message: '이 행사의 신청이 마감되었습니다.', stage: 'response' }, 409);
   }
 
   const fieldValidationError = validateSubmissionFields(payload, String(event.event_date));
-  if (fieldValidationError) return json({ message: fieldValidationError }, 400);
+  if (fieldValidationError) return json({ message: fieldValidationError, stage: 'response' }, 400);
 
   if (session.role === 'guest') {
     const { data: guestAccount, error: guestAccountError } = await supabase
@@ -101,9 +101,9 @@ Deno.serve(async (request) => {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (guestAccountError) return json({ message: '비회원 계정 정보를 확인하지 못했습니다.' }, 500);
+    if (guestAccountError) return json({ message: '비회원 계정 정보를 확인하지 못했습니다.', stage: 'response' }, 500);
     if (!guestAccount?.phone_normalized || normalizePhone(payload.phone) !== guestAccount.phone_normalized) {
-      return json({ message: '비회원 로그인 전화번호와 신청서 전화번호가 일치해야 합니다.' }, 400);
+      return json({ message: '비회원 로그인 전화번호와 신청서 전화번호가 일치해야 합니다.', stage: 'response' }, 400);
     }
   }
 
@@ -119,8 +119,8 @@ Deno.serve(async (request) => {
     .not('status', 'in', `(${terminalStatuses.join(',')})`)
     .maybeSingle();
 
-  if (existingError) return json({ message: '기존 신청 내역 확인에 실패했습니다.' }, 500);
-  if (existing) return json({ message: '이미 이 행사에 신청한 내역이 있습니다.' }, 409);
+  if (existingError) return json({ message: '기존 신청 내역 확인에 실패했습니다.', stage: 'response' }, 500);
+  if (existing) return json({ message: '이미 이 행사에 신청한 내역이 있습니다.', stage: 'response' }, 409);
 
   let idPhotoPath = '';
   let employmentProofPath = '';
@@ -158,7 +158,7 @@ Deno.serve(async (request) => {
       console.error('Application file upload failed', firstFailure.reason);
       await cleanupUploadedFiles(supabase, succeededPaths);
       const message = firstFailure.reason instanceof Error ? firstFailure.reason.message : '파일 업로드에 실패했습니다.';
-      return json({ message }, 500);
+      return json({ message, stage: 'storage_upload' }, 500);
     }
 
     const paths = uploadResults.map((result) => (result as PromiseFulfilledResult<string>).value);
@@ -218,7 +218,7 @@ Deno.serve(async (request) => {
     const deadlineMessage = insertError.message?.includes('Application deadline has passed')
       ? '이 행사의 신청이 마감되었습니다.'
       : `신청서 저장에 실패했습니다. ${insertError.message}`;
-    return json({ message: deadlineMessage }, 500);
+    return json({ message: deadlineMessage, stage: 'application_insert' }, 500);
   }
 
   if (session.role === 'member' && payload.saveAsDefaultProfile) {
@@ -231,7 +231,7 @@ Deno.serve(async (request) => {
       console.error('Default participant profile save failed', profileError);
       await supabase.from('applications').delete().eq('id', insertedApplication.id);
       await cleanupUploadedFiles(supabase, uploadedPaths);
-      return json({ message: `신청서는 저장됐지만 기본 프로필 저장에 실패했습니다. ${profileError.message}` }, 500);
+      return json({ message: `신청서는 저장됐지만 기본 프로필 저장에 실패했습니다. ${profileError.message}`, stage: 'application_insert' }, 500);
     }
   }
 
