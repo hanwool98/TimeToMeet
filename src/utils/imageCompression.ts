@@ -2,6 +2,10 @@ const maxDimension = 1600;
 const jpegQuality = 0.82;
 const skipCompressionUnderBytes = 1.5 * 1024 * 1024;
 const hardMaxBytesIfUncompressible = 10 * 1024 * 1024;
+const compressionTimeoutMs = 8000;
+
+/** Combined base64 payload budget across all files in one submission. */
+export const maxTotalUploadBytes = 15 * 1024 * 1024;
 
 /**
  * Downscales/re-encodes an image client-side before it gets base64-encoded
@@ -26,7 +30,12 @@ export async function compressImageIfNeeded(file: File): Promise<File> {
   if (!file.type.startsWith('image/') || file.size <= skipCompressionUnderBytes) return file;
 
   try {
-    const compressed = await compressImage(file);
+    // Decoding a source large enough to hit a browser's internal decode
+    // limits (full-page screenshots being the realistic case) doesn't
+    // always throw — on some engines it can simply hang. A timeout makes
+    // that failure mode behave the same as any other compression failure
+    // instead of stalling the whole submission indefinitely.
+    const compressed = await withTimeout(compressImage(file), compressionTimeoutMs);
     if (compressed) return compressed;
   } catch (error) {
     console.error('Image compression failed', error);
@@ -38,6 +47,22 @@ export async function compressImageIfNeeded(file: File): Promise<File> {
     );
   }
   return file;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('이미지 처리 시간이 초과되었습니다.')), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function compressImage(file: File): Promise<File | null> {

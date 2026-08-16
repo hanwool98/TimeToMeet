@@ -9,7 +9,7 @@ import useOperationalData from '../hooks/useOperationalData';
 import { getAppSession } from '../services/appAuth';
 import { fetchApplicationDraft, fetchOwnApplicationForEvent, saveApplicationDraft, submitApplicationToSupabase } from '../services/supabaseApplications';
 import { normalizeKoreanPhone } from '../services/guestPinAuth';
-import { compressImageIfNeeded } from '../utils/imageCompression';
+import { compressImageIfNeeded, maxTotalUploadBytes } from '../utils/imageCompression';
 import { representativeCropTransform } from '../utils/representativeCrop';
 
 const requiredConsentText = [
@@ -520,6 +520,19 @@ export default function ProfileFormPage() {
         compressImageIfNeeded(employmentProof),
         Promise.all(profilePhotos.map(compressImageIfNeeded)),
       ]);
+
+      // Each file can individually pass the per-file check yet still add up:
+      // five compressed screenshots at a few MB each can combine into a
+      // request the Edge Function/gateway rejects. Catch that here, before
+      // spending a network round-trip on a submission that would fail
+      // anyway.
+      const totalUploadBytes =
+        compressedIdPhoto.size + compressedEmploymentProof.size + compressedProfilePhotos.reduce((sum, file) => sum + file.size, 0) + audioBlob.size;
+      if (totalUploadBytes > maxTotalUploadBytes) {
+        throw new Error(
+          `첨부한 사진·음성 용량이 너무 큽니다(${(totalUploadBytes / 1024 / 1024).toFixed(1)}MB). 사진을 더 작은 것으로 바꾸거나 장수를 줄여주세요.`,
+        );
+      }
 
       await submitApplicationToSupabase({
         accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
