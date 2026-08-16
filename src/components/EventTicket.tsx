@@ -13,7 +13,7 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
   const shortCode = getTicketShortCode(ticket.applicationNo);
 
   return (
-    <article className="relative left-1/2 grid aspect-[9/5] w-[calc(100vw_-_36px)] max-w-[400px] min-w-0 -translate-x-1/2 grid-cols-[minmax(0,74%)_minmax(0,26%)] overflow-visible rounded-[12px] border border-[#f2dfe2] bg-white shadow-calendar before:absolute before:left-[74%] before:top-[-10px] before:z-10 before:h-5 before:w-5 before:-translate-x-1/2 before:rounded-full before:border before:border-[#f2dfe2] before:bg-white after:absolute after:bottom-[-10px] after:left-[74%] after:z-10 after:h-5 after:w-5 after:-translate-x-1/2 after:rounded-full after:border after:border-[#f2dfe2] after:bg-white">
+    <article className="relative mx-auto grid aspect-[9/5] w-full max-w-[400px] min-w-0 grid-cols-[minmax(0,74%)_minmax(0,26%)] overflow-visible rounded-[12px] border border-[#f2dfe2] bg-white shadow-calendar before:absolute before:left-[74%] before:top-[-11px] before:z-10 before:h-[22px] before:w-[22px] before:-translate-x-1/2 before:rounded-full before:border before:border-[#f2dfe2] before:bg-white after:absolute after:bottom-[-11px] after:left-[74%] after:z-10 after:h-[22px] after:w-[22px] after:-translate-x-1/2 after:rounded-full after:border after:border-[#f2dfe2] after:bg-white">
       <div className="flex min-w-0 flex-col justify-between px-3 py-2.5 min-[375px]:px-3.5 min-[390px]:px-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <p className="shrink-0 text-[8px] font-black uppercase tracking-[0.12em] text-[#8b8b8b] min-[390px]:text-[9px]">Boarding Pass</p>
@@ -43,7 +43,11 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
         </div>
       </div>
 
-      <div className="relative grid min-w-0 place-items-center border-l border-dashed border-meet-pink/45 bg-gradient-to-b from-white to-meet-pinkSoft/35 px-1.5 py-2.5 text-center min-[390px]:px-2">
+      <div className="relative grid min-w-0 place-items-center bg-gradient-to-b from-white to-meet-pinkSoft/35 px-1.5 py-2.5 text-center min-[390px]:px-2">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-2.5 left-0 top-2.5 w-px bg-[repeating-linear-gradient(180deg,#f5709a_0_3px,transparent_3px_7px)] opacity-70"
+        />
         {isConfirmed && ticket.qrToken ? (
           <button className="w-full min-w-0" onClick={onQrOpen} type="button">
             <TicketQr token={ticket.qrToken} />

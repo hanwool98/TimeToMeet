@@ -295,7 +295,14 @@ export default function AdminEventCreatePage() {
               <h2 className="text-[17px] font-black">모집 인원</h2>
               <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2 min-[380px]:gap-3">
                 <Field label="남성">
-                  <select className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]" onChange={(event) => setMaleCapacity(event.target.value)} value={maleCapacity}>
+                  <select
+                    className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    onChange={(event) => {
+                      setMaleCapacity(event.target.value);
+                      setFemaleCapacity(event.target.value);
+                    }}
+                    value={maleCapacity}
+                  >
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
@@ -304,7 +311,14 @@ export default function AdminEventCreatePage() {
                   </select>
                 </Field>
                 <Field label="여성">
-                  <select className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]" onChange={(event) => setFemaleCapacity(event.target.value)} value={femaleCapacity}>
+                  <select
+                    className="h-12 w-full max-w-full min-w-0 appearance-none rounded-[18px] bg-white px-3 text-center text-[15px] font-bold outline-none focus:ring-2 focus:ring-meet-blue min-[380px]:px-4 min-[380px]:text-[16px]"
+                    onChange={(event) => {
+                      setFemaleCapacity(event.target.value);
+                      setMaleCapacity(event.target.value);
+                    }}
+                    value={femaleCapacity}
+                  >
                     {Array.from({ length: 16 }, (_, index) => String(index + 5)).map((count) => (
                       <option key={count} value={count}>
                         {count}명
@@ -449,8 +463,19 @@ export default function AdminEventCreatePage() {
 }
 
 function createEventId(dateValue: string, eventName: string) {
-  const slug = eventName.trim() ? eventName.trim().replace(/\s+/g, '-').toLowerCase() : 'time2meet-event';
-  return `${slug}-${dateValue}-${crypto.randomUUID().slice(0, 8)}`;
+  // Only letters/numbers/parentheses survive as-is; everything else (spaces,
+  // #, ?, /, % ...) collapses to a single hyphen. This id is embedded
+  // directly into route paths (e.g. `/admin/events/${event.id}`), and
+  // characters like `#`/`?`/`/` are URL delimiters — left unescaped, they
+  // silently truncate the path (a `#` turns the rest of the id into a URL
+  // fragment) so the event becomes unreachable by its own link.
+  const slug = eventName
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}()]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  const safeSlug = slug || 'time2meet-event';
+  return `${safeSlug}-${dateValue}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 function getEventSaveErrorMessage(caughtError: unknown) {

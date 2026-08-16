@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { type PointerEvent, type ReactNode, useRef, useState } from 'react';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import useOperationalData from '../hooks/useOperationalData';
 import { clearAdminSession } from '../services/adminAuth';
@@ -15,7 +15,6 @@ export default function AdminPage() {
       return daysUntil >= 0 && daysUntil <= 14;
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const primaryEvent = upcomingEvents[0];
 
   const reviewCount = applications.filter((application) => application.status === '심사 대기').length;
   const waitingCount = applications.filter((application) => application.status === '참여 보류').length;
@@ -51,8 +50,8 @@ export default function AdminPage() {
           </button>
         </header>
 
-        {primaryEvent ? (
-          <DashboardEventCard applications={applications} event={primaryEvent} onClick={() => navigate(`/admin/events/${primaryEvent.id}`)} />
+        {upcomingEvents.length > 0 ? (
+          <DashboardEventSwiper applications={applications} events={upcomingEvents} onSelectEvent={(event) => navigate(`/admin/events/${event.id}`)} />
         ) : (
           <section className="mt-8 rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
             <p className="text-[18px] font-black text-[#777]">다가오는 행사가 없습니다</p>
@@ -93,6 +92,110 @@ export default function AdminPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function DashboardEventSwiper({
+  applications,
+  events,
+  onSelectEvent,
+}: {
+  applications: StoredApplication[];
+  events: EventData[];
+  onSelectEvent: (event: EventData) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [dragPx, setDragPx] = useState(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const didDragRef = useRef(false);
+  const isDragging = dragStartXRef.current !== null;
+
+  const safeIndex = Math.min(index, events.length - 1);
+  const currentEvent = events[safeIndex];
+  if (!currentEvent) return null;
+
+  const goTo = (nextIndex: number) => {
+    setIndex(Math.max(0, Math.min(events.length - 1, nextIndex)));
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    dragStartXRef.current = event.clientX;
+    didDragRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (dragStartXRef.current === null) return;
+    const delta = event.clientX - dragStartXRef.current;
+    if (Math.abs(delta) > 6) didDragRef.current = true;
+    setDragPx(delta);
+  };
+
+  const endDrag = () => {
+    if (dragStartXRef.current === null) return;
+    const threshold = 56;
+    if (dragPx <= -threshold) goTo(safeIndex + 1);
+    else if (dragPx >= threshold) goTo(safeIndex - 1);
+    dragStartXRef.current = null;
+    setDragPx(0);
+  };
+
+  return (
+    <div className="mt-8">
+      <div
+        className="relative touch-pan-y select-none"
+        onPointerCancel={endDrag}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+      >
+        <div style={{ transform: `translateX(${dragPx}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease' }}>
+          <DashboardEventCard
+            applications={applications}
+            event={currentEvent}
+            onClick={() => {
+              if (didDragRef.current) return;
+              onSelectEvent(currentEvent);
+            }}
+          />
+        </div>
+        {events.length > 1 ? (
+          <>
+            <button
+              aria-label="이전 행사"
+              className="absolute left-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#5f6670] shadow-calendar transition disabled:opacity-30"
+              disabled={safeIndex === 0}
+              onClick={() => goTo(safeIndex - 1)}
+              type="button"
+            >
+              <ChevronRight className="h-5 w-5 rotate-180" />
+            </button>
+            <button
+              aria-label="다음 행사"
+              className="absolute right-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#5f6670] shadow-calendar transition disabled:opacity-30"
+              disabled={safeIndex === events.length - 1}
+              onClick={() => goTo(safeIndex + 1)}
+              type="button"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        ) : null}
+      </div>
+      {events.length > 1 ? (
+        <div className="mt-3 flex items-center justify-center gap-1.5">
+          {events.map((event, eventIndex) => (
+            <span
+              className={[
+                'h-1.5 rounded-full transition-all',
+                eventIndex === safeIndex ? 'w-5 bg-meet-blue' : 'w-1.5 bg-[#dbe4ee]',
+              ].join(' ')}
+              key={event.id}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

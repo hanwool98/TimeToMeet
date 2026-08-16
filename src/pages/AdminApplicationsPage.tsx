@@ -266,12 +266,22 @@ function ApplicationCard({
   onPaymentComplete: () => void;
   onReview: () => void;
 }) {
+  const isFemale = application.gender === '여성';
+
   return (
-    <article className={['w-full max-w-full min-w-0 rounded-[14px] border bg-white px-4 py-4 shadow-sm', highlighted ? 'border-meet-blue' : 'border-[#edf1f5]'].join(' ')}>
+    <article
+      className={[
+        'w-full max-w-full min-w-0 rounded-[14px] border px-4 py-4 shadow-sm',
+        highlighted ? 'border-meet-blue bg-white' : isFemale ? 'border-meet-pink/25 bg-meet-pinkSoft/50' : 'border-[#edf1f5] bg-white',
+      ].join(' ')}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h2 className="shrink-0 text-[17px] font-black text-[#263149]">{application.id}</h2>
+            {isFemale ? (
+              <span className="shrink-0 rounded-[8px] bg-meet-pink/15 px-2 py-0.5 text-[11px] font-black text-meet-pink">여성</span>
+            ) : null}
             <p className="min-w-0 text-fluid-safe text-[13px] font-extrabold text-[#5e6878]">{application.userId}</p>
           </div>
           <p className="mt-3 text-fluid-safe text-[13px] font-extrabold leading-snug text-[#263149]">
