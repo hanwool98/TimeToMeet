@@ -1,6 +1,6 @@
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import DatePicker from '../components/DatePicker';
+import BirthDateSelect from '../components/BirthDateSelect';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
@@ -43,13 +43,6 @@ const requiredConsentText = [
 ];
 
 const routeOptions = ['지인', '인스타그램', '검색', '유튜브', '네이버 블로그', '기타'];
-
-function toDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 function getAgeOnEventDate(birthDate: string, eventDateValue?: string) {
   if (!birthDate) return null;
@@ -782,10 +775,10 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="4. 생년월일">
-            <DatePicker
-              max={toDateInputValue(new Date())}
+            <BirthDateSelect
+              className="flex h-12 w-full items-center justify-center gap-1.5 rounded-[18px] bg-meet-blueSoft px-2"
               onChange={setBirthDate}
-              triggerClassName="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-center text-[16px] font-bold outline-none"
+              selectClassName="min-w-0 appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none"
               value={birthDate}
             />
             {age !== null && !ageError ? <p className="mt-3 text-[13px] font-extrabold text-[#777]">행사일 기준 만 {age}세입니다.</p> : null}
