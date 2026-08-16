@@ -272,7 +272,8 @@ function ApplicationCard({
     <article
       className={[
         'w-full max-w-full min-w-0 rounded-[14px] border px-4 py-4 shadow-sm',
-        highlighted ? 'border-meet-blue bg-white' : isFemale ? 'border-meet-pink/25 bg-meet-pinkSoft/50' : 'border-[#edf1f5] bg-white',
+        isFemale ? 'bg-meet-pinkSoft/50' : 'bg-white',
+        highlighted ? 'border-meet-blue' : isFemale ? 'border-meet-pink/25' : 'border-[#edf1f5]',
       ].join(' ')}
     >
       <div className="flex items-start justify-between gap-3">

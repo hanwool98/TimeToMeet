@@ -98,8 +98,6 @@ export default function TicketDetailPage() {
 function TicketParticipantPreview({ eventId }: { eventId: string }) {
   const { participants } = useOperationalData({ eventId });
 
-  if (participants.length === 0) return null;
-
   return (
     <section>
       <h2 className="px-1 text-[15px] font-black text-[#555]">참가자리스트</h2>
