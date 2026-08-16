@@ -27,7 +27,7 @@ export default function LoginPage() {
   const [guestPhone, setGuestPhone] = useState('');
   const [guestPin, setGuestPin] = useState('');
   const [guestError, setGuestError] = useState('');
-  const [activeLoginTab, setActiveLoginTab] = useState<'member' | 'guest'>('member');
+  const [activeLoginTab, setActiveLoginTab] = useState<'member' | 'guest'>('guest');
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {

@@ -16,6 +16,7 @@ export interface StoredApplication {
   userId: string;
   gender: '남성' | '여성';
   age: number;
+  eventId: string;
   eventDate: string;
   eventType: string;
   returning: '첫 참여' | '재참여';

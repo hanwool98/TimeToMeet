@@ -103,6 +103,26 @@ interface PublicEventSummaryRow {
   female_applications: number;
   male_confirmed: number;
   female_confirmed: number;
+  application_deadline: string | null;
+  male_capacity: number;
+  female_capacity: number;
+}
+
+interface AdminEventDetailsRow {
+  id: string;
+  title: string;
+  short_name: string;
+  event_date: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  venue_detail: string;
+  application_deadline: string | null;
+  venue_booked: boolean;
+  male_capacity: number;
+  female_capacity: number;
+  male_price: number;
+  female_price: number;
 }
 
 interface PublicParticipantPreviewRow {
@@ -529,6 +549,7 @@ export async function fetchPublicEventsFromSupabase() {
   if (error) throw error;
 
   return (data as PublicEventSummaryRow[]).map((event) => ({
+    applicationDeadline: event.application_deadline ?? undefined,
     currentParticipants: event.current_participants,
     date: event.event_date,
     endTime: event.end_time.slice(0, 5),
@@ -540,12 +561,46 @@ export async function fetchPublicEventsFromSupabase() {
     femaleConfirmed: event.female_confirmed,
     maleApplications: event.male_applications,
     maleConfirmed: event.male_confirmed,
+    maleCapacity: event.male_capacity,
+    femaleCapacity: event.female_capacity,
     shortName: event.short_name,
     startTime: event.start_time.slice(0, 5),
     targetParticipants: event.target_participants,
     title: event.title,
     venueBooked: event.venue_booked,
   })) satisfies EventData[];
+}
+
+export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as AdminEventDetailsRow | undefined;
+  if (!row) return null;
+
+  return {
+    applicationDeadline: row.application_deadline ?? undefined,
+    date: row.event_date,
+    endTime: row.end_time.slice(0, 5),
+    femaleCapacity: row.female_capacity,
+    femalePrice: row.female_price,
+    id: row.id,
+    location: row.location,
+    maleCapacity: row.male_capacity,
+    malePrice: row.male_price,
+    shortName: row.short_name,
+    startTime: row.start_time.slice(0, 5),
+    title: row.title,
+    venueBooked: row.venue_booked,
+    venueDetail: row.venue_detail ?? '',
+  };
 }
 
 export async function fetchPublicParticipantsFromSupabase(eventId: string) {
@@ -603,7 +658,7 @@ async function fetchAdminEventModeSummariesFromExistingSupabaseData() {
   ]);
 
   return events.map((event) => {
-    const eventApplications = applications.filter((application) => application.eventDate.includes(formatKoreanMonthDay(event.date)));
+    const eventApplications = applications.filter((application) => application.eventId === event.id);
     const confirmedApplications = eventApplications.filter((application) => application.status === '참가 확정');
 
     return {
@@ -628,18 +683,20 @@ export async function upsertEventToSupabase(event: EventData) {
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { error } = await supabase.rpc('upsert_event_for_admin_session', {
-    event_id_value: event.id,
-    event_title: event.title,
-    event_short_name: event.shortName,
+    event_application_deadline: event.applicationDeadline ?? null,
     event_date_value: event.date,
-    event_start_time: event.startTime,
     event_end_time: event.endTime,
+    event_female_price: event.femalePrice,
+    event_id_value: event.id,
     event_location: event.location,
     event_male_price: event.malePrice,
-    event_female_price: event.femalePrice,
+    event_short_name: event.shortName,
+    event_start_time: event.startTime,
+    event_title: event.title,
     event_venue_booked: event.venueBooked,
-    female_capacity_value: event.targetParticipants / 2,
-    male_capacity_value: event.targetParticipants / 2,
+    event_venue_detail: event.venueDetail ?? '',
+    female_capacity_value: event.femaleCapacity ?? Math.floor(event.targetParticipants / 2),
+    male_capacity_value: event.maleCapacity ?? Math.ceil(event.targetParticipants / 2),
     session_token: adminSession.token,
   });
 
@@ -863,6 +920,7 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     appliedAt: formatShortDateTime(row.submitted_at),
     dbId: row.id,
     accountType: row.account_type ?? 'member',
+    eventId: row.event_id,
     eventDate: row.event_date ? formatApplicationEventDate(row.event_date) : '행사 날짜 미정',
     eventType: row.short_name ?? '로테이션',
     gender: row.gender,
@@ -969,11 +1027,6 @@ function mapProfile(row: SupabaseApplicationRow): ParticipantProfile {
 
 function formatApplicationNo(value: string) {
   return value.replace(/^TTM-(\d{4})-(\d{3})$/, 'TTM_$1_$2');
-}
-
-function formatKoreanMonthDay(value: string) {
-  const [, rawMonth, rawDay] = value.split('-');
-  return `${Number(rawMonth)}월 ${Number(rawDay)}일`;
 }
 
 function isMissingRpcError(error: { code?: string; message?: string }) {

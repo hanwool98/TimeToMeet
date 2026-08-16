@@ -80,10 +80,10 @@ function SwipeSection({
     <section className="mt-10">
       <h2 className="px-1 text-[20px] font-black text-black">{title}</h2>
       <div className="mt-4 flex max-w-full snap-x gap-3 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
-        {items.map((item) => (
+        {items.map((item, index) => (
           <article
             className="grid min-h-[146px] min-w-[128px] snap-start place-items-center rounded-none bg-[#d9d9d9] p-3 text-center"
-            key={typeof item === 'string' ? item : item.title}
+            key={typeof item === 'string' ? `${item}-${index}` : item.title}
           >
             {typeof item === 'string' ? (
               <p className="break-keep text-[13px] font-black leading-snug text-white">{item}</p>
@@ -110,11 +110,12 @@ export default function EventInfoPage() {
   const { eventId } = useParams();
   const { error, events, loading, reload } = useOperationalData();
   const isTabEventInfo = location.pathname === '/event-info';
-  const event =
-    events.find((item) => item.id === eventId) ??
-    events
+  const event = eventId
+    ? events.find((item) => item.id === eventId)
+    : events
       .filter((item) => getDaysUntilEvent(item.date) >= 0)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  const isApplicationClosed = Boolean(event?.applicationDeadline && new Date(event.applicationDeadline).getTime() <= Date.now());
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
 
   if (loading) return <DataLoadingState />;
@@ -210,15 +211,18 @@ export default function EventInfoPage() {
           {!isTabEventInfo ? (
             <div className="sticky bottom-4 mt-10">
               <PrimaryButton
-                disabled={!eventId}
+                disabled={!eventId || isApplicationClosed}
                 onClick={() => {
-                  if (!eventId) return;
+                  if (!eventId || isApplicationClosed) return;
                   const returnTo = `/events/${eventId}/apply/profile`;
-                  navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+                  navigate(`/guest-phone?entry=tab&returnTo=${encodeURIComponent(returnTo)}`);
                 }}
               >
-                내 프로필 만들기
+                {isApplicationClosed ? '신청 마감' : '내 프로필 만들기'}
               </PrimaryButton>
+              {isApplicationClosed ? (
+                <p className="mt-2 text-center text-[13px] font-black text-meet-pink">이 행사의 신청 접수가 마감되었습니다.</p>
+              ) : null}
             </div>
           ) : null}
         </section>

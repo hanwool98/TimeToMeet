@@ -35,8 +35,10 @@ Deno.serve(async (req) => {
 
   const pathsByUser = new Map<string, string[]>();
   for (const target of targets ?? []) {
-    if (!target.user_id || !target.storage_path) continue;
-    pathsByUser.set(target.user_id, [...(pathsByUser.get(target.user_id) ?? []), target.storage_path]);
+    if (!target.user_id) continue;
+    const paths = pathsByUser.get(target.user_id) ?? [];
+    if (target.storage_path) paths.push(target.storage_path);
+    pathsByUser.set(target.user_id, paths);
   }
 
   const cleaned: string[] = [];

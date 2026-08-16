@@ -97,12 +97,12 @@ export default function AdminPage() {
 }
 
 function DashboardEventCard({ applications, event, onClick }: { applications: StoredApplication[]; event: EventData; onClick: () => void }) {
-  const eventApplications = applications.filter((application) => application.eventDate === formatApplicationEventDate(event.date) && application.eventType === event.shortName);
+  const eventApplications = applications.filter((application) => application.eventId === event.id);
   const reviewCount = eventApplications.filter((application) => application.status === '심사 대기').length;
   const waitingCount = eventApplications.filter((application) => application.status === '참여 보류').length;
   const paymentCount = eventApplications.filter((application) => application.status === '결제 대기' || application.status === '결제중' || application.status === '입금 확인 중').length;
-  const maleCapacity = Math.max(1, Math.round(event.targetParticipants / 2));
-  const femaleCapacity = Math.max(1, event.targetParticipants - maleCapacity);
+  const maleCapacity = Math.max(1, event.maleCapacity ?? Math.ceil(event.targetParticipants / 2));
+  const femaleCapacity = Math.max(1, event.femaleCapacity ?? Math.floor(event.targetParticipants / 2));
   const maleConfirmed = event.maleConfirmed ?? 0;
   const femaleConfirmed = event.femaleConfirmed ?? 0;
   const isRecruiting = maleConfirmed < maleCapacity || femaleConfirmed < femaleCapacity;
@@ -296,9 +296,4 @@ function formatDayName(dateValue: string) {
   const date = new Date(`${dateValue}T00:00:00`);
   const dayNames = ['(일)', '(월)', '(화)', '(수)', '(목)', '(금)', '(토)'];
   return dayNames[date.getDay()];
-}
-
-function formatApplicationEventDate(dateValue: string) {
-  const [, month, day] = dateValue.split('-').map(Number);
-  return `${month}월 ${day}일`;
 }

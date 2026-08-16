@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { upsertEventToSupabase } from '../services/supabaseApplications';
+import { fetchAdminEventDetailsFromSupabase, upsertEventToSupabase } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
 const eventTypes = ['타임투밋 로테이션 소개팅'];
@@ -30,6 +30,21 @@ function parseDateParam(dateParam: string | null) {
   const [year, month, day] = dateParam.split('-').map(Number);
   if (!year || !month || !day) return new Date();
   return new Date(year, month - 1, day);
+}
+
+
+
+function defaultDeadlineForDate(dateValue: string) {
+  const date = parseDateParam(dateValue);
+  date.setDate(date.getDate() - 3);
+  date.setHours(23, 59, 0, 0);
+  return toDateTimeInputValue(date);
+}
+
+function toRegionOption(location: string) {
+  if (regions.includes(location)) return location;
+  const withCitySuffix = `${location}시`;
+  return regions.includes(withCitySuffix) ? withCitySuffix : regions[0];
 }
 
 function formatKoreanDate(dateValue: string) {
@@ -88,6 +103,7 @@ export default function AdminEventCreatePage() {
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editDetailsLoading, setEditDetailsLoading] = useState(Boolean(eventId));
 
   useEffect(() => {
     if (!editingEvent) return;
@@ -96,26 +112,77 @@ export default function AdminEventCreatePage() {
     setEventDate(editingEvent.date);
     setStartTime(editingEvent.startTime);
     setEndTime(editingEvent.endTime);
-    setMaleCapacity(String(editingEvent.targetParticipants / 2));
-    setFemaleCapacity(String(editingEvent.targetParticipants / 2));
+    setMaleCapacity(String(editingEvent.maleCapacity ?? editingEvent.targetParticipants / 2));
+    setFemaleCapacity(String(editingEvent.femaleCapacity ?? editingEvent.targetParticipants / 2));
     setMalePrice(String(editingEvent.malePrice));
     setFemalePrice(String(editingEvent.femalePrice));
-    setRegion(`${editingEvent.location}시`);
+    setRegion(toRegionOption(editingEvent.location));
     setVenueBooked(editingEvent.venueBooked);
+    setDeadline(
+      editingEvent.applicationDeadline
+        ? toDateTimeInputValue(new Date(editingEvent.applicationDeadline))
+        : defaultDeadlineForDate(editingEvent.date),
+    );
   }, [editingEvent]);
+
+  useEffect(() => {
+    if (!eventId) {
+      setEditDetailsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setEditDetailsLoading(true);
+    void fetchAdminEventDetailsFromSupabase(eventId)
+      .then((details) => {
+        if (!active || !details) return;
+        setEventType(details.shortName.includes('로테이션') ? eventTypes[0] : details.shortName);
+        setEventName(details.title);
+        setEventDate(details.date);
+        setStartTime(details.startTime);
+        setEndTime(details.endTime);
+        setMaleCapacity(String(details.maleCapacity));
+        setFemaleCapacity(String(details.femaleCapacity));
+        setMalePrice(String(details.malePrice));
+        setFemalePrice(String(details.femalePrice));
+        setRegion(toRegionOption(details.location));
+        setVenueDetail(details.venueDetail);
+        setVenueBooked(details.venueBooked);
+        setDeadline(
+          details.applicationDeadline
+            ? toDateTimeInputValue(new Date(details.applicationDeadline))
+            : defaultDeadlineForDate(details.date),
+        );
+      })
+      .catch((caughtError) => {
+        if (!active) return;
+        setSaveError(getEventSaveErrorMessage(caughtError));
+      })
+      .finally(() => {
+        if (active) setEditDetailsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
 
   const handleCreate = async () => {
     const nextEvent: EventData = {
+      applicationDeadline: deadline ? new Date(deadline).toISOString() : undefined,
       id: editingEvent?.id ?? createEventId(eventDate, eventName),
       title: eventName.trim() || '타임투밋 로테이션 소개팅',
       shortName: eventType.includes('로테이션') ? '로테이션' : eventType,
       date: eventDate,
       startTime,
       endTime,
-      location: region.replace('시', ''),
+      location: region.replace(/시$/, ''),
       venueBooked,
+      venueDetail: venueDetail.trim(),
       malePrice: Number(malePrice) || 0,
+      maleCapacity: Number(maleCapacity),
       femalePrice: Number(femalePrice) || 0,
+      femaleCapacity: Number(femaleCapacity),
       currentParticipants: editingEvent?.currentParticipants ?? 0,
       targetParticipants: Number(maleCapacity) + Number(femaleCapacity),
     };
@@ -279,7 +346,7 @@ export default function AdminEventCreatePage() {
               >
                 취소
               </button>
-              <PrimaryButton disabled={saving} onClick={handleCreate}>{saving ? '저장 중' : submitLabel}</PrimaryButton>
+              <PrimaryButton disabled={saving || editDetailsLoading} onClick={handleCreate}>{saving ? '저장 중' : editDetailsLoading ? '행사 정보 확인 중' : submitLabel}</PrimaryButton>
             </div>
             {saveError ? <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">{saveError}</p> : null}
           </form>
@@ -291,7 +358,7 @@ export default function AdminEventCreatePage() {
 
 function createEventId(dateValue: string, eventName: string) {
   const slug = eventName.trim() ? eventName.trim().replace(/\s+/g, '-').toLowerCase() : 'time2meet-event';
-  return `${slug}-${dateValue}`;
+  return `${slug}-${dateValue}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 function getEventSaveErrorMessage(caughtError: unknown) {

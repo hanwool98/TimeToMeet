@@ -20,7 +20,6 @@ export default function MyEventsPage() {
   const [loading, setLoading] = useState(isLoggedIn);
   const [error, setError] = useState('');
   const [qrTicket, setQrTicket] = useState<MyEventTicket | null>(null);
-  const { participants } = useOperationalData({ eventId: tickets[0]?.eventId });
 
   const loadTickets = useCallback(async () => {
     if (!getAppSession()) return;
@@ -109,18 +108,10 @@ export default function MyEventsPage() {
                       ) : null}
                     </div>
                   ) : null}
+                  <TicketParticipantPreview eventId={ticket.eventId} />
                 </section>
               ))}
             </div>
-
-            {tickets.length > 0 && participants.length > 0 ? (
-              <section className="mt-8 rounded-[26px] bg-meet-blueSoft p-1.5">
-                <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
-                  <ParticipantList participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
-                  <ParticipantList participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
-                </div>
-              </section>
-            ) : null}
           </section>
         ) : (
           <div className="flex min-h-[calc(100dvh-10rem)] flex-col items-center justify-center gap-5">
@@ -134,5 +125,20 @@ export default function MyEventsPage() {
       <BottomTabs />
       {qrTicket ? <QrModal onClose={() => setQrTicket(null)} ticket={qrTicket} /> : null}
     </main>
+  );
+}
+
+function TicketParticipantPreview({ eventId }: { eventId: string }) {
+  const { participants } = useOperationalData({ eventId });
+
+  if (participants.length === 0) return null;
+
+  return (
+    <section className="rounded-[26px] bg-meet-blueSoft p-1.5">
+      <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
+        <ParticipantList participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
+        <ParticipantList participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
+      </div>
+    </section>
   );
 }

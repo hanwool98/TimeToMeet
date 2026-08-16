@@ -21,7 +21,7 @@ export default function AdminEventParticipantsPage() {
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
   const participants = applications
-    .filter((application) => event && application.status === '참가 확정' && application.eventDate === formatApplicationEventDate(event.date) && application.eventType === event.shortName)
+    .filter((application) => event && application.status === '참가 확정' && application.eventId === eventId)
     .map(applicationToParticipant);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
@@ -242,10 +242,6 @@ function formatShortKoreanDate(dateValue: string) {
   return `${String(year).slice(2)}년 ${month}월 ${day}일 (${dayNames[date.getDay()]})`;
 }
 
-function formatApplicationEventDate(dateValue: string) {
-  const [, month, day] = dateValue.split('-').map(Number);
-  return `${month}월 ${day}일`;
-}
 
 function applicationToParticipant(application: StoredApplication, index: number): ParticipantData {
   const profile = application.profile ?? createEmptyProfile(application);

@@ -24,6 +24,15 @@ async function sha256(value: string) {
     .join('');
 }
 
+function constantTimeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return result === 0;
+}
+
 function getRequestKey(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   const connectingIp = request.headers.get('cf-connecting-ip')?.trim();
@@ -36,15 +45,19 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  if (request.method !== 'POST') {
+    return json({ message: 'Method not allowed.' }, 405);
+  }
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const adminAccessCode = Deno.env.get('ADMIN_ACCESS_CODE');
+  const adminLoginCodeHash = Deno.env.get('ADMIN_LOGIN_CODE_HASH')?.trim().toLowerCase();
 
-  if (!supabaseUrl || !serviceRoleKey || !adminAccessCode) {
+  if (!supabaseUrl || !serviceRoleKey || !adminLoginCodeHash || !/^[a-f0-9]{64}$/.test(adminLoginCodeHash)) {
     return json({ message: 'Admin login is not configured.' }, 500);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const requestHash = await sha256(getRequestKey(request));
   const { data: attempt } = await supabase
     .from('admin_login_attempts')
@@ -57,7 +70,8 @@ Deno.serve(async (request) => {
   }
 
   const { code } = await request.json().catch(() => ({ code: '' }));
-  if (typeof code !== 'string' || code !== adminAccessCode) {
+  const submittedHash = typeof code === 'string' ? await sha256(code.trim()) : '';
+  if (!submittedHash || !constantTimeEqual(submittedHash, adminLoginCodeHash)) {
     const lastFailedAt = attempt?.last_failed_at ? new Date(attempt.last_failed_at).getTime() : 0;
     const shouldReset = lastFailedAt < Date.now() - resetAfterMinutes * 60 * 1000;
     const nextFailedCount = shouldReset ? 1 : Number(attempt?.failed_count ?? 0) + 1;
@@ -86,6 +100,7 @@ Deno.serve(async (request) => {
   });
 
   if (error) {
+    console.error('Admin session insert failed', error);
     return json({ message: 'Admin session could not be created.' }, 500);
   }
 

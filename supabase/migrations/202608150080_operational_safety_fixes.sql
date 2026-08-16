@@ -38,7 +38,14 @@ begin
   if exists (
     select 1 from pg_namespace where nspname = 'cron'
   ) then
-    perform cron.unschedule('time2meet-cancel-expired-payment-applications');
+    if exists (
+      select 1
+      from cron.job
+      where jobname = 'time2meet-cancel-expired-payment-applications'
+    ) then
+      perform cron.unschedule('time2meet-cancel-expired-payment-applications');
+    end if;
+
     perform cron.schedule(
       'time2meet-cancel-expired-payment-applications',
       '*/10 * * * *',
@@ -46,6 +53,8 @@ begin
     );
   end if;
 exception
+  when undefined_table then
+    null;
   when undefined_function then
     null;
   when insufficient_privilege then
@@ -67,7 +76,7 @@ as $$
     from public.user_accounts ua
     left join public.applications a
       on a.user_id = ua.user_id
-      and a.status not in ('자동 취소', '참가 거부', '환불 완료')
+      and a.status not in ('자동 취소', '반려', '환불 완료')
     left join public.events e
       on e.id = a.event_id
       and (e.event_date >= current_date or a.status in ('심사 대기', '참여 보류', '결제 대기', '결제중', '입금 확인 중', '참가 확정'))

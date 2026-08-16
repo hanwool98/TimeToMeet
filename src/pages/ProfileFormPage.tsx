@@ -249,6 +249,7 @@ export default function ProfileFormPage() {
   const [saveAsDefaultProfile, setSaveAsDefaultProfile] = useState(false);
   const isMemberSession = getAppSession()?.role === 'member';
   const selectedEvent = events.find((event) => event.id === eventId);
+  const isApplicationClosed = Boolean(selectedEvent?.applicationDeadline && new Date(selectedEvent.applicationDeadline).getTime() <= Date.now());
 
   const age = useMemo(() => getAgeOnEventDate(birthDate, selectedEvent?.date), [birthDate, selectedEvent?.date]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
@@ -450,6 +451,10 @@ export default function ProfileFormPage() {
       setSubmitError('선택한 행사 정보를 확인할 수 없습니다. 행사 선택 화면에서 다시 시작해주세요.');
       return;
     }
+    if (isApplicationClosed) {
+      setSubmitError('이 행사의 신청 접수가 마감되었습니다.');
+      return;
+    }
     if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
 
     setSubmitting(true);
@@ -608,6 +613,22 @@ export default function ProfileFormPage() {
             </p>
             <Link className="mt-6 block h-14 rounded-[18px] bg-meet-blue px-5 py-4 text-[16px] font-extrabold text-white" to="/">
               행사 선택하러 가기
+            </Link>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (isApplicationClosed) {
+    return (
+      <main className="app-page min-h-screen bg-white px-4 py-12 text-black">
+        <div className="mobile-container mx-auto">
+          <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+            <h1 className="text-[24px] font-black leading-tight">신청이 마감되었습니다</h1>
+            <p className="mt-4 text-[14px] font-extrabold leading-relaxed text-[#777]">이 행사는 신청 접수가 종료되었습니다. 다른 행사 일정을 확인해주세요.</p>
+            <Link className="mt-6 block h-14 rounded-[18px] bg-meet-blue px-5 py-4 text-[16px] font-extrabold text-white" to="/">
+              다른 행사 확인하기
             </Link>
           </section>
         </div>

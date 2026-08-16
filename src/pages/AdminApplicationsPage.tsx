@@ -29,8 +29,15 @@ export default function AdminApplicationsPage() {
   const [actionError, setActionError] = useState('');
 
   const dateOptions = useMemo(() => {
-    const options = applications.map((application) => `${application.eventDate} ${application.eventType}`).filter(Boolean);
-    return ['전체', ...Array.from(new Set(options))];
+    const byEventId = new Map<string, string>();
+    for (const application of applications) {
+      if (!application.eventId) continue;
+      byEventId.set(application.eventId, `${application.eventDate} ${application.eventType}`);
+    }
+    return [
+      { label: '전체', value: '전체' },
+      ...Array.from(byEventId.entries()).map(([value, label]) => ({ label, value })),
+    ];
   }, [applications]);
 
   const filteredApplications = useMemo(() => {
@@ -41,7 +48,7 @@ export default function AdminApplicationsPage() {
         if (activeTab === 'payment') return item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소';
         return item.status === '참가 확정' || item.status === '반려';
       })
-      .filter((item) => (dateFilter === '전체' ? true : `${item.eventDate} ${item.eventType}` === dateFilter))
+      .filter((item) => (dateFilter === '전체' ? true : item.eventId === dateFilter))
       .filter((item) => {
         const keyword = search.trim().toLowerCase();
         if (!keyword) return true;
@@ -140,8 +147,8 @@ export default function AdminApplicationsPage() {
             <span aria-hidden="true" className="text-[18px]">📅</span>
             <select className="w-full max-w-full min-w-0 flex-1 appearance-none bg-transparent text-center text-[17px] font-black outline-none" onChange={(event) => setDateFilter(event.target.value)} value={dateFilter}>
               {dateOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>

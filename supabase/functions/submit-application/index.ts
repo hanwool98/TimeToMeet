@@ -45,6 +45,7 @@ const maxImageBytes = 8 * 1024 * 1024;
 const maxAudioBytes = 8 * 1024 * 1024;
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const audioTypes = ['audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-m4a'];
+const allowedGenders = new Set(['남성', '여성']);
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -64,7 +65,7 @@ Deno.serve(async (request) => {
   const fileValidationError = validateSubmissionFiles(payload);
   if (fileValidationError) return json({ message: fileValidationError }, 400);
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const tokenHash = await sha256(payload.sessionToken);
   const { data: session, error: sessionError } = await supabase
     .from('app_sessions')
@@ -80,12 +81,31 @@ Deno.serve(async (request) => {
   const userId = session.user_id as string;
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id')
+    .select('id, event_date, application_deadline')
     .eq('id', payload.eventId)
     .maybeSingle();
 
   if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.' }, 500);
   if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.' }, 404);
+  if (event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
+    return json({ message: '이 행사의 신청이 마감되었습니다.' }, 409);
+  }
+
+  const fieldValidationError = validateSubmissionFields(payload, String(event.event_date));
+  if (fieldValidationError) return json({ message: fieldValidationError }, 400);
+
+  if (session.role === 'guest') {
+    const { data: guestAccount, error: guestAccountError } = await supabase
+      .from('guest_accounts')
+      .select('phone_normalized')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (guestAccountError) return json({ message: '비회원 계정 정보를 확인하지 못했습니다.' }, 500);
+    if (!guestAccount?.phone_normalized || normalizePhone(payload.phone) !== guestAccount.phone_normalized) {
+      return json({ message: '비회원 로그인 전화번호와 신청서 전화번호가 일치해야 합니다.' }, 400);
+    }
+  }
 
   const { data: existing, error: existingError } = await supabase
     .from('applications')
@@ -124,7 +144,7 @@ Deno.serve(async (request) => {
   }
 
   const applicationSnapshot = {
-    access_route: payload.accessRoute,
+    access_route: payload.accessRoute.trim(),
     applicant_kind: session.role,
     birth_date: payload.birthDate,
     consents: payload.consents,
@@ -132,21 +152,21 @@ Deno.serve(async (request) => {
     event_id: payload.eventId,
     filming_consent: payload.filmingConsent,
     gender: payload.gender,
-    height: payload.height,
+    height: payload.height.trim(),
     id_photo_path: idPhotoPath,
-    inquiry: payload.inquiry,
-    interview_consent: payload.interviewConsent,
-    job: payload.job,
-    name: payload.name,
-    nickname: payload.nickname,
-    phone: payload.phone,
+    inquiry: payload.inquiry?.trim() ?? '',
+    interview_consent: payload.interviewConsent.trim(),
+    job: payload.job.trim(),
+    name: payload.name.trim(),
+    nickname: payload.nickname.trim(),
+    phone: normalizePhone(payload.phone),
     profile_photo_paths: profilePhotoPaths,
     refund_agreement: payload.refundAgreement,
-    relationship_status: payload.relationshipStatus,
+    relationship_status: payload.relationshipStatus.trim(),
     representative_crop: payload.representativeCrop,
     representative_photo_index: payload.representativeIndex,
-    residence: payload.residence,
-    is_returning: payload.returning,
+    residence: payload.residence.trim(),
+    is_returning: Boolean(payload.returning),
     review_notice_confirmed: true,
     user_id: userId,
     voice_intro_path: voiceIntroPath,
@@ -161,7 +181,10 @@ Deno.serve(async (request) => {
   if (insertError) {
     console.error('Application insert failed', insertError);
     await cleanupUploadedFiles(supabase, uploadedPaths);
-    return json({ message: `신청서 저장에 실패했습니다. ${insertError.message}` }, 500);
+    const deadlineMessage = insertError.message?.includes('Application deadline has passed')
+      ? '이 행사의 신청이 마감되었습니다.'
+      : `신청서 저장에 실패했습니다. ${insertError.message}`;
+    return json({ message: deadlineMessage }, 500);
   }
 
   if (session.role === 'member' && payload.saveAsDefaultProfile) {
@@ -178,9 +201,49 @@ Deno.serve(async (request) => {
     }
   }
 
-  await supabase.from('application_drafts').delete().eq('event_id', payload.eventId).eq('user_id', userId);
+  const { error: draftDeleteError } = await supabase
+    .from('application_drafts')
+    .delete()
+    .eq('event_id', payload.eventId)
+    .eq('user_id', userId);
+  if (draftDeleteError) console.error('Application draft cleanup failed', draftDeleteError);
+
   return json({ ok: true });
 });
+
+function validateSubmissionFields(payload: SubmitPayload, eventDate: string) {
+  const requiredText: Array<[string, unknown]> = [
+    ['이름', payload.name],
+    ['생년월일', payload.birthDate],
+    ['거주지', payload.residence],
+    ['전화번호', payload.phone],
+    ['닉네임', payload.nickname],
+    ['키', payload.height],
+    ['직업', payload.job],
+    ['접속 경로', payload.accessRoute],
+    ['인터뷰 여부', payload.interviewConsent],
+    ['교제 상태', payload.relationshipStatus],
+  ];
+
+  for (const [label, value] of requiredText) {
+    if (typeof value !== 'string' || !value.trim()) return `${label} 항목을 확인해주세요.`;
+  }
+
+  if (!allowedGenders.has(payload.gender)) return '성별 항목을 확인해주세요.';
+  if (!/^01[016789][0-9]{7,8}$/.test(normalizePhone(payload.phone))) return '전화번호 형식을 확인해주세요.';
+  if (!payload.consents?.privacy || !payload.consents?.thirdParty) return '필수 개인정보 동의가 필요합니다.';
+  if (!payload.filmingConsent) return '촬영 동의가 필요합니다.';
+  if (!payload.refundAgreement) return '환불 규정 동의가 필요합니다.';
+  if (!Number.isInteger(payload.representativeIndex) || payload.representativeIndex < 0 || payload.representativeIndex >= payload.profilePhotos.length) {
+    return '대표 프로필 사진을 다시 선택해주세요.';
+  }
+  if (!isValidRepresentativeCrop(payload.representativeCrop)) return '대표사진 위치 정보를 확인해주세요.';
+
+  const age = getAgeOnDate(payload.birthDate, eventDate);
+  if (age === null || age < 23 || age > 35) return '행사일 기준 만 23~35세만 신청할 수 있습니다.';
+
+  return '';
+}
 
 function validateSubmissionFiles(payload: SubmitPayload) {
   const requiredImages: Array<[string, UploadedFile]> = [
@@ -208,11 +271,86 @@ function validateFile(file: UploadedFile | undefined, allowedTypes: string[], ma
   const size = estimateBase64Bytes(file.base64);
   if (size <= 0) return `${label} 파일이 비어 있습니다.`;
   if (size > maxBytes) return `${label} 파일은 ${Math.floor(maxBytes / 1024 / 1024)}MB 이하로 첨부해주세요.`;
+
+  let bytes: Uint8Array;
+  try {
+    bytes = decodeBase64(file.base64);
+  } catch {
+    return `${label} 파일 데이터를 읽을 수 없습니다.`;
+  }
+
+  if (bytes.length !== size && Math.abs(bytes.length - size) > 2) return `${label} 파일 데이터가 손상되었습니다.`;
+  if (!matchesFileSignature(bytes, contentType)) return `${label} 파일의 실제 형식과 업로드 형식이 일치하지 않습니다.`;
   return '';
 }
 
+function matchesFileSignature(bytes: Uint8Array, contentType: string) {
+  const startsWith = (...values: number[]) => values.every((value, index) => bytes[index] === value);
+  const ascii = (offset: number, value: string) => value.split('').every((char, index) => bytes[offset + index] === char.charCodeAt(0));
+  const isIsoBaseMedia = bytes.length >= 12 && ascii(4, 'ftyp');
+
+  switch (contentType) {
+    case 'image/jpeg':
+      return startsWith(0xff, 0xd8, 0xff);
+    case 'image/png':
+      return startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+    case 'image/webp':
+      return bytes.length >= 12 && ascii(0, 'RIFF') && ascii(8, 'WEBP');
+    case 'image/heic':
+    case 'image/heif': {
+      if (!isIsoBaseMedia) return false;
+      const brand = String.fromCharCode(...bytes.slice(8, 12)).toLowerCase();
+      return ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand);
+    }
+    case 'audio/mp4':
+    case 'audio/x-m4a':
+      return isIsoBaseMedia;
+    case 'audio/mpeg':
+      return ascii(0, 'ID3') || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
+    case 'audio/aac':
+      return bytes[0] === 0xff && (bytes[1] & 0xf6) === 0xf0;
+    case 'audio/webm':
+      return startsWith(0x1a, 0x45, 0xdf, 0xa3);
+    case 'audio/ogg':
+      return ascii(0, 'OggS');
+    case 'audio/wav':
+      return bytes.length >= 12 && ascii(0, 'RIFF') && ascii(8, 'WAVE');
+    default:
+      return false;
+  }
+}
+
+function isValidRepresentativeCrop(value: Record<string, number> | undefined) {
+  if (!value || typeof value !== 'object') return false;
+  return ['scale', 'offsetX', 'offsetY'].every((key) => Number.isFinite(Number(value[key])));
+}
+
+function getAgeOnDate(birthDate: string, targetDate: string) {
+  const birth = parseDate(birthDate);
+  const target = parseDate(targetDate);
+  if (!birth || !target || birth.getTime() > target.getTime()) return null;
+
+  let age = target.getUTCFullYear() - birth.getUTCFullYear();
+  const targetMonth = target.getUTCMonth();
+  const birthMonth = birth.getUTCMonth();
+  if (targetMonth < birthMonth || (targetMonth === birthMonth && target.getUTCDate() < birth.getUTCDate())) age -= 1;
+  return age;
+}
+
+function parseDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date;
+}
+
+function normalizePhone(value: string) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
 function normalizeContentType(value: string) {
-  return value.split(';')[0].trim().toLowerCase();
+  return String(value ?? '').split(';')[0].trim().toLowerCase();
 }
 
 function estimateBase64Bytes(base64: string) {
@@ -261,7 +399,7 @@ async function uploadPrivateFile(supabase: ReturnType<typeof createClient>, path
   const bytes = decodeBase64(file.base64);
   const { error } = await supabase.storage.from('application-files').upload(path, bytes, {
     cacheControl: '3600',
-    contentType: file.contentType || 'application/octet-stream',
+    contentType: normalizeContentType(file.contentType) || 'application/octet-stream',
     upsert: false,
   });
 
@@ -285,14 +423,14 @@ async function cleanupUploadedFiles(supabase: ReturnType<typeof createClient>, p
 }
 
 function decodeBase64(base64: string) {
-  const binary = atob(base64);
+  const binary = atob(base64.replace(/\s/g, ''));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
 
 function sanitizeFileName(fileName: string) {
-  const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
   return cleanName || 'file';
 }
 
