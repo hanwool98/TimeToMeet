@@ -15,7 +15,7 @@ import {
   saveApplicationDraft,
   submitApplicationToSupabase,
 } from '../services/supabaseApplications';
-import { normalizeKoreanPhone } from '../services/guestPinAuth';
+import { formatKoreanPhone, normalizeKoreanPhone } from '../services/guestPinAuth';
 import { compressImageIfNeeded, maxTotalUploadBytes } from '../utils/imageCompression';
 import { representativeCropTransform } from '../utils/representativeCrop';
 
@@ -236,7 +236,10 @@ export default function ProfileFormPage() {
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState('');
   const [location, setLocation] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(() => {
+    const session = getAppSession();
+    return session?.role === 'guest' && session.phoneNormalized ? formatKoreanPhone(session.phoneNormalized) : '';
+  });
   const [singleConfirmed, setSingleConfirmed] = useState(false);
   const [idPhoto, setIdPhoto] = useState<File | null>(null);
   const [nickname, setNickname] = useState('');
@@ -273,6 +276,7 @@ export default function ProfileFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [saveAsDefaultProfile, setSaveAsDefaultProfile] = useState(false);
   const isMemberSession = getAppSession()?.role === 'member';
+  const isGuestSession = getAppSession()?.role === 'guest';
   const selectedEvent = events.find((event) => event.id === eventId);
   const isApplicationClosed = Boolean(selectedEvent?.applicationDeadline && new Date(selectedEvent.applicationDeadline).getTime() <= Date.now());
 
@@ -303,7 +307,10 @@ export default function ProfileFormPage() {
         setBirthDate(String(draft.birthDate ?? ''));
         setGender(String(draft.gender ?? ''));
         setLocation(String(draft.location ?? ''));
-        setPhone(String(draft.phone ?? ''));
+        // Guests must submit with the exact phone number they logged in
+        // with (verified server-side) - never let a previously-saved draft
+        // (possibly a typo from an earlier attempt) override that.
+        if (!isGuestSession) setPhone(String(draft.phone ?? ''));
         setSingleConfirmed(Boolean(draft.singleConfirmed));
         setNickname(String(draft.nickname ?? ''));
         setHeight(String(draft.height ?? ''));
@@ -866,7 +873,19 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="7. 전화번호">
-            <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" inputMode="tel" onChange={(event) => setPhone(event.target.value)} placeholder="010-0000-0000" value={phone} />
+            <input
+              className={`h-12 w-full rounded-[18px] px-4 text-[16px] font-bold outline-none ${isGuestSession ? 'bg-[#eef1f4] text-[#777]' : 'bg-meet-blueSoft'}`}
+              inputMode="tel"
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="010-0000-0000"
+              readOnly={isGuestSession}
+              value={phone}
+            />
+            {isGuestSession ? (
+              <p className="mt-2 text-fluid-safe text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
+                비회원 로그인에 사용한 번호로 자동 입력되며 수정할 수 없습니다.
+              </p>
+            ) : null}
             <ErrorText>{touched && !phone.trim() ? '전화번호를 입력해주세요.' : ''}</ErrorText>
           </Section>
 

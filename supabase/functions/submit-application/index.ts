@@ -103,7 +103,7 @@ Deno.serve(async (request) => {
 
     if (guestAccountError) return json({ message: '비회원 계정 정보를 확인하지 못했습니다.', stage: 'response' }, 500);
     if (!guestAccount?.phone_normalized || normalizePhone(payload.phone) !== guestAccount.phone_normalized) {
-      return json({ message: '비회원 로그인 전화번호와 신청서 전화번호가 일치해야 합니다.', stage: 'response' }, 400);
+      return json({ message: '전화번호가 일치하지 않습니다. 로그인한 번호를 확인해주세요.', stage: 'response' }, 400);
     }
   }
 

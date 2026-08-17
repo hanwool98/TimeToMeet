@@ -30,6 +30,17 @@ import './styles.css';
 
 window.time2meetDiagnostics = getSupabaseDiagnostics;
 
+// Registering a service worker (even one that does no caching) is required
+// for Android Chrome/Samsung Internet to consider the app "installable" and
+// offer 설치 instead of just a bookmark shortcut.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.error('Service worker registration failed', error);
+    });
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
