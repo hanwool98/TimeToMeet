@@ -64,7 +64,17 @@ export default function AdminEventModeHomePage() {
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-[#fffaf4] text-[#1f292d]">
       <div className="mx-auto min-h-screen w-full max-w-[430px] px-6 pb-[calc(32px+env(safe-area-inset-bottom))] pt-[calc(18px+env(safe-area-inset-top))]">
         <header>
-          <img alt="time2meet" className="h-auto w-[150px] max-w-[56%] object-contain" src="/assets/time2meet-logo.png" />
+          <div className="flex items-start justify-between gap-3">
+            <img alt="time2meet" className="h-auto w-[150px] max-w-[56%] object-contain" src="/assets/time2meet-logo-transparent.png" />
+            <button
+              aria-label="행사모드 나가기"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[#5f6670] transition active:scale-[0.96]"
+              onClick={() => navigate('/admin')}
+              type="button"
+            >
+              <ExitIcon />
+            </button>
+          </div>
           <h1 className="mt-12 text-[42px] font-black leading-none tracking-normal">행사 모드</h1>
           <p className="mt-4 text-[20px] font-bold leading-none text-[#555]">진행할 행사를 선택해주세요</p>
         </header>
@@ -278,6 +288,15 @@ function ChevronRight({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
       <path d="m9 5 7 7-7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.8" />
+    </svg>
+  );
+}
+
+function ExitIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.1" />
+      <path d="M16 17 21 12 16 7M21 12H9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.1" />
     </svg>
   );
 }

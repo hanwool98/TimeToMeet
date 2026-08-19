@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import {
+  disconnectAdminEventTablet,
   fetchAdminEventModeSummaries,
   fetchAdminEventTabletStatus,
   startAdminEvent,
@@ -225,26 +226,43 @@ function TabletStatusPanel({ eventId, onClose, requiredTablets }: { eventId: str
   const [status, setStatus] = useState<AdminEventTabletStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [disconnectingTable, setDisconnectingTable] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      setStatus(await fetchAdminEventTabletStatus(eventId));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : '태블릿 연결 현황을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
 
   useEffect(() => {
     let active = true;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const rows = await fetchAdminEventTabletStatus(eventId);
-        if (active) setStatus(rows);
-      } catch (caughtError) {
-        if (active) setError(caughtError instanceof Error ? caughtError.message : '태블릿 연결 현황을 불러오지 못했습니다.');
-      } finally {
-        if (active) setLoading(false);
-      }
+    const safeLoad = async () => {
+      if (active) await load();
     };
-    void load();
+    void safeLoad();
     return () => {
       active = false;
     };
-  }, [eventId]);
+  }, [load]);
+
+  const handleDisconnect = async (tableNumber: number) => {
+    if (disconnectingTable !== null) return;
+    if (!window.confirm(`${tableNumber}번 태블릿 연결을 해제할까요? 다른 기기가 다시 이 번호를 선택할 수 있게 됩니다.`)) return;
+    setDisconnectingTable(tableNumber);
+    try {
+      await disconnectAdminEventTablet(eventId, tableNumber);
+      await load();
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '연결을 해제하지 못했습니다.');
+    } finally {
+      setDisconnectingTable(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
@@ -265,7 +283,7 @@ function TabletStatusPanel({ eventId, onClose, requiredTablets }: { eventId: str
         ) : error ? (
           <p className="mt-6 text-center text-[14px] font-bold text-[#ef554a]">{error}</p>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 space-y-2">
             {status.map((tablet) => (
               <div
                 key={tablet.tableNumber}
@@ -275,14 +293,33 @@ function TabletStatusPanel({ eventId, onClose, requiredTablets }: { eventId: str
                 ].join(' ')}
               >
                 <span className="text-[15px] font-black">{tablet.tableNumber}번 테이블</span>
-                <span className={['text-[13px] font-black', tablet.connected ? 'text-[#3f9142]' : 'text-[#bbb]'].join(' ')}>
-                  {tablet.connected ? '연결됨' : '미연결'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={['text-[13px] font-black', tablet.connected ? 'text-[#3f9142]' : 'text-[#bbb]'].join(' ')}>
+                    {tablet.connected ? '연결됨' : '미연결'}
+                  </span>
+                  {tablet.connected ? (
+                    <button
+                      className="rounded-[8px] border border-[#ef554a]/40 px-2.5 py-1 text-[12px] font-black text-[#ef554a] disabled:opacity-50"
+                      disabled={disconnectingTable === tablet.tableNumber}
+                      onClick={() => void handleDisconnect(tablet.tableNumber)}
+                      type="button"
+                    >
+                      {disconnectingTable === tablet.tableNumber ? '해제 중' : '연결 해제'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
         )}
         <p className="mt-4 text-center text-[12px] font-bold text-[#aaa]">필요한 태블릿 {requiredTablets}대 기준</p>
+        <Link
+          className="mt-4 block text-center text-[13px] font-black text-[#ef554a] underline"
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
+          to={`/admin/events/${eventId}/tablet-connect`}
+        >
+          이 기기를 태블릿으로 연결하기
+        </Link>
       </div>
     </div>
   );

@@ -284,6 +284,16 @@ export interface AdminCheckInResult {
   ok: boolean;
 }
 
+export interface AdminTicketPreview {
+  alreadyCheckedIn: boolean;
+  applicationId?: string;
+  applicationNo: string;
+  checkedInAt?: string;
+  message: string;
+  nickname: string;
+  ok: boolean;
+}
+
 export interface AdminApplicationFiles {
   employmentProof?: SignedApplicationFile;
   idPhoto?: SignedApplicationFile;
@@ -1232,6 +1242,30 @@ export async function checkInTicketInSupabase(eventId: string, qrToken: string) 
   } satisfies AdminCheckInResult;
 }
 
+export async function fetchAdminTicketPreview(eventId: string, qrToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_ticket_preview_for_session', {
+    event_id_value: eventId,
+    qr_token_value: qrToken,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    alreadyCheckedIn: Boolean(row?.already_checked_in),
+    applicationId: row?.application_id ?? undefined,
+    applicationNo: row?.application_no ?? '',
+    checkedInAt: row?.checked_in_at ?? undefined,
+    message: row?.message ?? '',
+    nickname: row?.nickname ?? '',
+    ok: Boolean(row?.ok),
+  } satisfies AdminTicketPreview;
+}
+
 export async function fetchAdminEventTabletStatus(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
@@ -1251,6 +1285,87 @@ export async function fetchAdminEventTabletStatus(eventId: string) {
     lastSeenAt: row.last_seen_at ?? undefined,
     tableNumber: row.table_number,
   })) satisfies AdminEventTabletStatus[];
+}
+
+export interface EventTabletConnection {
+  connectedAt: string;
+  connectionToken: string;
+  tableNumber: number;
+}
+
+export async function connectEventTablet(eventId: string, tableNumber: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('connect_event_tablet_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('태블릿을 연결하지 못했습니다.');
+  return {
+    connectedAt: row.connected_at,
+    connectionToken: row.connection_token,
+    tableNumber: row.table_number,
+  } satisfies EventTabletConnection;
+}
+
+export async function verifyEventTabletConnection(eventId: string, tableNumber: number, connectionToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('verify_event_tablet_connection', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return { connectedAt: row?.connected_at ?? undefined, ok: Boolean(row?.ok) };
+}
+
+export interface EventTableSeatGuide {
+  femaleNickname?: string;
+  maleNickname?: string;
+  ok: boolean;
+  roundNumber?: number;
+}
+
+export async function fetchEventTableSeatGuide(eventId: string, tableNumber: number, connectionToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_event_table_seat_guide', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    femaleNickname: row?.female_nickname ?? undefined,
+    maleNickname: row?.male_nickname ?? undefined,
+    ok: Boolean(row?.ok),
+    roundNumber: row?.round_number ?? undefined,
+  } satisfies EventTableSeatGuide;
+}
+
+export async function disconnectAdminEventTablet(eventId: string, tableNumber: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('disconnect_event_tablet_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
 }
 
 export async function startAdminEvent(eventId: string) {

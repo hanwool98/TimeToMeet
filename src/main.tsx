@@ -12,6 +12,8 @@ import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminPage from './pages/AdminPage';
+import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
+import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
 import EventModePage from './pages/EventModePage';
@@ -62,6 +64,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/events/:eventId/check-in" element={<AdminCheckInPage />} />
             <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
           </Route>
+          <Route path="/admin/events/:eventId/tablet-connect" element={<AdminTabletConnectPage />} />
+          <Route path="/admin/events/:eventId/tablet/:tableNumber/seat" element={<AdminTabletSeatPage />} />
           <Route path="/event-info" element={<EventInfoPage />} />
           <Route path="/my-events" element={<MyEventsPage />} />
           <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />

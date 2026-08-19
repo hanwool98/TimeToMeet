@@ -377,7 +377,7 @@ function formatDateTime(value: string) {
   return `${month}.${day} ${hours}:${minutes}`;
 }
 
-function ReviewProfileModal({
+export function ReviewProfileModal({
   application,
   onClose,
   onDecide,
