@@ -36,10 +36,12 @@ export default function EventDetailPage() {
             {event ? (
               <div className="grid grid-cols-2 gap-1.5">
                 <ParticipantList
+                  capacity={Math.max(1, event.maleCapacity ?? Math.ceil(event.targetParticipants / 2))}
                   participants={maleParticipants}
                   title="남"
                 />
                 <ParticipantList
+                  capacity={Math.max(1, event.femaleCapacity ?? Math.floor(event.targetParticipants / 2))}
                   participants={femaleParticipants}
                   title="여"
                 />

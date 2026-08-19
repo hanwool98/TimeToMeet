@@ -161,7 +161,9 @@ function UploadBox({
   onRemove?: () => void;
   previewUrl?: string;
 }) {
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [showPicker, setShowPicker] = useState(false);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -175,7 +177,7 @@ function UploadBox({
         <button
           aria-label={previewUrl ? `${label} 변경` : label}
           className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[22px] bg-meet-blueSoft text-meet-blue"
-          onClick={() => imageInputRef.current?.click()}
+          onClick={() => setShowPicker(true)}
           type="button"
         >
           {previewUrl ? (
@@ -206,13 +208,77 @@ function UploadBox({
       <input
         accept="image/*"
         aria-hidden="true"
-        multiple={multiple}
+        capture="environment"
         onChange={handleChange}
-        ref={imageInputRef}
+        ref={cameraInputRef}
         style={{ display: 'none' }}
         tabIndex={-1}
         type="file"
       />
+      <input
+        accept="image/*"
+        aria-hidden="true"
+        multiple={multiple}
+        onChange={handleChange}
+        ref={galleryInputRef}
+        style={{ display: 'none' }}
+        tabIndex={-1}
+        type="file"
+      />
+      {showPicker ? (
+        <PhotoSourceSheet
+          onCancel={() => setShowPicker(false)}
+          onSelectCamera={() => {
+            setShowPicker(false);
+            cameraInputRef.current?.click();
+          }}
+          onSelectGallery={() => {
+            setShowPicker(false);
+            galleryInputRef.current?.click();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PhotoSourceSheet({
+  onCancel,
+  onSelectCamera,
+  onSelectGallery,
+}: {
+  onCancel: () => void;
+  onSelectCamera: () => void;
+  onSelectGallery: () => void;
+}) {
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-6" onClick={onCancel} role="dialog">
+      <div
+        className="w-full max-w-[320px] overflow-hidden rounded-[24px] bg-white shadow-calendar"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          className="h-16 w-full border-b border-[#f0f3f6] text-[16px] font-black text-black active:bg-[#f7f9fb]"
+          onClick={onSelectCamera}
+          type="button"
+        >
+          촬영으로 찍기
+        </button>
+        <button
+          className="h-16 w-full text-[16px] font-black text-black active:bg-[#f7f9fb]"
+          onClick={onSelectGallery}
+          type="button"
+        >
+          앨범에서 선택
+        </button>
+        <button
+          className="h-14 w-full border-t-[8px] border-[#f0f3f6] text-[15px] font-black text-[#999] active:bg-[#f7f9fb]"
+          onClick={onCancel}
+          type="button"
+        >
+          취소
+        </button>
+      </div>
     </div>
   );
 }

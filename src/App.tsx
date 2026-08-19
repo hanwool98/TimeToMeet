@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import Calendar from './components/Calendar';
@@ -6,10 +6,9 @@ import { DataErrorState, DataLoadingState } from './components/DataState';
 import EventCard from './components/EventCard';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
-import { getAppSession } from './services/appAuth';
-import { fetchOwnApplicationForEvent } from './services/supabaseApplications';
 
-const today = new Date();
+const initialSelectedDate = new Date(2026, 7, 16);
+const today = new Date(2026, 7, 3);
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -26,8 +25,8 @@ function formatKoreanDate(date: Date) {
 export default function App() {
   const navigate = useNavigate();
   const eventCardRef = useRef<HTMLDivElement>(null);
-  const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selectedDate, setSelectedDate] = useState(() => today);
+  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
+  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -38,32 +37,9 @@ export default function App() {
     () => events.find((event) => event.date === toDateKey(selectedDate)),
     [events, selectedDate],
   );
-  const [existingApplicationStatus, setExistingApplicationStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!selectedEvent || !getAppSession()) {
-      setExistingApplicationStatus(null);
-      return;
-    }
-
-    fetchOwnApplicationForEvent(selectedEvent.id)
-      .then((application) => {
-        if (active) setExistingApplicationStatus(application?.status ?? null);
-      })
-      .catch(() => {
-        if (active) setExistingApplicationStatus(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [selectedEvent]);
-
-  const alreadyApplied = Boolean(existingApplicationStatus);
 
   const handleApply = () => {
-    if (!selectedEvent || alreadyApplied) return;
+    if (!selectedEvent) return;
     navigate(`/events/${selectedEvent.id}`);
   };
 
@@ -132,7 +108,6 @@ export default function App() {
         />
         <div className="mt-8 scroll-mt-8" ref={eventCardRef}>
           <EventCard
-            blockedMessage={existingApplicationStatus === '참가 확정' ? '이미 참여확정된 소개팅입니다' : alreadyApplied ? '이미 신청한 소개팅입니다' : undefined}
             event={selectedEvent}
             onApply={handleApply}
             selectedDateLabel={formatKoreanDate(selectedDate)}

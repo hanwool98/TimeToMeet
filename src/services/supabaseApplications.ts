@@ -599,7 +599,10 @@ export async function updateApplicationReviewInSupabase(
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('update_application_review_for_session', {
+  // The server can override the requested status (e.g. a 0원 event skips
+  // 결제 대기 and confirms immediately), so the actual applied status is
+  // returned here rather than assumed to match what was requested.
+  const { data, error } = await supabase.rpc('update_application_review_for_session', {
     next_payment_deadline: values.paymentDeadline ?? application.paymentDeadline ?? null,
     next_payment_notice_sent_at: values.paymentNoticeSentAt ?? application.paymentNoticeSentAt ?? null,
     next_review_reason: values.reason ?? null,
@@ -610,6 +613,7 @@ export async function updateApplicationReviewInSupabase(
   });
 
   if (error) throw error;
+  return data as StoredApplication['status'];
 }
 
 export async function cancelMyHeldApplication(applicationId: string) {
@@ -722,13 +726,8 @@ function functionErrorMessage(status?: number, rawMessage?: string) {
   return '심사 자료를 불러오지 못했습니다. 다시 시도해주세요.';
 }
 
-export async function fetchPublicEventsFromSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured.');
-
-  const { data, error } = await supabase.rpc('get_public_event_summaries');
-  if (error) throw error;
-
-  return (data as PublicEventSummaryRow[]).map((event) => ({
+function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
+  return {
     applicationDeadline: event.application_deadline ?? undefined,
     currentParticipants: event.current_participants,
     date: event.event_date,
@@ -751,7 +750,36 @@ export async function fetchPublicEventsFromSupabase() {
     targetParticipants: event.target_participants,
     title: event.title,
     venueBooked: event.venue_booked,
-  })) satisfies EventData[];
+  };
+}
+
+export async function fetchPublicEventsFromSupabase() {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_public_event_summaries');
+  if (error) throw error;
+
+  return (data as PublicEventSummaryRow[]).map(mapPublicEventSummaryRow) satisfies EventData[];
+}
+
+/**
+ * Same shape as fetchPublicEventsFromSupabase, but for admin screens: unlike
+ * the public listing (which deliberately hides test events from real
+ * visitors), admins need to see and manage test events too - e.g. the
+ * per-event participant list page looks up the event by id from this list,
+ * and previously came up empty for any test event.
+ */
+export async function fetchAdminEventSummariesFromSupabase() {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_summaries', {
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  return (data as PublicEventSummaryRow[]).map(mapPublicEventSummaryRow) satisfies EventData[];
 }
 
 export async function fetchAdminEventDetailsFromSupabase(eventId: string) {

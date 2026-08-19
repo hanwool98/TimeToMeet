@@ -4,6 +4,7 @@ import type { ParticipantData } from '../types/participant';
 interface ParticipantListProps {
   title: string;
   participants: ParticipantData[];
+  capacity: number;
   onProfileClick?: (participant: ParticipantData) => void;
 }
 
@@ -61,8 +62,8 @@ function getPlayingParticipantId() {
   return playingParticipantId;
 }
 
-export default function ParticipantList({ title, participants, onProfileClick }: ParticipantListProps) {
-  const recruitingRows = Array.from({ length: Math.max(0, 10 - participants.length) });
+export default function ParticipantList({ title, participants, capacity, onProfileClick }: ParticipantListProps) {
+  const recruitingRows = Array.from({ length: Math.max(0, capacity - participants.length) });
   const currentlyPlayingId = useSyncExternalStore(subscribePlayback, getPlayingParticipantId);
 
   return (
@@ -70,7 +71,10 @@ export default function ParticipantList({ title, participants, onProfileClick }:
       <h2 className="mx-auto mb-2 grid h-8 w-14 place-items-center rounded-full bg-meet-blueSoft text-center text-[18px] font-black text-black">
         {title}
       </h2>
-      <div className="grid grid-rows-[repeat(10,48px)] gap-1.5">
+      {/* Tailwind's JIT scanner can't see a runtime-computed class name, so
+          the slot count (which now varies per event) has to be an inline
+          style rather than a `grid-rows-[repeat(${capacity},48px)]` class. */}
+      <div className="grid gap-1.5" style={{ gridTemplateRows: `repeat(${Math.max(participants.length, capacity)}, 48px)` }}>
         {participants.map((participant) => {
           const isPlaying = currentlyPlayingId === participant.id;
           return (

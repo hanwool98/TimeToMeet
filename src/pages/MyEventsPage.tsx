@@ -128,6 +128,11 @@ export default function MyEventsPage() {
                         ticket={ticket}
                       />
                     </div>
+                    {isLastVisibleDayForTicket(ticket.eventDate) ? (
+                      <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-center text-[13px] font-black text-meet-pink">
+                        이 티켓은 1일 뒤에 사라집니다.
+                      </p>
+                    ) : null}
                     {ticket.status === '결제중' || ticket.status === '입금 확인 중' ? (
                       <p className="rounded-[18px] bg-meet-blueSoft p-4 text-[14px] font-black leading-relaxed text-[#555]">
                         입금 확인 후 참가가 최종 확정됩니다.
@@ -240,4 +245,16 @@ function ReasonModal({
       </section>
     </div>
   );
+}
+
+// Tickets stop appearing in "내 행사" 3 days after their event (kept in sync
+// with get_my_event_tickets' own cutoff) - this fires on the last day a
+// ticket is still visible, i.e. exactly 3 days after the event date.
+function isLastVisibleDayForTicket(eventDateValue: string) {
+  const now = new Date();
+  const kstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const today = new Date(kstNow.getFullYear(), kstNow.getMonth(), kstNow.getDate()).getTime();
+  const eventDate = new Date(`${eventDateValue}T00:00:00`).getTime();
+  const daysSinceEvent = Math.round((today - eventDate) / 86_400_000);
+  return daysSinceEvent === 3;
 }

@@ -42,9 +42,28 @@ Deno.serve(async (req) => {
   }
 
   const cleaned: string[] = [];
+  const skipped: string[] = [];
   const failures: Array<{ userId: string; reason: string }> = [];
 
   for (const [userId, paths] of pathsByUser.entries()) {
+    // Targets were snapshotted by the query above; re-check right before
+    // doing anything destructive so a guest who applied to an event (or
+    // whose application changed status) in the gap since then is never
+    // touched. This is deliberately re-checked again here rather than just
+    // trusted from the RPC above, and finalize_expired_guest_cleanup
+    // re-checks it once more itself before erasing anything.
+    const { data: stillEligible, error: eligibilityError } = await supabase.rpc('is_guest_cleanup_eligible', {
+      p_user_id: userId,
+    });
+    if (eligibilityError) {
+      failures.push({ userId, reason: eligibilityError.message });
+      continue;
+    }
+    if (!stillEligible) {
+      skipped.push(userId);
+      continue;
+    }
+
     const uniquePaths = [...new Set(paths)];
     if (uniquePaths.length > 0) {
       const { error: removeError } = await supabase.storage.from('application-files').remove(uniquePaths);
@@ -65,7 +84,7 @@ Deno.serve(async (req) => {
     cleaned.push(userId);
   }
 
-  return json({ cleanedCount: cleaned.length, failedCount: failures.length, failures });
+  return json({ cleanedCount: cleaned.length, failedCount: failures.length, failures, skippedCount: skipped.length });
 });
 
 function json(body: unknown, status = 200) {

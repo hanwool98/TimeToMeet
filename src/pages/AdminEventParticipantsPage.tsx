@@ -53,6 +53,8 @@ export default function AdminEventParticipantsPage() {
     .map((application, index) => applicationToParticipant(application, index, participantMedia));
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
+  const maleCapacity = Math.max(1, event?.maleCapacity ?? Math.ceil((event?.targetParticipants ?? 0) / 2));
+  const femaleCapacity = Math.max(1, event?.femaleCapacity ?? Math.floor((event?.targetParticipants ?? 0) / 2));
   const previewApplication = previewParticipant
     ? applications.find((application) => (application.dbId ?? application.id) === previewParticipant.id) ?? null
     : null;
@@ -123,8 +125,8 @@ export default function AdminEventParticipantsPage() {
           <div className="mt-5 w-full max-w-full min-w-0 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             {event ? (
               <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
-                <ParticipantList onProfileClick={setPreviewParticipant} participants={maleParticipants} title="남" />
-                <ParticipantList onProfileClick={setPreviewParticipant} participants={femaleParticipants} title="여" />
+                <ParticipantList capacity={maleCapacity} onProfileClick={setPreviewParticipant} participants={maleParticipants} title="남" />
+                <ParticipantList capacity={femaleCapacity} onProfileClick={setPreviewParticipant} participants={femaleParticipants} title="여" />
               </div>
             ) : (
               <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>

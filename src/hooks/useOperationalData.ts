@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchAdminApplicationsFromSupabase,
+  fetchAdminEventSummariesFromSupabase,
   fetchPublicEventsFromSupabase,
   fetchPublicParticipantsFromSupabase,
   subscribeToSupabaseChanges,
@@ -37,7 +38,7 @@ export default function useOperationalData({
     setError(null);
     try {
       const [nextEvents, nextParticipants, nextApplications] = await Promise.all([
-        fetchPublicEventsFromSupabase(),
+        admin ? fetchAdminEventSummariesFromSupabase() : fetchPublicEventsFromSupabase(),
         eventId ? fetchPublicParticipantsFromSupabase(eventId) : Promise.resolve([]),
         admin ? fetchAdminApplicationsFromSupabase() : Promise.resolve([]),
       ]);

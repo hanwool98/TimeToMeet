@@ -88,6 +88,12 @@ export default function TicketDetailPage() {
           </>
         ) : null}
 
+        {isLastVisibleDayForTicket(ticket.eventDate) ? (
+          <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-center text-[13px] font-black text-meet-pink">
+            이 티켓은 1일 뒤에 사라집니다.
+          </p>
+        ) : null}
+
         <TicketParticipantPreview eventId={ticket.eventId} />
       </div>
       <BottomTabs />
@@ -95,16 +101,31 @@ export default function TicketDetailPage() {
   );
 }
 
+// Tickets stop appearing in "내 행사" 3 days after their event (kept in sync
+// with get_my_event_tickets' own cutoff) - this fires on the last day a
+// ticket is still visible, i.e. exactly 3 days after the event date.
+function isLastVisibleDayForTicket(eventDateValue: string) {
+  const now = new Date();
+  const kstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const today = new Date(kstNow.getFullYear(), kstNow.getMonth(), kstNow.getDate()).getTime();
+  const eventDate = new Date(`${eventDateValue}T00:00:00`).getTime();
+  const daysSinceEvent = Math.round((today - eventDate) / 86_400_000);
+  return daysSinceEvent === 3;
+}
+
 function TicketParticipantPreview({ eventId }: { eventId: string }) {
-  const { participants } = useOperationalData({ eventId });
+  const { events, participants } = useOperationalData({ eventId });
+  const event = events.find((item) => item.id === eventId);
+  const maleCapacity = Math.max(1, event?.maleCapacity ?? Math.ceil((event?.targetParticipants ?? 0) / 2));
+  const femaleCapacity = Math.max(1, event?.femaleCapacity ?? Math.floor((event?.targetParticipants ?? 0) / 2));
 
   return (
     <section>
       <h2 className="px-1 text-[15px] font-black text-[#555]">참가자리스트</h2>
       <div className="mt-3 rounded-[26px] bg-meet-blueSoft p-1.5">
         <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
-          <ParticipantList participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
-          <ParticipantList participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
+          <ParticipantList capacity={maleCapacity} participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
+          <ParticipantList capacity={femaleCapacity} participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
         </div>
       </div>
     </section>

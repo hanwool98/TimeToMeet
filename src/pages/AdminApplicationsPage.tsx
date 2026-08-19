@@ -86,7 +86,10 @@ export default function AdminApplicationsPage() {
     const reviewedAt = now.toISOString();
     const paymentDeadline = status === '결제 대기' ? deadline.toISOString() : reviewingApplication.paymentDeadline;
     const paymentNoticeSentAt = status === '결제 대기' ? now.toISOString() : reviewingApplication.paymentNoticeSentAt;
-    await updateApplicationReviewInSupabase(reviewingApplication, status, {
+    // The server decides the real outcome - a 0원 event skips 결제 대기 and
+    // goes straight to 참가 확정, so the tab we land on has to follow what
+    // actually happened rather than what we requested.
+    const appliedStatus = await updateApplicationReviewInSupabase(reviewingApplication, status, {
       paymentDeadline,
       paymentNoticeSentAt,
       reason: reason?.trim() || undefined,
@@ -94,8 +97,9 @@ export default function AdminApplicationsPage() {
     });
     await reload();
     setReviewingApplication(null);
-    if (status === '참여 보류') setActiveTab('waiting');
-    if (status === '결제 대기') setActiveTab('payment');
+    if (appliedStatus === '참여 보류') setActiveTab('waiting');
+    else if (appliedStatus === '결제 대기') setActiveTab('payment');
+    else if (appliedStatus === '참가 확정') setActiveTab('completed');
   };
 
   const completePayment = async (applicationId: string) => {
