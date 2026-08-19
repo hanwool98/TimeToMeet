@@ -35,6 +35,7 @@ type SubmitPayload = {
   representativeIndex: number;
   residence: string;
   returning: boolean;
+  previewToken?: string;
   saveAsDefaultProfile?: boolean;
   sessionToken: string;
   userId?: string;
@@ -81,12 +82,27 @@ Deno.serve(async (request) => {
   const userId = session.user_id as string;
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female')
+    .select('id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female, is_test_event')
     .eq('id', payload.eventId)
     .maybeSingle();
 
   if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.', stage: 'response' }, 500);
   if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.', stage: 'response' }, 404);
+
+  // Test events are invisible to the public app entirely - the only way to
+  // legitimately reach the submit form for one is through an admin-issued,
+  // event-scoped preview token, so re-verify that here rather than trusting
+  // that the client only got this far because it had one.
+  if (event.is_test_event) {
+    const { data: tokenValid, error: tokenError } = await supabase.rpc('is_test_event_preview_token_valid', {
+      event_id_value: payload.eventId,
+      preview_token: payload.previewToken ?? '',
+    });
+    if (tokenError || !tokenValid) {
+      return json({ message: '테스트 행사 접근 권한이 없습니다. 유효한 테스트 링크로 다시 접속해주세요.', stage: 'response' }, 403);
+    }
+  }
+
   if (event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
     return json({ message: '이 행사의 신청이 마감되었습니다.', stage: 'response' }, 409);
   }

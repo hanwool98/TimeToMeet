@@ -85,7 +85,7 @@ export default function AdminEventCreatePage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [searchParams] = useSearchParams();
-  const { error, events, loading, reload } = useOperationalData();
+  const { error, events, loading, reload } = useOperationalData({ admin: true });
   const editingEvent = events.find((event) => event.id === eventId);
   const selectedDate = useMemo(
     () => (editingEvent ? parseDateParam(editingEvent.date) : parseDateParam(searchParams.get('date'))),
@@ -124,6 +124,7 @@ export default function AdminEventCreatePage() {
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
+  const [isTestEvent, setIsTestEvent] = useState(editingEvent?.isTestEvent ?? false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editDetailsLoading, setEditDetailsLoading] = useState(Boolean(eventId));
@@ -144,6 +145,7 @@ export default function AdminEventCreatePage() {
     setEarlyBirdDiscountFemale(String(editingEvent.earlyBirdDiscountFemale ?? 0));
     setRegion(toRegionOption(editingEvent.location));
     setVenueBooked(editingEvent.venueBooked);
+    setIsTestEvent(editingEvent.isTestEvent ?? false);
     setDeadline(
       editingEvent.applicationDeadline
         ? toDateTimeInputValue(new Date(editingEvent.applicationDeadline))
@@ -177,6 +179,7 @@ export default function AdminEventCreatePage() {
         setRegion(toRegionOption(details.location));
         setVenueDetail(details.venueDetail);
         setVenueBooked(details.venueBooked);
+        setIsTestEvent(details.isTestEvent ?? false);
         setDeadline(
           details.applicationDeadline
             ? toDateTimeInputValue(new Date(details.applicationDeadline))
@@ -216,6 +219,7 @@ export default function AdminEventCreatePage() {
       location: region.replace(/시$/, ''),
       venueBooked,
       venueDetail: venueDetail.trim(),
+      isTestEvent,
       malePrice: Number(malePrice) || 0,
       maleCapacity: Number(maleCapacity),
       femalePrice: Number(femalePrice) || 0,
@@ -447,6 +451,35 @@ export default function AdminEventCreatePage() {
                   type="button"
                 >
                   완료
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-2 block text-[15px] font-black text-black">테스트 행사</span>
+              <p className="mb-2 text-[12px] font-extrabold text-[#999]">
+                일반 사용자에게 노출되지 않고, 관리자 테스트 링크로만 참가자 화면에 접근할 수 있습니다.
+              </p>
+              <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
+                <button
+                  className={[
+                    'h-12 rounded-[18px] text-[16px] font-black transition active:scale-[0.99]',
+                    !isTestEvent ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black',
+                  ].join(' ')}
+                  onClick={() => setIsTestEvent(false)}
+                  type="button"
+                >
+                  실제 행사
+                </button>
+                <button
+                  className={[
+                    'h-12 rounded-[18px] text-[16px] font-black transition active:scale-[0.99]',
+                    isTestEvent ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black',
+                  ].join(' ')}
+                  onClick={() => setIsTestEvent(true)}
+                  type="button"
+                >
+                  🧪 테스트 행사
                 </button>
               </div>
             </div>

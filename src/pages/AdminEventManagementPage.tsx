@@ -7,6 +7,8 @@ import useOperationalData from '../hooks/useOperationalData';
 
 const today = new Date();
 
+type EventFilter = 'all' | 'real' | 'test';
+
 function toDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -23,11 +25,22 @@ export default function AdminEventManagementPage() {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(() => today);
-  const { error, events, loading, reload } = useOperationalData();
+  const [eventFilter, setEventFilter] = useState<EventFilter>('all');
+  const { error, events, loading, reload } = useOperationalData({ admin: true });
+
+  const filteredEvents = useMemo(
+    () =>
+      events.filter((event) => {
+        if (eventFilter === 'test') return Boolean(event.isTestEvent);
+        if (eventFilter === 'real') return !event.isTestEvent;
+        return true;
+      }),
+    [eventFilter, events],
+  );
 
   const selectedEvent = useMemo(
-    () => events.find((event) => event.date === toDateKey(selectedDate)),
-    [events, selectedDate],
+    () => filteredEvents.find((event) => event.date === toDateKey(selectedDate)),
+    [filteredEvents, selectedDate],
   );
   const isEarlyBird = selectedEvent ? getDaysUntilEvent(selectedEvent.date) >= 8 : false;
   const isRecruiting = selectedEvent ? selectedEvent.currentParticipants < selectedEvent.targetParticipants : false;
@@ -54,9 +67,25 @@ export default function AdminEventManagementPage() {
           <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
+        <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
+          {(['all', 'real', 'test'] as const).map((filter) => (
+            <button
+              className={[
+                'h-9 rounded-[12px] text-[13px] font-black transition active:scale-[0.98]',
+                eventFilter === filter ? 'bg-meet-blue text-white' : 'bg-[#f1f3f5] text-[#555]',
+              ].join(' ')}
+              key={filter}
+              onClick={() => setEventFilter(filter)}
+              type="button"
+            >
+              {filter === 'all' ? '전체' : filter === 'real' ? '실제 행사' : '🧪 테스트 행사'}
+            </button>
+          ))}
+        </div>
+
         <Calendar
           currentMonth={currentMonth}
-          events={events}
+          events={filteredEvents}
           onMonthChange={setCurrentMonth}
           onSelectDate={setSelectedDate}
           selectedDate={selectedDate}
@@ -89,6 +118,7 @@ export default function AdminEventManagementPage() {
           </div>
           {selectedEvent ? (
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[16px] font-black leading-none">
+              {selectedEvent.isTestEvent ? <span className="rounded-[8px] bg-white px-2 py-1 text-[12px] text-meet-blue">🧪 TEST</span> : null}
               {isRecruiting ? <span className="text-meet-pink">🔥 모집중</span> : null}
               {isEarlyBird ? <span className="text-meet-blue">🕊️ 얼리버드</span> : null}
             </div>

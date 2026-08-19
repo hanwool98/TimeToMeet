@@ -6,9 +6,12 @@ import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import {
+  createTestEventPreviewLink,
+  createTestParticipants,
   deleteEventFromSupabase,
   fetchAdminApplicationFiles,
   fetchAdminEventParticipantMedia,
+  resetTestEventData,
   updateApplicationReviewInSupabase,
 } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
@@ -29,6 +32,7 @@ export default function AdminEventParticipantsPage() {
   const [previewFilesLoading, setPreviewFilesLoading] = useState(false);
   const [previewFilesError, setPreviewFilesError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [testActionBusy, setTestActionBusy] = useState(false);
   const [participantMedia, setParticipantMedia] = useState<Map<string, ParticipantMediaRow>>(new Map());
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
@@ -108,6 +112,71 @@ export default function AdminEventParticipantsPage() {
     setPreviewParticipant(null);
   };
 
+  const handleCreatePreviewLink = async () => {
+    if (!eventId || testActionBusy) return;
+    setTestActionBusy(true);
+    try {
+      const { token, expiresAt } = await createTestEventPreviewLink(eventId);
+      const url = `${window.location.origin}/events/${eventId}?previewToken=${token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // Clipboard access can fail (permissions, non-secure context) - the
+        // link is still shown in the alert below either way.
+      }
+      window.alert(
+        `테스트 참가 링크가 복사되었습니다 (${new Date(expiresAt).toLocaleString('ko-KR')}까지 유효):\n\n${url}`,
+      );
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '테스트 링크 생성에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
+  const handleCreateTestParticipants = async () => {
+    if (!eventId || !event || testActionBusy) return;
+    const input = window.prompt(
+      '생성할 남/여 인원 수를 "남,여" 형식으로 입력해주세요. (예: 5,5)',
+      `${maleCapacity},${femaleCapacity}`,
+    );
+    if (!input) return;
+    const [maleText, femaleText] = input.split(',').map((value) => value.trim());
+    const maleCount = Number(maleText);
+    const femaleCount = Number(femaleText);
+    if (!Number.isInteger(maleCount) || !Number.isInteger(femaleCount) || maleCount < 0 || femaleCount < 0) {
+      window.alert('숫자 형식이 올바르지 않습니다.');
+      return;
+    }
+    setTestActionBusy(true);
+    try {
+      const created = await createTestParticipants(eventId, maleCount, femaleCount);
+      await reload();
+      window.alert(`테스트 참가자 ${created}명을 생성했습니다.`);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '테스트 참가자 생성에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
+  const handleResetTestData = async () => {
+    if (!eventId || testActionBusy) return;
+    if (!window.confirm('이 테스트 행사의 신청/참가확정/결제/체크인/태블릿 연결 데이터를 모두 초기화할까요? 행사 자체는 삭제되지 않습니다. 되돌릴 수 없습니다.')) {
+      return;
+    }
+    setTestActionBusy(true);
+    try {
+      await resetTestEventData(eventId);
+      await reload();
+      window.alert('테스트 데이터를 초기화했습니다.');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '테스트 데이터 초기화에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white px-2 py-12 text-black">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] w-full max-w-full min-w-0 flex-col justify-center">
@@ -146,6 +215,53 @@ export default function AdminEventParticipantsPage() {
               {deleting ? '삭제 중' : '행사 삭제'}
             </button>
           </div>
+
+          {event?.isTestEvent ? (
+            <div className="mt-5 w-full max-w-full min-w-0 rounded-[22px] border border-meet-blue/25 bg-meet-blueSoft/40 p-4">
+              <p className="text-[14px] font-black text-meet-blue">🧪 TEST · 남 {maleCapacity} / 여 {femaleCapacity} · {event.malePrice === 0 && event.femalePrice === 0 ? '0원' : '유료'}</p>
+              <p className="mt-1 text-[12px] font-extrabold text-[#8a93a3]">일반 사용자에게는 노출되지 않는 관리자 테스트 전용 행사입니다.</p>
+              <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
+                <button
+                  className="h-12 rounded-[14px] bg-meet-blue text-[13px] font-black text-white transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testActionBusy}
+                  onClick={() => void handleCreatePreviewLink()}
+                  type="button"
+                >
+                  참가자 화면으로 테스트
+                </button>
+                <button
+                  className="h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99]"
+                  onClick={() => navigate('/admin/applications')}
+                  type="button"
+                >
+                  신청 관리
+                </button>
+                <button
+                  className="h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testActionBusy}
+                  onClick={() => void handleCreateTestParticipants()}
+                  type="button"
+                >
+                  테스트 참가자 생성
+                </button>
+                <button
+                  className="h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99]"
+                  onClick={() => navigate(`/admin/events/${eventId}/check-in`)}
+                  type="button"
+                >
+                  행사모드 입장
+                </button>
+                <button
+                  className="col-span-2 h-12 rounded-[14px] bg-meet-pinkSoft text-[13px] font-black text-meet-pink transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testActionBusy}
+                  onClick={() => void handleResetTestData()}
+                  type="button"
+                >
+                  테스트 데이터 초기화
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
         <Link className="mx-auto mt-5 text-sm font-extrabold text-meet-blue" to="/admin/events">
           행사관리로 돌아가기

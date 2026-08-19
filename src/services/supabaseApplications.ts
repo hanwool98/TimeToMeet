@@ -8,6 +8,7 @@ import type { StoredApplication } from '../utils/adminApplications';
 
 interface SubmitApplicationInput {
   eventId: string;
+  previewToken?: string;
   returning: boolean;
   name: string;
   birthDate: string;
@@ -110,6 +111,7 @@ interface PublicEventSummaryRow {
   early_bird_deadline: string | null;
   early_bird_discount_male: number | null;
   early_bird_discount_female: number | null;
+  is_test_event?: boolean;
 }
 
 interface AdminEventDetailsRow {
@@ -130,6 +132,7 @@ interface AdminEventDetailsRow {
   early_bird_deadline: string | null;
   early_bird_discount_male: number | null;
   early_bird_discount_female: number | null;
+  is_test_event?: boolean;
 }
 
 interface PublicParticipantPreviewRow {
@@ -358,6 +361,7 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
       name: input.name,
       nickname: input.nickname,
       phone: input.phone,
+      previewToken: input.previewToken,
       profilePhotos: await Promise.all(input.profilePhotos.map(fileToPayload)),
       refundAgreement: input.refundAgreement,
       relationshipStatus: input.relationshipStatus,
@@ -736,6 +740,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     earlyBirdDiscountFemale: event.early_bird_discount_female ?? 0,
     endTime: event.end_time.slice(0, 5),
     id: event.id,
+    isTestEvent: event.is_test_event ?? false,
     location: event.location,
     malePrice: event.male_price ?? 50000,
     femalePrice: event.female_price ?? 40000,
@@ -807,6 +812,7 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
     femalePrice: row.female_price,
     id: row.id,
     location: row.location,
+    isTestEvent: row.is_test_event,
     maleCapacity: row.male_capacity,
     malePrice: row.male_price,
     shortName: row.short_name,
@@ -824,11 +830,11 @@ interface PublicParticipantMediaRow {
   representativeCrop: { scale: number; offsetX: number; offsetY: number } | null;
 }
 
-export async function fetchPublicParticipantsFromSupabase(eventId: string) {
+export async function fetchPublicParticipantsFromSupabase(eventId: string, previewToken?: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
 
   const [previewResult, mediaResult] = await Promise.all([
-    supabase.rpc('get_public_participant_previews', { target_event_id: eventId }),
+    supabase.rpc('get_public_participant_previews', { preview_token: previewToken ?? null, target_event_id: eventId }),
     supabase.functions.invoke('public-participant-media', { body: { eventId } }).catch(() => null),
   ]);
 
@@ -951,6 +957,7 @@ export async function upsertEventToSupabase(event: EventData) {
     event_end_time: event.endTime,
     event_female_price: event.femalePrice,
     event_id_value: event.id,
+    event_is_test_event: event.isTestEvent ?? false,
     event_location: event.location,
     event_male_price: event.malePrice,
     event_short_name: event.shortName,
@@ -979,6 +986,97 @@ export async function deleteEventFromSupabase(eventId: string) {
   });
 
   if (error || data?.ok !== true) throw error ?? new Error('행사를 삭제하지 못했습니다.');
+}
+
+export async function createTestEventPreviewLink(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_test_event_preview_token', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as { token: string; expires_at: string } | undefined;
+  if (!row) throw new Error('테스트 링크를 생성하지 못했습니다.');
+  return { expiresAt: row.expires_at, token: row.token };
+}
+
+const testEventPreviewCacheKey = 'time2meet.testEventPreviewTokens';
+
+/**
+ * The preview-link entry point (/events/{id}?previewToken=...) is several
+ * navigations away from where it's actually needed (login, profile form),
+ * and nothing in between re-appends the query param. Caching the token here
+ * (per event id) lets every later page on this device just ask "do I have
+ * access to this test event" without threading it through every Link/navigate
+ * call in the chain.
+ */
+export function cacheTestEventPreviewToken(eventId: string, token: string) {
+  try {
+    const raw = window.sessionStorage.getItem(testEventPreviewCacheKey);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    parsed[eventId] = token;
+    window.sessionStorage.setItem(testEventPreviewCacheKey, JSON.stringify(parsed));
+  } catch {
+    // Best-effort cache only.
+  }
+}
+
+export function getCachedTestEventPreviewToken(eventId: string | undefined): string | undefined {
+  if (!eventId) return undefined;
+  try {
+    const raw = window.sessionStorage.getItem(testEventPreviewCacheKey);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed[eventId];
+  } catch {
+    return undefined;
+  }
+}
+
+export async function fetchTestEventPreview(eventId: string, previewToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_test_event_preview', {
+    event_id_value: eventId,
+    preview_token: previewToken,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as PublicEventSummaryRow | undefined;
+  if (!row) return null;
+  return mapPublicEventSummaryRow(row);
+}
+
+export async function createTestParticipants(eventId: string, maleCount: number, femaleCount: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_test_participants_for_session', {
+    event_id_value: eventId,
+    female_count: femaleCount,
+    male_count: maleCount,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return data as number;
+}
+
+export async function resetTestEventData(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('reset-test-event', {
+    body: { eventId, sessionToken: adminSession.token },
+  });
+
+  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '테스트 데이터 초기화에 실패했습니다.');
 }
 
 export function subscribeToSupabaseChanges(onChange: () => void) {

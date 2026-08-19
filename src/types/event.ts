@@ -22,4 +22,5 @@ export interface EventData {
   femaleApplications?: number;
   maleConfirmed?: number;
   femaleConfirmed?: number;
+  isTestEvent?: boolean;
 }

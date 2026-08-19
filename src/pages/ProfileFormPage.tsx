@@ -11,6 +11,7 @@ import {
   ApplicationSubmitError,
   fetchApplicationDraft,
   fetchOwnApplicationForEvent,
+  getCachedTestEventPreviewToken,
   logApplicationError,
   saveApplicationDraft,
   submitApplicationToSupabase,
@@ -288,7 +289,8 @@ export default function ProfileFormPage() {
   const { eventId: routeEventId } = useParams();
   const [searchParams] = useSearchParams();
   const eventId = routeEventId ?? searchParams.get('eventId') ?? '';
-  const { error: eventError, events, loading: eventLoading, reload: reloadEvents } = useOperationalData({ eventId: eventId || undefined });
+  const previewToken = getCachedTestEventPreviewToken(eventId || undefined);
+  const { error: eventError, events, loading: eventLoading, reload: reloadEvents } = useOperationalData({ eventId: eventId || undefined, previewToken });
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const countdownTimerRef = useRef<number | null>(null);
@@ -634,6 +636,7 @@ export default function ProfileFormPage() {
           accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
           birthDate,
           consents,
+          previewToken,
           employmentProof: compressedEmploymentProof,
           eventId,
           filmingConsent,

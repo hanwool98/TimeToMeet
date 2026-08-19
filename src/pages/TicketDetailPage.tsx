@@ -5,7 +5,7 @@ import { TicketQrDisplay } from '../components/EventTicket';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { fetchMyEventTickets, type MyEventTicket } from '../services/supabaseApplications';
+import { fetchMyEventTickets, getCachedTestEventPreviewToken, type MyEventTicket } from '../services/supabaseApplications';
 
 export default function TicketDetailPage() {
   const navigate = useNavigate();
@@ -114,7 +114,8 @@ function isLastVisibleDayForTicket(eventDateValue: string) {
 }
 
 function TicketParticipantPreview({ eventId }: { eventId: string }) {
-  const { events, participants } = useOperationalData({ eventId });
+  const previewToken = getCachedTestEventPreviewToken(eventId);
+  const { events, participants } = useOperationalData({ eventId, previewToken });
   const event = events.find((item) => item.id === eventId);
   const maleCapacity = Math.max(1, event?.maleCapacity ?? Math.ceil((event?.targetParticipants ?? 0) / 2));
   const femaleCapacity = Math.max(1, event?.femaleCapacity ?? Math.floor((event?.targetParticipants ?? 0) / 2));

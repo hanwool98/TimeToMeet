@@ -6,6 +6,7 @@ import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import { verifyAppSession } from '../services/appAuth';
+import { getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
 const reasons = [
   {
@@ -110,7 +111,8 @@ export default function EventInfoPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { eventId } = useParams();
-  const { error, events, loading, reload } = useOperationalData();
+  const previewToken = getCachedTestEventPreviewToken(eventId);
+  const { error, events, loading, reload } = useOperationalData({ eventId, previewToken });
   const [checkingSession, setCheckingSession] = useState(false);
   const isTabEventInfo = location.pathname === '/event-info';
   const event = eventId

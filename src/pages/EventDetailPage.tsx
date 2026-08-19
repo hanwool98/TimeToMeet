@@ -1,15 +1,23 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
 import useOperationalData from '../hooks/useOperationalData';
+import { cacheTestEventPreviewToken, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const { error, events, loading, participants, reload } = useOperationalData({ eventId });
+  const [searchParams] = useSearchParams();
+  const previewToken = searchParams.get('previewToken') ?? getCachedTestEventPreviewToken(eventId);
+  const { error, events, loading, participants, reload } = useOperationalData({ eventId, previewToken });
   const event = events.find((item) => item.id === eventId);
+
+  useEffect(() => {
+    if (eventId && event?.isTestEvent && previewToken) cacheTestEventPreviewToken(eventId, previewToken);
+  }, [event?.isTestEvent, eventId, previewToken]);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
 

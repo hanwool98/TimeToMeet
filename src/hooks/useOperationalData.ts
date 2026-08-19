@@ -4,6 +4,7 @@ import {
   fetchAdminEventSummariesFromSupabase,
   fetchPublicEventsFromSupabase,
   fetchPublicParticipantsFromSupabase,
+  fetchTestEventPreview,
   subscribeToSupabaseChanges,
 } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
@@ -13,6 +14,7 @@ import type { StoredApplication } from '../utils/adminApplications';
 interface UseOperationalDataOptions {
   admin?: boolean;
   eventId?: string;
+  previewToken?: string;
 }
 
 interface OperationalDataState {
@@ -27,6 +29,7 @@ interface OperationalDataState {
 export default function useOperationalData({
   admin = false,
   eventId,
+  previewToken,
 }: UseOperationalDataOptions = {}): OperationalDataState {
   const [events, setEvents] = useState<EventData[]>([]);
   const [participants, setParticipants] = useState<ParticipantData[]>([]);
@@ -39,11 +42,27 @@ export default function useOperationalData({
     try {
       const [nextEvents, nextParticipants, nextApplications] = await Promise.all([
         admin ? fetchAdminEventSummariesFromSupabase() : fetchPublicEventsFromSupabase(),
-        eventId ? fetchPublicParticipantsFromSupabase(eventId) : Promise.resolve([]),
+        eventId ? fetchPublicParticipantsFromSupabase(eventId, previewToken) : Promise.resolve([]),
         admin ? fetchAdminApplicationsFromSupabase() : Promise.resolve([]),
       ]);
 
-      setEvents(nextEvents);
+      // A test event never appears in the normal (public or admin) listing
+      // response for a non-admin caller - if a valid preview token was
+      // supplied for this specific event, fetch and splice it in so every
+      // page reading `events` (event detail, profile form, ...) just works
+      // without each needing its own test-event fallback.
+      let mergedEvents = nextEvents;
+      if (!admin && eventId && previewToken && !nextEvents.some((event) => event.id === eventId)) {
+        try {
+          const previewEvent = await fetchTestEventPreview(eventId, previewToken);
+          if (previewEvent) mergedEvents = [...nextEvents, previewEvent];
+        } catch {
+          // Invalid/expired token - leave the event absent, same as if it
+          // simply didn't exist for this visitor.
+        }
+      }
+
+      setEvents(mergedEvents);
       setParticipants(nextParticipants);
       setApplications(nextApplications ?? []);
     } catch (caughtError) {
@@ -51,7 +70,7 @@ export default function useOperationalData({
     } finally {
       setLoading(false);
     }
-  }, [admin, eventId]);
+  }, [admin, eventId, previewToken]);
 
   useEffect(() => {
     let active = true;
