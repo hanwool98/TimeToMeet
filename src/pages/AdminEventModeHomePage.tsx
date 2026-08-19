@@ -72,7 +72,7 @@ export default function AdminEventModeHomePage() {
         <section className="mt-9 space-y-5">
           {groupedEvents.today.length > 0 ? (
             groupedEvents.today.map((event) => (
-              <TodayEventCard key={event.id} event={event} onPrepare={() => navigate(`/admin/events/${event.id}/check-in`)} />
+              <TodayEventCard key={event.id} event={event} onPrepare={() => navigate(`/admin/events/${event.id}/prepare`)} />
             ))
           ) : (
             <div className="rounded-[24px] border border-[#f2d8d1] bg-white px-5 py-8 text-center shadow-calendar">
@@ -86,7 +86,7 @@ export default function AdminEventModeHomePage() {
           <div className="mt-5 space-y-4">
             {groupedEvents.future.length > 0 ? (
               groupedEvents.future.map((event) => (
-                <UpcomingEventCard key={event.id} event={event} onClick={() => navigate(`/admin/events/${event.id}`)} />
+                <UpcomingEventCard key={event.id} event={event} onClick={() => navigate(`/admin/events/${event.id}/prepare`)} />
               ))
             ) : (
               <div className="rounded-[22px] border border-[#ececec] bg-white px-5 py-7 text-center shadow-sm">
@@ -104,7 +104,12 @@ function TodayEventCard({ event, onPrepare }: { event: AdminEventModeSummary; on
   return (
     <article className="rounded-[24px] border border-[#ef554a] bg-[#fff6f1] px-5 py-5 shadow-[0_16px_34px_rgba(226,75,64,0.12)]">
       <div className="flex items-start justify-between gap-3">
-        <span className="rounded-[12px] bg-[#ef554a] px-4 py-2 text-[17px] font-black text-white">오늘 진행</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[12px] bg-[#ef554a] px-4 py-2 text-[17px] font-black text-white">오늘 진행</span>
+          {event.isTestEvent ? (
+            <span className="rounded-[12px] border border-[#ef554a]/40 bg-white px-3 py-2 text-[13px] font-black text-[#ef554a]">🧪 TEST</span>
+          ) : null}
+        </div>
         <span className="rounded-[12px] border border-[#ef554a] bg-white px-4 py-2 text-[17px] font-black text-[#ef554a]">D-DAY</span>
       </div>
 
@@ -123,7 +128,8 @@ function TodayEventCard({ event, onPrepare }: { event: AdminEventModeSummary; on
           <UsersIcon className="h-10 w-10 shrink-0 text-[#ef554a]" />
           <div className="min-w-0 text-[18px] font-black leading-snug">
             <p>참가 확정 <span className="text-[#ef554a]">{event.confirmedCount}</span>명</p>
-            <p>· 체크인 <span className="text-[#ef554a]">{event.checkinCount}</span>명</p>
+            <p className="text-[14px] font-extrabold text-[#a35850]">(남 {event.maleConfirmedCount} / 여 {event.femaleConfirmedCount})</p>
+            <p>체크인 <span className="text-[#ef554a]">{event.checkinCount}</span>명</p>
           </div>
         </div>
         <div className="h-full min-h-[54px] w-px bg-[#ef554a]/20" />
@@ -159,7 +165,10 @@ function UpcomingEventCard({ event, onClick }: { event: AdminEventModeSummary; o
         {formatDDayLabel(event.date)}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[22px] font-black leading-tight text-[#1f292d]">{event.title}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="block truncate text-[22px] font-black leading-tight text-[#1f292d]">{event.title}</span>
+          {event.isTestEvent ? <span className="shrink-0 text-[13px] font-black text-[#ef554a]">🧪</span> : null}
+        </span>
         <span className="mt-2 flex min-w-0 items-center gap-2 text-[16px] font-bold text-[#666]">
           <CalendarIcon className="h-5 w-5 shrink-0 text-[#777]" />
           <span className="min-w-0 truncate">{formatFullDate(event.date)} · {event.startTime}</span>

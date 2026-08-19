@@ -7,6 +7,7 @@ import AdminApplicationErrorsPage from './pages/AdminApplicationErrorsPage';
 import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminCheckInPage from './pages/AdminCheckInPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
+import AdminEventPreparePage from './pages/AdminEventPreparePage';
 import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
@@ -59,6 +60,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/events/:eventId" element={<AdminEventParticipantsPage />} />
             <Route path="/admin/events/:eventId/edit" element={<AdminEventCreatePage />} />
             <Route path="/admin/events/:eventId/check-in" element={<AdminCheckInPage />} />
+            <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
           </Route>
           <Route path="/event-info" element={<EventInfoPage />} />
           <Route path="/my-events" element={<MyEventsPage />} />

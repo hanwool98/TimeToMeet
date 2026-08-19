@@ -149,11 +149,16 @@ interface AdminEventModeSummaryRow {
   confirmed_count: number;
   end_time: string;
   event_date: string;
+  female_checkin_count?: number;
+  female_confirmed_count?: number;
   id: string;
   is_test_event: boolean;
   location: string;
+  male_checkin_count?: number;
+  male_confirmed_count?: number;
   required_tablets: number;
   start_time: string;
+  started_at?: string | null;
   tablet_count: number;
   title: string;
 }
@@ -163,13 +168,25 @@ export interface AdminEventModeSummary {
   confirmedCount: number;
   date: string;
   endTime: string;
+  femaleCheckinCount: number;
+  femaleConfirmedCount: number;
   id: string;
   isTestEvent: boolean;
   location: string;
+  maleCheckinCount: number;
+  maleConfirmedCount: number;
   requiredTablets: number;
   startTime: string;
+  startedAt?: string;
   tabletCount: number;
   title: string;
+}
+
+export interface AdminEventTabletStatus {
+  connected: boolean;
+  deviceLabel?: string;
+  lastSeenAt?: string;
+  tableNumber: number;
 }
 
 export interface PaymentInvitation {
@@ -907,11 +924,16 @@ export async function fetchAdminEventModeSummaries() {
     confirmedCount: event.confirmed_count,
     date: event.event_date,
     endTime: event.end_time.slice(0, 5),
+    femaleCheckinCount: event.female_checkin_count ?? 0,
+    femaleConfirmedCount: event.female_confirmed_count ?? 0,
     id: event.id,
     isTestEvent: event.is_test_event,
     location: event.location,
+    maleCheckinCount: event.male_checkin_count ?? 0,
+    maleConfirmedCount: event.male_confirmed_count ?? 0,
     requiredTablets: event.required_tablets,
     startTime: event.start_time.slice(0, 5),
+    startedAt: event.started_at ?? undefined,
     tabletCount: event.tablet_count,
     title: event.title,
   })) satisfies AdminEventModeSummary[];
@@ -932,10 +954,14 @@ async function fetchAdminEventModeSummariesFromExistingSupabaseData() {
       confirmedCount: event.currentParticipants,
       date: event.date,
       endTime: event.endTime,
+      femaleCheckinCount: confirmedApplications.filter((application) => application.gender === '여성' && Boolean(application.checkedInAt)).length,
+      femaleConfirmedCount: confirmedApplications.filter((application) => application.gender === '여성').length,
       id: event.id,
       isTestEvent: false,
       location: event.location,
-      requiredTablets: 10,
+      maleCheckinCount: confirmedApplications.filter((application) => application.gender === '남성' && Boolean(application.checkedInAt)).length,
+      maleConfirmedCount: confirmedApplications.filter((application) => application.gender === '남성').length,
+      requiredTablets: Math.max(1, Math.min(event.maleCapacity ?? 10, event.femaleCapacity ?? 10)),
       startTime: event.startTime,
       tabletCount: 0,
       title: event.title,
@@ -1204,6 +1230,41 @@ export async function checkInTicketInSupabase(eventId: string, qrToken: string) 
     nickname: row?.nickname ?? '',
     ok: Boolean(row?.ok),
   } satisfies AdminCheckInResult;
+}
+
+export async function fetchAdminEventTabletStatus(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_tablet_status', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (
+    data as Array<{ connected: boolean; device_label: string | null; last_seen_at: string | null; table_number: number }>
+  ).map((row) => ({
+    connected: row.connected,
+    deviceLabel: row.device_label ?? undefined,
+    lastSeenAt: row.last_seen_at ?? undefined,
+    tableNumber: row.table_number,
+  })) satisfies AdminEventTabletStatus[];
+}
+
+export async function startAdminEvent(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('start_admin_event_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return data as string;
 }
 
 export async function dismissPaymentInvitation(invitationId: string) {
