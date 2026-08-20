@@ -104,6 +104,16 @@ export default function AdminTabletConnectPage() {
     };
   }, [eventId, loadEventAndStatus, navigate]);
 
+  // The selection screen can sit open on a device for a while before anyone
+  // taps a card - without this, a number freed by another admin/device
+  // (disconnect, or someone else's connection) keeps showing as "연결됨"
+  // (and stays disabled) until the operator manually reloads.
+  useEffect(() => {
+    if (stage !== 'select') return undefined;
+    const intervalId = window.setInterval(() => void loadEventAndStatus(), 5_000);
+    return () => window.clearInterval(intervalId);
+  }, [stage, loadEventAndStatus]);
+
   const handleAdminSubmit = async (submitEvent: FormEvent<HTMLFormElement>) => {
     submitEvent.preventDefault();
     setAdminSubmitting(true);
