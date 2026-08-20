@@ -1266,6 +1266,29 @@ export async function fetchAdminTicketPreview(eventId: string, qrToken: string) 
   } satisfies AdminTicketPreview;
 }
 
+export async function checkInApplicationInSupabase(eventId: string, applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('check_in_application_for_session', {
+    application_id_value: applicationId,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    alreadyCheckedIn: Boolean(row?.already_checked_in),
+    applicationNo: row?.application_no ?? '',
+    checkedInAt: row?.checked_in_at ?? undefined,
+    message: row?.message ?? '',
+    nickname: row?.nickname ?? '',
+    ok: Boolean(row?.ok),
+  } satisfies AdminCheckInResult;
+}
+
 export async function fetchAdminEventTabletStatus(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();

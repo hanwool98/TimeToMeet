@@ -1,9 +1,10 @@
 import jsQR from 'jsqr';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import { ReviewProfileModal } from './AdminApplicationsPage';
 import {
+  checkInApplicationInSupabase,
   checkInTicketInSupabase,
   fetchAdminEventModeSummaries,
   fetchAdminTicketPreview,
@@ -74,8 +75,11 @@ export default function AdminCheckInPage() {
   const scanningRef = useRef(false);
   const detectorRef = useRef<InstanceType<NonNullable<Window['BarcodeDetector']>> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraGenerationRef = useRef(0);
 
   const [cameraError, setCameraError] = useState('');
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [imagePickError, setImagePickError] = useState('');
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [stage, setStage] = useState<ScanStage>('idle');
@@ -84,55 +88,104 @@ export default function AdminCheckInPage() {
   const [confirmResult, setConfirmResult] = useState<AdminCheckInResult | null>(null);
   const [profileModalApplication, setProfileModalApplication] = useState<StoredApplication | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
+  const [manualPanelOpen, setManualPanelOpen] = useState(false);
   const lastTokenRef = useRef('');
 
   const previewApplication = preview?.applicationId
     ? (eventApplications.find((item) => item.dbId === preview.applicationId) ?? null)
     : null;
 
-  useEffect(() => {
-    if (!operationsActive) return undefined;
-    let active = true;
+  const startCamera = useCallback(async () => {
+    if (!operationsActive) return;
+    const generation = (cameraGenerationRef.current += 1);
+    setCameraError('');
+    setCameraStarting(true);
 
-    const startCamera = async () => {
-      if (window.BarcodeDetector) {
-        try {
-          detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
-        } catch {
-          detectorRef.current = null;
-        }
-      }
+    if (window.BarcodeDetector) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (!active) {
-          stream.getTracks().forEach((track) => track.stop());
+        detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        detectorRef.current = null;
+      }
+    }
+
+    // A non-secure origin (plain http, not localhost) has no
+    // navigator.mediaDevices at all - getUserMedia would throw a generic
+    // TypeError that's easy to mistake for a permission problem, so this is
+    // checked explicitly first.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      if (cameraGenerationRef.current === generation) {
+        setCameraError('보안 연결(HTTPS)이 아니거나 이 브라우저에서는 카메라를 사용할 수 없습니다.');
+        setCameraStarting(false);
+      }
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+    } catch (firstError) {
+      // Some devices/browsers hard-fail on a facingMode constraint instead
+      // of falling back gracefully (e.g. no usable rear camera) - retry once
+      // with no camera-facing preference rather than giving up entirely.
+      if (isConstraintError(firstError)) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (secondError) {
+          if (cameraGenerationRef.current === generation) {
+            setCameraError(describeCameraError(secondError));
+            setCameraStarting(false);
+          }
           return;
         }
-        streamRef.current = stream;
-        const track = stream.getVideoTracks()[0];
-        trackRef.current = track ?? null;
-        const capabilities = track?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined;
-        setTorchSupported(Boolean(capabilities?.torch));
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-          scanningRef.current = true;
-          void scanLoop();
+      } else {
+        if (cameraGenerationRef.current === generation) {
+          setCameraError(describeCameraError(firstError));
+          setCameraStarting(false);
         }
-      } catch {
-        setCameraError('카메라를 열 수 없습니다. 권한을 확인해주세요.');
+        return;
       }
-    };
+    }
 
+    if (cameraGenerationRef.current !== generation) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    streamRef.current = stream;
+    const track = stream.getVideoTracks()[0];
+    trackRef.current = track ?? null;
+    const capabilities = track?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined;
+    setTorchSupported(Boolean(capabilities?.torch));
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      try {
+        await videoRef.current.play();
+      } catch {
+        // Autoplay can be blocked in rare cases even when muted - the stream
+        // is still attached and scanning still starts below.
+      }
+    }
+
+    if (cameraGenerationRef.current === generation) {
+      scanningRef.current = true;
+      setCameraStarting(false);
+      void scanLoop();
+    }
+  }, [operationsActive]);
+
+  useEffect(() => {
+    if (!operationsActive) return undefined;
     void startCamera();
     return () => {
-      active = false;
+      cameraGenerationRef.current += 1;
       scanningRef.current = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       trackRef.current = null;
     };
-  }, [operationsActive]);
+  }, [operationsActive, startCamera]);
 
   const scanLoop = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -226,9 +279,10 @@ export default function AdminCheckInPage() {
         const token = normalizeQrToken(decoded?.data ?? '');
         if (token) {
           scanningRef.current = false;
+          setImagePickError('');
           void lookupToken(token);
         } else {
-          setCameraError('이미지에서 QR을 찾지 못했습니다.');
+          setImagePickError('이미지에서 QR을 찾지 못했습니다.');
         }
       }
       URL.revokeObjectURL(objectUrl);
@@ -315,11 +369,36 @@ export default function AdminCheckInPage() {
           </section>
         ) : (
           <section className="mt-5">
-            <div className="relative overflow-hidden rounded-[22px] bg-black">
+            <button
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#ef554a] text-[14px] font-black text-[#ef554a] active:scale-[0.99]"
+              onClick={() => setManualPanelOpen(true)}
+              type="button"
+            >
+              <SearchIcon />
+              직접 체크인 (QR 스캔이 어려울 때)
+            </button>
+
+            <div className="relative mt-3 overflow-hidden rounded-[22px] bg-black">
               <video ref={videoRef} className="aspect-square w-full object-cover" muted playsInline />
               <canvas ref={canvasRef} className="hidden" />
 
-              {stage === 'idle' ? (
+              {cameraError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+                  <CameraOffIcon />
+                  <p className="text-[15px] font-black leading-relaxed text-white">{cameraError}</p>
+                  <button
+                    className="h-11 rounded-[12px] bg-white px-5 text-[14px] font-black text-black active:scale-[0.98]"
+                    onClick={() => void startCamera()}
+                    type="button"
+                  >
+                    카메라 다시 시도
+                  </button>
+                </div>
+              ) : cameraStarting ? (
+                <div className="absolute inset-0 grid place-items-center bg-black/60">
+                  <p className="text-[14px] font-black text-white">카메라를 시작하는 중</p>
+                </div>
+              ) : stage === 'idle' ? (
                 <div className="pointer-events-none absolute inset-0">
                   <p className="mx-auto mt-4 w-fit rounded-[10px] bg-black/55 px-3 py-1.5 text-[13px] font-black text-white">QR을 화면 중앙에 맞춰주세요</p>
                   <div className="absolute left-1/2 top-1/2 h-[62%] w-[70%] -translate-x-1/2 -translate-y-1/2">
@@ -334,14 +413,16 @@ export default function AdminCheckInPage() {
                 </div>
               ) : null}
 
-              <button
-                className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/45 text-white disabled:opacity-30"
-                disabled={!torchSupported}
-                onClick={() => void toggleTorch()}
-                type="button"
-              >
-                <FlashIcon on={torchOn} />
-              </button>
+              {!cameraError ? (
+                <button
+                  className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/45 text-white disabled:opacity-30"
+                  disabled={!torchSupported}
+                  onClick={() => void toggleTorch()}
+                  type="button"
+                >
+                  <FlashIcon on={torchOn} />
+                </button>
+              ) : null}
               <button
                 className="absolute bottom-3 left-3 grid h-9 w-9 place-items-center rounded-full bg-black/45 text-white"
                 onClick={() => fileInputRef.current?.click()}
@@ -361,7 +442,8 @@ export default function AdminCheckInPage() {
                 type="file"
               />
             </div>
-            {cameraError ? <p className="mt-3 text-center text-[13px] font-bold text-[#ef554a]">{cameraError}</p> : null}
+
+            {imagePickError ? <p className="mt-3 text-center text-[13px] font-bold text-[#ef554a]">{imagePickError}</p> : null}
 
             <div className="mt-4 grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] items-start gap-4 rounded-[20px] bg-[#fff1ee] px-4 py-4">
               <InfoBlock description="스캔 시 참가자 현황에 자동 기록됩니다" icon={<CheckCircleIcon />} title="자동 등록" />
@@ -435,6 +517,16 @@ export default function AdminCheckInPage() {
 
       {statusPanelOpen ? (
         <CheckInStatusPanel applications={eventApplications} onClose={() => setStatusPanelOpen(false)} />
+      ) : null}
+
+      {manualPanelOpen ? (
+        <ManualCheckInPanel
+          applications={eventApplications}
+          eventId={event.id}
+          onClose={() => setManualPanelOpen(false)}
+          onCheckedIn={() => void Promise.all([reloadApplications(), loadSummaries()])}
+          onViewProfile={(application) => setProfileModalApplication(application)}
+        />
       ) : null}
     </main>
   );
@@ -618,6 +710,28 @@ function InfoBlock({ description, icon, title }: { description: string; icon: Re
   );
 }
 
+function isConstraintError(error: unknown) {
+  const name = error instanceof DOMException ? error.name : '';
+  return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError';
+}
+
+function describeCameraError(error: unknown) {
+  const name = error instanceof DOMException ? error.name : '';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+    return '카메라 권한이 필요합니다. 브라우저 설정에서 카메라 권한을 허용한 뒤 다시 시도해주세요.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return '사용 가능한 카메라를 찾을 수 없습니다.';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return '카메라를 사용할 수 없습니다. 다른 앱에서 카메라를 사용 중인지 확인해주세요.';
+  }
+  if (isConstraintError(error)) {
+    return '카메라를 사용할 수 없습니다. 다른 카메라로 다시 시도해주세요.';
+  }
+  return 'QR 스캐너를 시작하지 못했습니다.';
+}
+
 function normalizeQrToken(value: string) {
   return value.trim().replace(/^t2m:/i, '');
 }
@@ -694,6 +808,209 @@ function PersonIcon({ color = 'currentColor' }: { color?: string }) {
     <svg aria-hidden="true" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24">
       <circle cx="12" cy="8" r="3.6" stroke={color} strokeWidth="1.8" />
       <path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6" stroke={color} strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function ManualCheckInPanel({
+  applications,
+  eventId,
+  onCheckedIn,
+  onClose,
+  onViewProfile,
+}: {
+  applications: StoredApplication[];
+  eventId: string;
+  onCheckedIn: () => void;
+  onClose: () => void;
+  onViewProfile: (application: StoredApplication) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<StoredApplication | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmResult, setConfirmResult] = useState<AdminCheckInResult | null>(null);
+
+  const confirmedApplicants = useMemo(() => applications.filter((item) => item.status === '참가 확정'), [applications]);
+
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return confirmedApplicants;
+    return confirmedApplicants.filter(
+      (item) => (item.profile?.nickname ?? '').toLowerCase().includes(keyword) || item.id.toLowerCase().includes(keyword),
+    );
+  }, [confirmedApplicants, search]);
+
+  const selectApplicant = (application: StoredApplication) => {
+    setSelected(application);
+    setConfirmResult(null);
+  };
+
+  const handleConfirm = async () => {
+    if (!selected?.dbId || confirming) return;
+    setConfirming(true);
+    try {
+      const result = await checkInApplicationInSupabase(eventId, selected.dbId);
+      setConfirmResult(result);
+      onCheckedIn();
+    } catch (caughtError) {
+      setConfirmResult({
+        alreadyCheckedIn: false,
+        applicationNo: selected.id,
+        message: caughtError instanceof Error ? caughtError.message : '체크인 처리에 실패했습니다.',
+        nickname: selected.profile?.nickname ?? '',
+        ok: false,
+      });
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const alreadyCheckedIn = selected ? Boolean(selected.checkedInAt) || Boolean(confirmResult?.alreadyCheckedIn) : false;
+  const justConfirmed = Boolean(confirmResult?.ok && !confirmResult.alreadyCheckedIn);
+  const checkedInAt = confirmResult?.checkedInAt ?? selected?.checkedInAt;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[28px] bg-white pb-[calc(20px+env(safe-area-inset-bottom))]"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="shrink-0 px-5 pt-5">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+          <div className="mt-4 flex items-center justify-between">
+            <h3 className="text-[18px] font-black">직접 체크인</h3>
+            <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+              닫기
+            </button>
+          </div>
+        </div>
+
+        {selected ? (
+          <div className="overflow-y-auto px-5 pt-4">
+            <button className="text-[13px] font-black text-[#999]" onClick={() => setSelected(null)} type="button">
+              ‹ 목록으로
+            </button>
+            <div className="mt-3 rounded-[20px] border border-[#f0d9d3] bg-[#fff8f5] px-5 py-5">
+              <div className="flex items-center gap-3">
+                <Avatar gender={selected.gender} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[18px] font-black">{selected.profile?.nickname || selected.userId}님</p>
+                  <p className="text-[13px] font-bold text-[#999]">{selected.id}</p>
+                  <p className="mt-1 text-[13px] font-bold text-[#777]">
+                    {selected.gender === '남성' ? '남' : '여'} · {selected.age}세 · {selected.profile?.job ?? '-'}
+                  </p>
+                </div>
+                {alreadyCheckedIn || justConfirmed ? (
+                  <span className="flex shrink-0 items-center gap-1 rounded-[10px] bg-[#eaf6e8] px-2.5 py-1.5 text-[12px] font-black text-[#3f9142]">
+                    <CheckCircleIcon /> 체크인 완료
+                  </span>
+                ) : null}
+              </div>
+
+              {alreadyCheckedIn ? (
+                <p className="mt-4 text-center text-[13px] font-bold text-[#a35850]">
+                  이미 체크인한 참가자입니다{checkedInAt ? ` · ${formatKstTime(checkedInAt)}` : ''}
+                </p>
+              ) : null}
+              {confirmResult && !confirmResult.ok ? <p className="mt-4 text-center text-[13px] font-bold text-[#ef554a]">{confirmResult.message}</p> : null}
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  className="h-12 rounded-[12px] border border-[#ef554a] px-4 text-[14px] font-black text-[#ef554a]"
+                  onClick={() => onViewProfile(selected)}
+                  type="button"
+                >
+                  프로필 확인
+                </button>
+                <button
+                  className="h-12 rounded-[12px] bg-[#ef4039] px-4 text-[14px] font-black text-white disabled:bg-[#e2c3bc]"
+                  disabled={confirming || alreadyCheckedIn || justConfirmed}
+                  onClick={() => void handleConfirm()}
+                  type="button"
+                >
+                  {confirming ? '처리 중' : alreadyCheckedIn || justConfirmed ? '체크인 완료' : '행사 입장 완료'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-1 shrink-0 px-5">
+              <input
+                className="h-12 w-full rounded-[14px] bg-[#f5f5f5] px-4 text-[15px] font-bold outline-none"
+                onChange={(changeEvent) => setSearch(changeEvent.target.value)}
+                placeholder="닉네임 또는 신청번호로 검색"
+                value={search}
+              />
+            </div>
+            <div className="mt-3 flex-1 overflow-y-auto px-5">
+              {filtered.length === 0 ? (
+                <p className="mt-6 text-center text-[14px] font-bold text-[#999]">
+                  {confirmedApplicants.length === 0 ? '참가확정된 참가자가 없습니다' : '검색 결과가 없습니다'}
+                </p>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {filtered.map((item) => (
+                    <button
+                      className="flex w-full items-center gap-3 rounded-[14px] border border-[#f0f0f0] px-3 py-2.5 text-left active:scale-[0.99]"
+                      key={item.dbId}
+                      onClick={() => selectApplicant(item)}
+                      type="button"
+                    >
+                      <Avatar gender={item.gender} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-black">{item.profile?.nickname || item.userId}님</p>
+                        <p className="text-[12px] font-bold text-[#999]">{item.id}</p>
+                        <p className="text-[12px] font-bold text-[#888]">
+                          {item.gender === '남성' ? '남' : '여'} · {item.age}세 · {item.profile?.job ?? '-'}
+                        </p>
+                      </div>
+                      {item.checkedInAt ? (
+                        <span className="shrink-0 text-[12px] font-black text-[#3f9142]">체크인 {formatKstTime(item.checkedInAt)}</span>
+                      ) : (
+                        <ChevronRightIcon />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5 shrink-0 text-[#ccc]" fill="none" viewBox="0 0 24 24">
+      <path d="m9 5 7 7-7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="m20 20-3.5-3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function CameraOffIcon() {
+  return (
+    <svg aria-hidden="true" className="h-9 w-9 text-white/70" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M3 7h3l1.5-2h5L14 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3 3l18 18" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
     </svg>
   );
 }
