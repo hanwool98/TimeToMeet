@@ -1,24 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DataErrorState, DataLoadingState } from '../components/DataState';
-import {
-  createConversationTopic,
-  deleteConversationTopic,
-  fetchAdminConversationTopics,
-  setConversationTopicActive,
-  updateConversationTopic,
-  type ConversationTopic,
-} from '../services/supabaseApplications';
 
-const categories = ['밸런스게임', '일반 대화주제'];
-type CategoryFilter = '전체' | (typeof categories)[number];
-
-// Single "콘텐츠 관리" shell with a tab strip - only one tab exists today
-// (대화주제 관리) but the strip is built so a second content type can be
-// added later without restructuring this page.
+// Menu hub between the admin home and each content-type's own management
+// screen. Only "대화주제 관리" exists today, but more content types (FAQ,
+// notices, banners, ...) are expected later, so this stays a menu rather
+// than jumping straight to the topics screen.
 export default function AdminContentPage() {
   const navigate = useNavigate();
-  const [activeTab] = useState<'topics'>('topics');
 
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
@@ -35,240 +23,45 @@ export default function AdminContentPage() {
           </button>
         </div>
 
-        <div className="mt-4 flex gap-2 border-b border-[#f0f0f0]">
-          <button className="border-b-2 border-meet-pink px-1 pb-2.5 text-[15px] font-black text-black" type="button">
-            대화주제 관리
-          </button>
+        <div className="mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
+          <MenuCard
+            icon={<TopicsIcon />}
+            label="대화주제 관리"
+            onClick={() => navigate('/admin/content/conversation-topics')}
+          />
         </div>
-
-        {activeTab === 'topics' ? <ConversationTopicsManager /> : null}
       </div>
     </main>
   );
 }
 
-function ConversationTopicsManager() {
-  const [topics, setTopics] = useState<ConversationTopic[] | null>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<CategoryFilter>('전체');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
-  const [editCategory, setEditCategory] = useState(categories[0]);
-  const [addOpen, setAddOpen] = useState(false);
-  const [newContent, setNewContent] = useState('');
-  const [newCategory, setNewCategory] = useState(categories[0]);
-  const [savePending, setSavePending] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setTopics(await fetchAdminConversationTopics());
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : '대화주제를 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const filtered = useMemo(() => {
-    if (!topics) return [];
-    if (filter === '전체') return topics;
-    return topics.filter((topic) => topic.category === filter);
-  }, [topics, filter]);
-
-  const startEdit = (topic: ConversationTopic) => {
-    setEditingId(topic.id);
-    setEditContent(topic.content);
-    setEditCategory(topic.category);
-  };
-
-  const cancelEdit = () => setEditingId(null);
-
-  const saveEdit = async (topicId: string) => {
-    if (!editContent.trim() || savePending) return;
-    setSavePending(true);
-    try {
-      await updateConversationTopic(topicId, editContent, editCategory);
-      setEditingId(null);
-      await load();
-    } catch (caughtError) {
-      window.alert(caughtError instanceof Error ? caughtError.message : '질문을 수정하지 못했습니다.');
-    } finally {
-      setSavePending(false);
-    }
-  };
-
-  const toggleActive = async (topic: ConversationTopic) => {
-    try {
-      await setConversationTopicActive(topic.id, !topic.isActive);
-      setTopics((current) => current?.map((item) => (item.id === topic.id ? { ...item, isActive: !topic.isActive } : item)) ?? null);
-    } catch (caughtError) {
-      window.alert(caughtError instanceof Error ? caughtError.message : '상태를 변경하지 못했습니다.');
-    }
-  };
-
-  const removeTopic = async (topic: ConversationTopic) => {
-    if (!window.confirm('이 대화주제를 삭제하시겠습니까?')) return;
-    try {
-      await deleteConversationTopic(topic.id);
-      setTopics((current) => current?.filter((item) => item.id !== topic.id) ?? null);
-    } catch (caughtError) {
-      window.alert(caughtError instanceof Error ? caughtError.message : '질문을 삭제하지 못했습니다.');
-    }
-  };
-
-  const submitNewTopic = async () => {
-    if (!newContent.trim() || savePending) return;
-    setSavePending(true);
-    try {
-      await createConversationTopic(newContent, newCategory);
-      setNewContent('');
-      setAddOpen(false);
-      await load();
-    } catch (caughtError) {
-      window.alert(caughtError instanceof Error ? caughtError.message : '질문을 추가하지 못했습니다.');
-    } finally {
-      setSavePending(false);
-    }
-  };
-
-  if (loading) return <DataLoadingState />;
-  if (error) return <DataErrorState message={error} onRetry={load} />;
-
+function MenuCard({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
   return (
-    <div className="mt-4">
-      <p className="text-[13px] font-extrabold text-[#8a8a8a]">
-        태블릿 라운드 화면의 대화주제 카드뭉치에 사용됩니다. 총 {topics?.length ?? 0}개 · 사용중 {topics?.filter((topic) => topic.isActive).length ?? 0}개
-      </p>
+    <button
+      className="flex min-h-[76px] w-full max-w-full min-w-0 items-center gap-2 rounded-[18px] border border-[#eef3f7] bg-white px-2.5 py-3 text-left shadow-calendar transition active:scale-[0.98]"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="shrink-0 text-meet-pink">{icon}</span>
+      <span className="min-w-0 flex-1 whitespace-nowrap text-[12px] font-black text-black min-[360px]:text-[14px] min-[380px]:text-[16px]">{label}</span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#a7adb5]" />
+    </button>
+  );
+}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {(['전체', ...categories] as CategoryFilter[]).map((option) => (
-          <button
-            className={[
-              'rounded-[10px] px-3 py-1.5 text-[12px] font-black transition',
-              filter === option ? 'bg-meet-pink text-white' : 'bg-meet-pinkSoft text-meet-pink',
-            ].join(' ')}
-            key={option}
-            onClick={() => setFilter(option)}
-            type="button"
-          >
-            {option}
-          </button>
-        ))}
-        <button
-          className="ml-auto rounded-[10px] bg-[#1f292d] px-3 py-1.5 text-[12px] font-black text-white"
-          onClick={() => setAddOpen((open) => !open)}
-          type="button"
-        >
-          {addOpen ? '취소' : '+ 새 대화주제'}
-        </button>
-      </div>
+function TopicsIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <rect height="20" rx="3" width="14" x="9" y="6" />
+      <path d="M13 12h6M13 17h4" />
+    </svg>
+  );
+}
 
-      {addOpen ? (
-        <div className="mt-3 rounded-[16px] border border-[#f0f3f6] bg-white p-4 shadow-sm">
-          <textarea
-            className="h-20 w-full resize-none rounded-[12px] bg-[#f7f8fa] p-3 text-[14px] font-bold outline-none"
-            onChange={(changeEvent) => setNewContent(changeEvent.target.value)}
-            placeholder="새 대화주제 내용을 입력하세요"
-            value={newContent}
-          />
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <select
-              className="h-10 rounded-[10px] bg-[#f7f8fa] px-3 text-[13px] font-black outline-none"
-              onChange={(changeEvent) => setNewCategory(changeEvent.target.value)}
-              value={newCategory}
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <button
-              className="h-10 rounded-[10px] bg-meet-pink px-5 text-[13px] font-black text-white disabled:opacity-50"
-              disabled={!newContent.trim() || savePending}
-              onClick={() => void submitNewTopic()}
-              type="button"
-            >
-              추가
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-4 space-y-2.5 pb-6">
-        {filtered.map((topic) => (
-          <article className="rounded-[16px] border border-[#f0f3f6] bg-white p-4 shadow-sm" key={topic.id}>
-            {editingId === topic.id ? (
-              <div>
-                <textarea
-                  className="h-20 w-full resize-none rounded-[12px] bg-[#f7f8fa] p-3 text-[14px] font-bold outline-none"
-                  onChange={(changeEvent) => setEditContent(changeEvent.target.value)}
-                  value={editContent}
-                />
-                <div className="mt-2 flex items-center gap-2">
-                  <select
-                    className="h-10 rounded-[10px] bg-[#f7f8fa] px-3 text-[13px] font-black outline-none"
-                    onChange={(changeEvent) => setEditCategory(changeEvent.target.value)}
-                    value={editCategory}
-                  >
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="ml-auto flex gap-2">
-                    <button className="h-10 rounded-[10px] px-4 text-[13px] font-black text-[#888]" onClick={cancelEdit} type="button">
-                      취소
-                    </button>
-                    <button
-                      className="h-10 rounded-[10px] bg-meet-pink px-4 text-[13px] font-black text-white disabled:opacity-50"
-                      disabled={savePending}
-                      onClick={() => void saveEdit(topic.id)}
-                      type="button"
-                    >
-                      저장
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <span className="rounded-[8px] bg-meet-pinkSoft px-2 py-0.5 text-[11px] font-black text-meet-pink">{topic.category}</span>
-                  <button
-                    className={[
-                      'shrink-0 rounded-[8px] px-2.5 py-1 text-[11px] font-black',
-                      topic.isActive ? 'bg-[#e8f8ee] text-[#2f9e5c]' : 'bg-[#f2f2f2] text-[#999]',
-                    ].join(' ')}
-                    onClick={() => void toggleActive(topic)}
-                    type="button"
-                  >
-                    {topic.isActive ? '사용' : '미사용'}
-                  </button>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-[14px] font-extrabold leading-relaxed text-[#333]">{topic.content}</p>
-                <div className="mt-2 flex justify-end gap-3">
-                  <button className="text-[12px] font-black text-meet-blue" onClick={() => startEdit(topic)} type="button">
-                    수정
-                  </button>
-                  <button className="text-[12px] font-black text-[#e0554a]" onClick={() => void removeTopic(topic)} type="button">
-                    삭제
-                  </button>
-                </div>
-              </div>
-            )}
-          </article>
-        ))}
-        {filtered.length === 0 ? <p className="pt-6 text-center text-[13px] font-bold text-[#999]">등록된 대화주제가 없습니다.</p> : null}
-      </div>
-    </div>
+function ChevronRight({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
+      <path d="m9 5 7 7-7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
   );
 }

@@ -692,7 +692,7 @@ function PauseRequestsPanel({
       >
         <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
         <div className="mt-4 flex items-center justify-between">
-          <h3 className="text-[18px] font-black">일시정지 요청</h3>
+          <h3 className="text-[18px] font-black">참가자 요청</h3>
           <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
             닫기
           </button>
@@ -711,7 +711,17 @@ function PauseRequestsPanel({
                 key={request.id}
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-[15px] font-black">{request.tableNumber}번 테이블</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[15px] font-black">{request.tableNumber}번 테이블</p>
+                    <span
+                      className={[
+                        'rounded-[6px] px-1.5 py-0.5 text-[10px] font-black',
+                        request.requestType === 'call_staff' ? 'bg-[#eef1ff] text-[#4f5fd6]' : 'bg-[#fff1ee] text-[#ef554a]',
+                      ].join(' ')}
+                    >
+                      {request.requestType === 'call_staff' ? '운영자 호출' : '일시정지 요청'}
+                    </span>
+                  </div>
                   {request.status === 'pending' ? (
                     <span className="text-[11px] font-black text-[#ef554a]">미확인</span>
                   ) : (

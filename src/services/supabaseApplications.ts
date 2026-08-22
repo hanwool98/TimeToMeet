@@ -1660,6 +1660,7 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
 export interface EventPauseRequest {
   id: string;
   nickname: string;
+  requestType: 'call_staff' | 'pause';
   requestedAt: string;
   status: 'acknowledged' | 'pending' | 'resolved';
   tableNumber: number;
@@ -1677,10 +1678,18 @@ export async function fetchAdminPauseRequests(eventId: string) {
 
   if (error) throw error;
   return (
-    data as Array<{ id: string; nickname: string; requested_at: string; status: EventPauseRequest['status']; table_number: number }>
+    data as Array<{
+      id: string;
+      nickname: string;
+      request_type: EventPauseRequest['requestType'];
+      requested_at: string;
+      status: EventPauseRequest['status'];
+      table_number: number;
+    }>
   ).map((row) => ({
     id: row.id,
     nickname: row.nickname,
+    requestType: row.request_type,
     requestedAt: row.requested_at,
     status: row.status,
     tableNumber: row.table_number,
@@ -1699,6 +1708,66 @@ export async function updatePauseRequestStatus(requestId: string, status: EventP
   });
 
   if (error) throw error;
+}
+
+export interface ParticipantRoundProgress {
+  currentRound?: number;
+  ok: boolean;
+  partnerNickname?: string;
+  roundPhase?: 'conversation' | 'transition';
+  stage?: EventProgressStage;
+  tableNumber?: number;
+  totalRounds?: number;
+}
+
+export async function fetchParticipantRoundProgress(eventId: string): Promise<ParticipantRoundProgress> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return { ok: false };
+
+  const { data, error } = await supabase.rpc('get_round_progress_for_participant', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as {
+    currentRound?: number;
+    ok: boolean;
+    partnerNickname?: string | null;
+    roundPhase?: 'conversation' | 'transition' | null;
+    stage?: EventProgressStage;
+    tableNumber?: number | null;
+    totalRounds?: number;
+  };
+  if (!row?.ok) return { ok: false };
+  return {
+    currentRound: row.currentRound ?? undefined,
+    ok: true,
+    partnerNickname: row.partnerNickname ?? undefined,
+    roundPhase: row.roundPhase ?? undefined,
+    stage: row.stage,
+    tableNumber: row.tableNumber ?? undefined,
+    totalRounds: row.totalRounds ?? undefined,
+  };
+}
+
+export async function createParticipantPauseRequest(
+  eventId: string,
+  tableNumber: number,
+  requestType: 'call_staff' | 'pause',
+): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_event_pause_request', {
+    event_id_value: eventId,
+    request_type_value: requestType,
+    session_token: session.token,
+    table_number_value: tableNumber,
+  });
+  if (error) throw error;
+  return data as string;
 }
 
 export interface ParticipantRating {
