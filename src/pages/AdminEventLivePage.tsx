@@ -712,7 +712,7 @@ function PauseRequestsPanel({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <p className="text-[15px] font-black">{request.tableNumber}번 테이블</p>
+                    <p className="text-[15px] font-black">{request.tableNumber ? `${request.tableNumber}번 테이블` : '테이블 미정 (입장 대기)'}</p>
                     <span
                       className={[
                         'rounded-[6px] px-1.5 py-0.5 text-[10px] font-black',

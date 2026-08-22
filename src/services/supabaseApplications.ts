@@ -1663,7 +1663,7 @@ export interface EventPauseRequest {
   requestType: 'call_staff' | 'pause';
   requestedAt: string;
   status: 'acknowledged' | 'pending' | 'resolved';
-  tableNumber: number;
+  tableNumber?: number;
 }
 
 export async function fetchAdminPauseRequests(eventId: string) {
@@ -1684,7 +1684,7 @@ export async function fetchAdminPauseRequests(eventId: string) {
       request_type: EventPauseRequest['requestType'];
       requested_at: string;
       status: EventPauseRequest['status'];
-      table_number: number;
+      table_number: number | null;
     }>
   ).map((row) => ({
     id: row.id,
@@ -1692,7 +1692,7 @@ export async function fetchAdminPauseRequests(eventId: string) {
     requestType: row.request_type,
     requestedAt: row.requested_at,
     status: row.status,
-    tableNumber: row.table_number,
+    tableNumber: row.table_number ?? undefined,
   })) satisfies EventPauseRequest[];
 }
 
@@ -1715,8 +1715,13 @@ export interface ParticipantRoundProgress {
   ok: boolean;
   partnerNickname?: string;
   roundPhase?: 'conversation' | 'transition';
+  // undefined stage means the operator hasn't pressed 행사 시작 yet (no
+  // event_progress row exists) - distinct from any real EventProgressStage.
   stage?: EventProgressStage;
   tableNumber?: number;
+  timerPositionSeconds?: number;
+  timerStatus?: 'paused' | 'running';
+  timerUpdatedAt?: string;
   totalRounds?: number;
 }
 
@@ -1735,8 +1740,11 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     ok: boolean;
     partnerNickname?: string | null;
     roundPhase?: 'conversation' | 'transition' | null;
-    stage?: EventProgressStage;
+    stage?: EventProgressStage | null;
     tableNumber?: number | null;
+    timerPositionSeconds?: number | null;
+    timerStatus?: 'paused' | 'running' | null;
+    timerUpdatedAt?: string | null;
     totalRounds?: number;
   };
   if (!row?.ok) return { ok: false };
@@ -1745,15 +1753,18 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     ok: true,
     partnerNickname: row.partnerNickname ?? undefined,
     roundPhase: row.roundPhase ?? undefined,
-    stage: row.stage,
+    stage: row.stage ?? undefined,
     tableNumber: row.tableNumber ?? undefined,
+    timerPositionSeconds: row.timerPositionSeconds ?? undefined,
+    timerStatus: row.timerStatus ?? undefined,
+    timerUpdatedAt: row.timerUpdatedAt ?? undefined,
     totalRounds: row.totalRounds ?? undefined,
   };
 }
 
 export async function createParticipantPauseRequest(
   eventId: string,
-  tableNumber: number,
+  tableNumber: number | undefined,
   requestType: 'call_staff' | 'pause',
 ): Promise<string> {
   if (!supabase) throw new Error('Supabase is not configured.');
@@ -1764,7 +1775,7 @@ export async function createParticipantPauseRequest(
     event_id_value: eventId,
     request_type_value: requestType,
     session_token: session.token,
-    table_number_value: tableNumber,
+    table_number_value: tableNumber ?? null,
   });
   if (error) throw error;
   return data as string;
