@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ConversationTopicDeck from '../components/ConversationTopicDeck';
 import { DataLoadingState } from '../components/DataState';
 import {
   fetchEventProgressForTablet,
@@ -268,19 +269,44 @@ export default function AdminTabletSeatPage() {
       timerStatus: roundProgress.timerStatus ?? 'paused',
       timerUpdatedAt: roundProgress.timerUpdatedAt,
     }, nowTick));
-    const phaseLabel = roundProgress.roundPhase === 'transition' ? '이동 및 호감도 작성' : '대화 중';
+    const currentRound = roundProgress.currentRound ?? progress.currentRound ?? 1;
+
+    if (roundProgress.roundPhase === 'transition') {
+      return (
+        <main className="fixed inset-0 flex overflow-hidden bg-[#1f292d] text-white">
+          <div className="m-auto text-center">
+            <p className="text-[18px] font-black text-[#ff8a80]">{currentRound}라운드 · 이동 및 호감도 작성</p>
+            <p className="mt-6 text-[64px] font-black leading-none tabular-nums">{formatCountdown(remaining)}</p>
+            <div className="mt-10 flex items-center justify-center gap-8">
+              <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#8ec7ff]">{roundProgress.maleNickname ?? '미배정'}</p>
+              <span className="text-[28px] font-black text-white/40">&amp;</span>
+              <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#ffb0c4]">{roundProgress.femaleNickname ?? '미배정'}</p>
+            </div>
+          </div>
+        </main>
+      );
+    }
+
+    const stored = readStoredConnection(eventId ?? '', tableNumber);
 
     return (
-      <main className="fixed inset-0 flex overflow-hidden bg-[#1f292d] text-white">
-        <div className="m-auto text-center">
-          <p className="text-[18px] font-black text-[#ff8a80]">
-            {roundProgress.currentRound ?? progress.currentRound ?? 1}라운드 · {phaseLabel}
-          </p>
-          <p className="mt-6 text-[64px] font-black leading-none tabular-nums">{formatCountdown(remaining)}</p>
-          <div className="mt-10 flex items-center justify-center gap-8">
-            <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#8ec7ff]">{roundProgress.maleNickname ?? '미배정'}</p>
-            <span className="text-[28px] font-black text-white/40">&amp;</span>
-            <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#ffb0c4]">{roundProgress.femaleNickname ?? '미배정'}</p>
+      <main
+        className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]"
+        style={{ background: 'radial-gradient(120% 140% at 12% 0%, #fff6f2 0%, #ffeae3 45%, #ffe0d8 100%)' }}
+      >
+        <div className="flex h-full w-full items-center justify-between gap-[3vw] px-[6vw]">
+          <div className="flex flex-1 items-center justify-center">
+            <RoundTimerRing
+              phaseLabel="10분 대화"
+              phaseDuration={phaseDuration}
+              remaining={remaining}
+              roundLabel={`${currentRound}라운드 진행 중`}
+            />
+          </div>
+          <div className="w-[24vw] max-w-[300px] min-w-[190px] shrink-0">
+            {stored?.connectionToken && eventId ? (
+              <ConversationTopicDeck connectionToken={stored.connectionToken} eventId={eventId} tableNumber={tableNumber} />
+            ) : null}
           </div>
         </div>
       </main>
@@ -309,6 +335,63 @@ export default function AdminTabletSeatPage() {
       </div>
       <SeatSide gradient="linear-gradient(225deg,#f7d7e2,#fbeaf0)" nickname={seatGuide?.femaleNickname} textColor="#7a2145" />
     </main>
+  );
+}
+
+function RoundTimerRing({
+  phaseDuration,
+  phaseLabel,
+  remaining,
+  roundLabel,
+}: {
+  phaseDuration: number;
+  phaseLabel: string;
+  remaining: number;
+  roundLabel: string;
+}) {
+  const elapsedFraction = phaseDuration > 0 ? Math.min(1, Math.max(0, 1 - remaining / phaseDuration)) : 0;
+  const size = 100;
+  const strokeWidth = 3;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - elapsedFraction);
+  const angleRad = ((-90 + 360 * elapsedFraction) * Math.PI) / 180;
+  const dotX = size / 2 + radius * Math.cos(angleRad);
+  const dotY = size / 2 + radius * Math.sin(angleRad);
+
+  return (
+    <div className="relative grid shrink-0 place-items-center" style={{ height: 'clamp(340px, 62vh, 620px)', width: 'clamp(340px, 62vh, 620px)' }}>
+      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="#f6dcd6" strokeWidth={strokeWidth} />
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            fill="none"
+            r={radius}
+            stroke="#e17b6b"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            strokeLinecap="round"
+            strokeWidth={strokeWidth}
+            style={{ transition: 'stroke-dashoffset 1s linear' }}
+          />
+        </g>
+      </svg>
+      {elapsedFraction > 0 ? (
+        <span
+          className="absolute h-[3%] w-[3%] rounded-full bg-[#e17b6b] shadow-[0_0_0_5px_rgba(225,123,107,0.18)]"
+          style={{ left: `${dotX}%`, top: `${dotY}%`, transform: 'translate(-50%, -50%)' }}
+        />
+      ) : null}
+      <div className="px-[8%] text-center">
+        <p className="text-[clamp(13px,1.9vh,19px)] font-black tracking-wide text-[#c98276]">{roundLabel}</p>
+        <p className="mt-1 text-[clamp(10px,1.4vh,14px)] font-bold text-[#d9a79d]">{phaseLabel}</p>
+        <p className="mt-3 text-[clamp(56px,10.2vh,124px)] font-black leading-none text-[#a34237]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {formatCountdown(remaining)}
+        </p>
+      </div>
+    </div>
   );
 }
 

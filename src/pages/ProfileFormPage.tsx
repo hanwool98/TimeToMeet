@@ -346,7 +346,9 @@ export default function ProfileFormPage() {
   const isMemberSession = getAppSession()?.role === 'member';
   const isGuestSession = getAppSession()?.role === 'guest';
   const selectedEvent = events.find((event) => event.id === eventId);
-  const isApplicationClosed = Boolean(selectedEvent?.applicationDeadline && new Date(selectedEvent.applicationDeadline).getTime() <= Date.now());
+  const isApplicationClosed = Boolean(
+    !selectedEvent?.isTestEvent && selectedEvent?.applicationDeadline && new Date(selectedEvent.applicationDeadline).getTime() <= Date.now(),
+  );
 
   const age = useMemo(() => getAgeOnEventDate(birthDate, selectedEvent?.date), [birthDate, selectedEvent?.date]);
   const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';

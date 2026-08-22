@@ -103,7 +103,7 @@ Deno.serve(async (request) => {
     }
   }
 
-  if (event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
+  if (!event.is_test_event && event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
     return json({ message: '이 행사의 신청이 마감되었습니다.', stage: 'response' }, 409);
   }
 

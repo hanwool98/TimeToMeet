@@ -6,6 +6,7 @@ import AdminRoute from './components/AdminRoute';
 import AdminApplicationErrorsPage from './pages/AdminApplicationErrorsPage';
 import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminCheckInPage from './pages/AdminCheckInPage';
+import AdminContentPage from './pages/AdminContentPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
 import AdminEventLivePage from './pages/AdminEventLivePage';
 import AdminEventPreparePage from './pages/AdminEventPreparePage';
@@ -56,6 +57,7 @@ createRoot(document.getElementById('root')!).render(
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/application-errors" element={<AdminApplicationErrorsPage />} />
+            <Route path="/admin/content" element={<AdminContentPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/events" element={<AdminEventManagementPage />} />
             <Route path="/admin/events/new" element={<AdminEventCreatePage />} />

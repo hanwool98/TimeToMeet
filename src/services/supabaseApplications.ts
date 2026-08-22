@@ -1929,6 +1929,105 @@ function formatApplicationNo(value: string) {
   return value.replace(/^TTM-(\d{4})-(\d{3})$/, 'TTM_$1_$2');
 }
 
+export interface ConversationTopic {
+  category: string;
+  content: string;
+  createdAt: string;
+  id: string;
+  isActive: boolean;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export async function fetchAdminConversationTopics(): Promise<ConversationTopic[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_conversation_topics', { session_token: adminSession.token });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    category: row.category as string,
+    content: row.content as string,
+    createdAt: row.created_at as string,
+    id: row.id as string,
+    isActive: row.is_active as boolean,
+    sortOrder: row.sort_order as number,
+    updatedAt: row.updated_at as string,
+  }));
+}
+
+export async function createConversationTopic(content: string, category: string): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_conversation_topic_for_session', {
+    category_value: category,
+    content_value: content,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function updateConversationTopic(topicId: string, content: string, category: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_conversation_topic_for_session', {
+    category_value: category,
+    content_value: content,
+    session_token: adminSession.token,
+    topic_id: topicId,
+  });
+  if (error) throw error;
+}
+
+export async function setConversationTopicActive(topicId: string, isActive: boolean): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_conversation_topic_active_for_session', {
+    is_active_value: isActive,
+    session_token: adminSession.token,
+    topic_id: topicId,
+  });
+  if (error) throw error;
+}
+
+export async function deleteConversationTopic(topicId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('delete_conversation_topic_for_session', {
+    session_token: adminSession.token,
+    topic_id: topicId,
+  });
+  if (error) throw error;
+}
+
+export interface TabletConversationTopic {
+  content: string;
+  id: string;
+}
+
+export async function fetchConversationTopicsForTablet(eventId: string, tableNumber: number, connectionToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_conversation_topics_for_tablet', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean; topics?: TabletConversationTopic[] };
+  if (!row?.ok) return { ok: false as const, topics: [] as TabletConversationTopic[] };
+  return { ok: true as const, topics: row.topics ?? [] };
+}
+
 function isMissingRpcError(error: { code?: string; message?: string }) {
   return error.code === 'PGRST202' || Boolean(error.message?.includes('Could not find the function'));
 }

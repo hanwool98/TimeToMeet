@@ -120,7 +120,9 @@ export default function EventInfoPage() {
     : events
       .filter((item) => getDaysUntilEvent(item.date) >= 0)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-  const isApplicationClosed = Boolean(event?.applicationDeadline && new Date(event.applicationDeadline).getTime() <= Date.now());
+  const isApplicationClosed = Boolean(
+    !event?.isTestEvent && event?.applicationDeadline && new Date(event.applicationDeadline).getTime() <= Date.now(),
+  );
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
   const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
   const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;
