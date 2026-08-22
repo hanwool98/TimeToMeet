@@ -272,17 +272,18 @@ export default function AdminTabletSeatPage() {
     const currentRound = roundProgress.currentRound ?? progress.currentRound ?? 1;
 
     if (roundProgress.roundPhase === 'transition') {
+      // Deliberately bare compared to the conversation-phase screen (no
+      // round label, no partner names, no card deck) - this phase is just
+      // "move + rate on your phone," per the wireframe.
       return (
-        <main className="fixed inset-0 flex overflow-hidden bg-[#1f292d] text-white">
-          <div className="m-auto text-center">
-            <p className="text-[18px] font-black text-[#ff8a80]">{currentRound}라운드 · 이동 및 호감도 작성</p>
-            <p className="mt-6 text-[64px] font-black leading-none tabular-nums">{formatCountdown(remaining)}</p>
-            <div className="mt-10 flex items-center justify-center gap-8">
-              <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#8ec7ff]">{roundProgress.maleNickname ?? '미배정'}</p>
-              <span className="text-[28px] font-black text-white/40">&amp;</span>
-              <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#ffb0c4]">{roundProgress.femaleNickname ?? '미배정'}</p>
-            </div>
-          </div>
+        <main
+          className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]"
+          style={{ background: 'radial-gradient(120% 140% at 50% 0%, #fffaf8 0%, #fdf1ec 55%, #fbe8e1 100%)' }}
+        >
+          <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#e1988a" />
+          <p className="px-6 text-center text-[clamp(14px,2vh,20px)] font-bold text-[#c08d81]">
+            2분 안에 자리 이동 및 호감도 작성을 완료해주세요
+          </p>
         </main>
       );
     }
@@ -342,12 +343,14 @@ function RoundTimerRing({
   phaseDuration,
   phaseLabel,
   remaining,
+  ringColor = '#e17b6b',
   roundLabel,
 }: {
   phaseDuration: number;
-  phaseLabel: string;
+  phaseLabel?: string;
   remaining: number;
-  roundLabel: string;
+  ringColor?: string;
+  roundLabel?: string;
 }) {
   const elapsedFraction = phaseDuration > 0 ? Math.min(1, Math.max(0, 1 - remaining / phaseDuration)) : 0;
   const size = 100;
@@ -369,7 +372,7 @@ function RoundTimerRing({
             cy={size / 2}
             fill="none"
             r={radius}
-            stroke="#e17b6b"
+            stroke={ringColor}
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
@@ -380,14 +383,27 @@ function RoundTimerRing({
       </svg>
       {elapsedFraction > 0 ? (
         <span
-          className="absolute h-[3%] w-[3%] rounded-full bg-[#e17b6b] shadow-[0_0_0_5px_rgba(225,123,107,0.18)]"
-          style={{ left: `${dotX}%`, top: `${dotY}%`, transform: 'translate(-50%, -50%)' }}
+          className="absolute h-[3%] w-[3%] rounded-full"
+          style={{
+            backgroundColor: ringColor,
+            boxShadow: `0 0 0 5px ${ringColor}2e`,
+            left: `${dotX}%`,
+            top: `${dotY}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
         />
       ) : null}
       <div className="px-[8%] text-center">
-        <p className="text-[clamp(13px,1.9vh,19px)] font-black tracking-wide text-[#c98276]">{roundLabel}</p>
-        <p className="mt-1 text-[clamp(10px,1.4vh,14px)] font-bold text-[#d9a79d]">{phaseLabel}</p>
-        <p className="mt-3 text-[clamp(56px,10.2vh,124px)] font-black leading-none text-[#a34237]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+        {roundLabel ? <p className="text-[clamp(13px,1.9vh,19px)] font-black tracking-wide text-[#c98276]">{roundLabel}</p> : null}
+        {phaseLabel ? <p className="mt-1 text-[clamp(10px,1.4vh,14px)] font-bold text-[#d9a79d]">{phaseLabel}</p> : null}
+        <p
+          className="font-black leading-none text-[#a34237]"
+          style={{
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: 'clamp(56px,10.2vh,124px)',
+            marginTop: roundLabel || phaseLabel ? '0.75rem' : 0,
+          }}
+        >
           {formatCountdown(remaining)}
         </p>
       </div>
