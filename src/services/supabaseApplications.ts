@@ -1049,13 +1049,20 @@ const testEventPreviewCacheKey = 'time2meet.testEventPreviewTokens';
  * (per event id) lets every later page on this device just ask "do I have
  * access to this test event" without threading it through every Link/navigate
  * call in the chain.
+ *
+ * Deliberately localStorage, not sessionStorage: a shared 참가자 화면으로
+ * 테스트 link is commonly opened in a fresh tab/in-app browser (KakaoTalk
+ * etc.), and a mobile browser can also reload a backgrounded tab from
+ * scratch mid-flow - sessionStorage doesn't survive either of those, which
+ * silently broke every page past the first (guest signup, profile form)
+ * since none of them fall back to the URL query param.
  */
 export function cacheTestEventPreviewToken(eventId: string, token: string) {
   try {
-    const raw = window.sessionStorage.getItem(testEventPreviewCacheKey);
+    const raw = window.localStorage.getItem(testEventPreviewCacheKey);
     const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
     parsed[eventId] = token;
-    window.sessionStorage.setItem(testEventPreviewCacheKey, JSON.stringify(parsed));
+    window.localStorage.setItem(testEventPreviewCacheKey, JSON.stringify(parsed));
   } catch {
     // Best-effort cache only.
   }
@@ -1064,7 +1071,7 @@ export function cacheTestEventPreviewToken(eventId: string, token: string) {
 export function getCachedTestEventPreviewToken(eventId: string | undefined): string | undefined {
   if (!eventId) return undefined;
   try {
-    const raw = window.sessionStorage.getItem(testEventPreviewCacheKey);
+    const raw = window.localStorage.getItem(testEventPreviewCacheKey);
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as Record<string, string>;
     return parsed[eventId];
