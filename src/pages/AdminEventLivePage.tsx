@@ -13,6 +13,7 @@ import {
   fetchAdminParticipantRatings,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
+  setCurrentRoundForSession,
   startFirstRound,
   subscribeToAdminEventModeChanges,
   updatePauseRequestStatus,
@@ -53,6 +54,7 @@ export default function AdminEventLivePage() {
   const [pauseRequests, setPauseRequests] = useState<EventPauseRequest[]>([]);
   const [pauseRequestsPanelOpen, setPauseRequestsPanelOpen] = useState(false);
   const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
+  const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
 
   const { applications } = useOperationalData({ admin: true, eventId });
   const eventApplications = useMemo(() => applications.filter((item) => item.eventId === eventId), [applications, eventId]);
@@ -215,6 +217,34 @@ export default function AdminEventLivePage() {
     }
   };
 
+  const handleSkipTimer = async () => {
+    if (!eventId || timerActionPending) return;
+    setTimerActionPending(true);
+    try {
+      await controlRoundTimer(eventId, 'skip');
+      setRoundProgress(await fetchAdminRoundProgress(eventId));
+    } catch (caughtError) {
+      setActionError(caughtError instanceof Error ? caughtError.message : '시간을 건너뛰지 못했습니다.');
+    } finally {
+      setTimerActionPending(false);
+    }
+  };
+
+  const handleJumpToRound = async (roundNumber: number) => {
+    if (!eventId || timerActionPending) return;
+    if (!window.confirm(`${roundNumber}라운드로 이동하시겠습니까? 현재 라운드 타이머는 일시정지 상태로 초기화됩니다.`)) return;
+    setTimerActionPending(true);
+    try {
+      await setCurrentRoundForSession(eventId, roundNumber);
+      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      setRoundJumpPanelOpen(false);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '라운드를 이동하지 못했습니다.');
+    } finally {
+      setTimerActionPending(false);
+    }
+  };
+
   const handleResolvePauseRequest = async (requestId: string) => {
     if (!eventId) return;
     try {
@@ -289,8 +319,11 @@ export default function AdminEventLivePage() {
 
         {isRoundStage ? (
           <RoundProgressSection
+            isTestEvent={event.isTestEvent}
             onOpenParticipantList={() => setParticipantListPanelOpen(true)}
             onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
+            onOpenRoundJump={() => setRoundJumpPanelOpen(true)}
+            onSkipTimer={() => void handleSkipTimer()}
             onToggleTimer={() => void handleToggleRoundTimer()}
             participantMedia={participantMedia}
             roundProgress={roundProgress}
@@ -417,6 +450,16 @@ export default function AdminEventLivePage() {
       {participantListPanelOpen && eventId ? (
         <ParticipantListPanel applications={eventApplications} eventId={eventId} onClose={() => setParticipantListPanelOpen(false)} />
       ) : null}
+
+      {roundJumpPanelOpen && roundProgress ? (
+        <RoundJumpPanel
+          currentRound={roundProgress.currentRound ?? 1}
+          onClose={() => setRoundJumpPanelOpen(false)}
+          onJump={(roundNumber) => void handleJumpToRound(roundNumber)}
+          pending={timerActionPending}
+          totalRounds={roundProgress.totalRounds}
+        />
+      ) : null}
     </main>
   );
 }
@@ -470,6 +513,23 @@ function PauseIcon() {
   );
 }
 
+function SkipForwardIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M5 5.5v13l9-6.5-9-6.5Z" />
+      <rect height="13" rx="1" width="2.4" x="16.5" y="5.5" />
+    </svg>
+  );
+}
+
+function SwapIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+      <path d="M4 8h13l-3-3M20 16H7l3 3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
 function RestartIcon() {
   return (
     <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
@@ -494,16 +554,22 @@ function SkipIcon() {
 }
 
 function RoundProgressSection({
+  isTestEvent,
   onOpenParticipantList,
   onOpenPauseRequests,
+  onOpenRoundJump,
+  onSkipTimer,
   onToggleTimer,
   participantMedia,
   roundProgress,
   timerActionPending,
   totalTables,
 }: {
+  isTestEvent: boolean;
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
+  onOpenRoundJump: () => void;
+  onSkipTimer: () => void;
   onToggleTimer: () => void;
   participantMedia: Map<string, PublicParticipantMediaRow>;
   roundProgress: RoundProgress | null;
@@ -531,6 +597,9 @@ function RoundProgressSection({
         <p className="text-[15px] font-black text-[#ef554a]">모든 라운드 종료</p>
         <p className="mt-2 text-[24px] font-black">수고하셨습니다</p>
         <p className="mt-3 text-[13px] font-bold text-[#999]">전체 {roundProgress.totalRounds}라운드가 모두 완료되었습니다</p>
+        <button className="mt-5 text-[13px] font-black text-meet-blue underline" onClick={onOpenRoundJump} type="button">
+          라운드 이동
+        </button>
       </section>
     );
   }
@@ -578,6 +647,17 @@ function RoundProgressSection({
               {roundProgress.timerStatus === 'running' ? <PauseIcon /> : <PlayIcon />}
               {roundProgress.timerStatus === 'running' ? '일시정지' : '재개'}
             </button>
+            {isTestEvent ? (
+              <button
+                className="mt-1.5 flex h-8 w-full items-center justify-center gap-1 rounded-[10px] bg-[#ef554a]/10 text-[11px] font-black text-[#ef554a] disabled:opacity-50"
+                disabled={timerActionPending}
+                onClick={onSkipTimer}
+                type="button"
+              >
+                <SkipForwardIcon />
+                시간 건너뛰기
+              </button>
+            ) : null}
           </div>
 
           <div className="min-w-0 rounded-[16px] border border-[#f0f0f0] p-3">
@@ -589,6 +669,11 @@ function RoundProgressSection({
             </dl>
           </div>
         </div>
+
+        <button className="mt-2.5 flex h-8 w-full items-center justify-center gap-1 text-[11px] font-black text-[#999]" onClick={onOpenRoundJump} type="button">
+          <SwapIcon />
+          라운드 이동
+        </button>
       </section>
 
       <section className="mt-4">
@@ -671,6 +756,60 @@ function StatRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between py-2.5">
       <span className="text-[#777]">{label}</span>
       <span className="text-[#1f292d]">{value}</span>
+    </div>
+  );
+}
+
+function RoundJumpPanel({
+  currentRound,
+  onClose,
+  onJump,
+  pending,
+  totalRounds,
+}: {
+  currentRound: number;
+  onClose: () => void;
+  onJump: (roundNumber: number) => void;
+  pending: boolean;
+  totalRounds: number;
+}) {
+  const roundNumbers = Array.from({ length: totalRounds }, (_, index) => index + 1);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[70vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">라운드 이동</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] font-bold text-[#999]">
+          행사가 예기치 않게 중단됐거나 진행 상황을 수동으로 맞춰야 할 때 사용하세요. 이동한 라운드의 타이머는 일시정지 상태로 시작됩니다.
+        </p>
+
+        <div className="mt-4 grid grid-cols-4 gap-2 pb-4">
+          {roundNumbers.map((roundNumber) => (
+            <button
+              className={[
+                'flex h-14 flex-col items-center justify-center rounded-[14px] border text-[13px] font-black transition active:scale-[0.97] disabled:opacity-50',
+                roundNumber === currentRound ? 'border-[#ef554a] bg-[#fff1ee] text-[#ef554a]' : 'border-[#e5e5e5] text-[#333]',
+              ].join(' ')}
+              disabled={pending}
+              key={roundNumber}
+              onClick={() => onJump(roundNumber)}
+              type="button"
+            >
+              {roundNumber}라운드
+              {roundNumber === currentRound ? <span className="mt-0.5 text-[10px] font-bold">현재</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

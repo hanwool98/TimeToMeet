@@ -1602,7 +1602,7 @@ export async function fetchAdminRoundProgress(eventId: string) {
   return mapRoundProgressJson(data as RoundProgressJson);
 }
 
-export type RoundTimerAction = 'pause' | 'resume';
+export type RoundTimerAction = 'pause' | 'resume' | 'skip';
 
 export async function controlRoundTimer(eventId: string, action: RoundTimerAction) {
   if (!supabase) throw new Error('Supabase is not configured.');
@@ -1612,6 +1612,20 @@ export async function controlRoundTimer(eventId: string, action: RoundTimerActio
   const { error } = await supabase.rpc('control_round_timer_for_session', {
     action,
     event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
+export async function setCurrentRoundForSession(eventId: string, roundNumber: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_current_round_for_session', {
+    event_id_value: eventId,
+    round_number_value: roundNumber,
     session_token: adminSession.token,
   });
 
