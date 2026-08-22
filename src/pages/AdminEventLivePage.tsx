@@ -545,28 +545,32 @@ function RoundProgressSection({
 
   return (
     <>
-      <section className="relative mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
-        <button
-          className="absolute right-4 top-4 z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
-          onClick={onOpenPauseRequests}
-          type="button"
-        >
-          <BellIcon />
-          {roundProgress.pendingPauseCount > 0 ? (
-            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
-              {roundProgress.pendingPauseCount}
-            </span>
-          ) : null}
-        </button>
-
-        <div className="grid grid-cols-[1.2fr_1fr] gap-2.5">
-          <div className="min-w-0 rounded-[16px] bg-[#fff8f5] p-3 pr-11">
+      <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <h2 className="truncate text-[14px] font-black leading-tight">{roundProgress.currentRound ?? 1}라운드 진행 중</h2>
-            <span className="mt-1.5 inline-block rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
-            <p className="mt-3 text-[11px] font-bold text-[#999]">남은 시간</p>
-            <p className="mt-0.5 text-[32px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
+            <span className="shrink-0 rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
+          </div>
+          <button
+            className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
+            onClick={onOpenPauseRequests}
+            type="button"
+          >
+            <BellIcon />
+            {roundProgress.pendingPauseCount > 0 ? (
+              <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
+                {roundProgress.pendingPauseCount}
+              </span>
+            ) : null}
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-[1.15fr_1fr] items-stretch gap-2.5">
+          <div className="min-w-0 rounded-[16px] bg-[#fff8f5] p-3">
+            <p className="text-[11px] font-bold text-[#999]">남은 시간</p>
+            <p className="mt-0.5 text-[28px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
             <button
-              className="mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-[10px] border border-[#ef554a] text-[12px] font-black text-[#ef554a] disabled:opacity-50"
+              className="mt-2.5 flex h-9 w-full items-center justify-center gap-1 rounded-[10px] border border-[#ef554a] text-[12px] font-black text-[#ef554a] disabled:opacity-50"
               disabled={timerActionPending}
               onClick={onToggleTimer}
               type="button"
