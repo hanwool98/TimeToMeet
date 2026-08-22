@@ -1713,6 +1713,9 @@ export async function updatePauseRequestStatus(requestId: string, status: EventP
 export interface ParticipantRoundProgress {
   currentRound?: number;
   ok: boolean;
+  partnerAge?: number;
+  partnerApplicationId?: string;
+  partnerJob?: string;
   partnerNickname?: string;
   roundPhase?: 'conversation' | 'transition';
   // undefined stage means the operator hasn't pressed 행사 시작 yet (no
@@ -1738,6 +1741,9 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   const row = data as {
     currentRound?: number;
     ok: boolean;
+    partnerAge?: number | null;
+    partnerApplicationId?: string | null;
+    partnerJob?: string | null;
     partnerNickname?: string | null;
     roundPhase?: 'conversation' | 'transition' | null;
     stage?: EventProgressStage | null;
@@ -1751,6 +1757,9 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   return {
     currentRound: row.currentRound ?? undefined,
     ok: true,
+    partnerAge: row.partnerAge ?? undefined,
+    partnerApplicationId: row.partnerApplicationId ?? undefined,
+    partnerJob: row.partnerJob ?? undefined,
     partnerNickname: row.partnerNickname ?? undefined,
     roundPhase: row.roundPhase ?? undefined,
     stage: row.stage ?? undefined,
@@ -1782,6 +1791,7 @@ export async function createParticipantPauseRequest(
 }
 
 export interface ParticipantRating {
+  memo?: string;
   partnerApplicationId: string;
   partnerNickname: string;
   roundNumber: number;
@@ -1801,13 +1811,68 @@ export async function fetchAdminParticipantRatings(eventId: string, applicationI
 
   if (error) throw error;
   return (
-    data as Array<{ partner_application_id: string; partner_nickname: string; round_number: number; score: number }>
+    data as Array<{
+      memo: string | null;
+      partner_application_id: string;
+      partner_nickname: string;
+      round_number: number;
+      score: number;
+    }>
   ).map((row) => ({
+    memo: row.memo ?? undefined,
     partnerApplicationId: row.partner_application_id,
     partnerNickname: row.partner_nickname,
     roundNumber: row.round_number,
     score: row.score,
   })) satisfies ParticipantRating[];
+}
+
+export interface MyRoundRating {
+  memo?: string;
+  score?: number;
+}
+
+export async function fetchMyRoundRating(eventId: string, roundNumber: number): Promise<MyRoundRating> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return {};
+
+  const { data, error } = await supabase.rpc('get_my_round_rating', {
+    event_id_value: eventId,
+    round_number_value: roundNumber,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean; score?: number | null; memo?: string | null };
+  if (!row?.ok) return {};
+  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
+}
+
+export async function submitRoundRating(eventId: string, roundNumber: number, score: number, memo: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('submit_round_rating', {
+    event_id_value: eventId,
+    memo_value: memo.trim() || null,
+    round_number_value: roundNumber,
+    score_value: score,
+    session_token: session.token,
+  });
+  if (error) throw error;
+}
+
+export async function fetchParticipantPartnerPhoto(eventId: string): Promise<string | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return null;
+
+  const { data, error } = await supabase.functions.invoke('participant-partner-photo', {
+    body: { eventId, sessionToken: session.token },
+  });
+  if (error) throw error;
+  return (data as { ok: boolean; photoUrl: string | null })?.photoUrl ?? null;
 }
 
 export async function endAdminEvent(eventId: string) {

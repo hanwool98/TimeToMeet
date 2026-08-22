@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import HeartRatingInput from '../components/HeartRatingInput';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   createParticipantPauseRequest,
   fetchMyEventTickets,
+  fetchMyRoundRating,
+  fetchParticipantPartnerPhoto,
   fetchParticipantRoundProgress,
+  submitRoundRating,
   type MyEventTicket,
   type ParticipantRoundProgress,
 } from '../services/supabaseApplications';
@@ -132,7 +136,7 @@ function ParticipantEventScreen({
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'transition') {
-    return <TransitionScreen onBack={onBack} />;
+    return <RatingScreen eventId={eventId} onBack={onBack} progress={progress} />;
   }
 
   return (
@@ -150,15 +154,16 @@ function ParticipantEventScreen({
   );
 }
 
-function ScreenHeader({ onBack }: { onBack: () => void }) {
+function ScreenHeader({ onBack, title }: { onBack: () => void; title?: string }) {
   const navigate = useNavigate();
   return (
-    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between">
-      <button aria-label="뒤로가기" className="grid h-10 w-10 place-items-center text-[#333]" onClick={onBack} type="button">
+    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2">
+      <button aria-label="뒤로가기" className="grid h-10 w-10 shrink-0 place-items-center text-[#333]" onClick={onBack} type="button">
         <BackIcon />
       </button>
+      {title ? <h1 className="min-w-0 flex-1 truncate text-center text-[18px] font-black">{title}</h1> : <span className="flex-1" />}
       <button
-        className="rounded-[10px] border border-[#e5e5e5] px-3 py-2 text-[13px] font-black text-[#777]"
+        className="shrink-0 rounded-[10px] border border-[#e5e5e5] px-3 py-2 text-[13px] font-black text-[#777]"
         onClick={() => navigate('/my-events')}
         type="button"
       >
@@ -368,18 +373,189 @@ function ConversationScreen({
   );
 }
 
-// The 2분 이동 및 호감도 작성 phase gets its own real screen later - this is
-// just enough to prove the phase-driven auto-switch works end to end.
-function TransitionScreen({ onBack }: { onBack: () => void }) {
+const ratingMemoMaxLength = 200;
+
+function ratingCopy(score: number): { subtitle: string; title: string } {
+  if (score <= 1) return { subtitle: '조금 더 시간을 가져봐도 좋을 것 같아요.', title: '아직은 잘 모르겠어요' };
+  if (score <= 2) return { subtitle: '다음에 또 이야기해보고 싶어요.', title: '조금 더 알아가면 좋을 것 같아요' };
+  if (score <= 3) return { subtitle: '무난하고 좋은 시간이었어요.', title: '편안한 대화였어요' };
+  if (score <= 4) return { subtitle: '다시 만나면 반가울 것 같아요.', title: '좋은 인상을 받았어요!' };
+  if (score < 5) return { subtitle: '한 번 더 대화하고 싶은 마음이에요.', title: '한 번 더 대화하고 싶어요!' };
+  return { subtitle: '정말 특별한 느낌이었어요.', title: '내가 찾던 사람이에요!' };
+}
+
+// 2분 이동 및 호감도 작성 phase: the participant rates the partner they were
+// just matched with (progress.roundPhase === 'transition' still resolves to
+// that just-finished round's match, since current_round only advances once
+// this phase itself expires). Editing is allowed for as long as the server
+// still reports this same round as current - submit_round_rating enforces
+// that server-side too, so a stale tab can't sneak in a late edit.
+function RatingScreen({
+  eventId,
+  onBack,
+  progress,
+}: {
+  eventId: string;
+  onBack: () => void;
+  progress: ParticipantRoundProgress;
+}) {
+  const roundNumber = progress.currentRound ?? 1;
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [score, setScore] = useState<number | null>(null);
+  const [memo, setMemo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [toast, setToast] = useState('');
+  const toastTimerRef = useRef<number | undefined>(undefined);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  // Reloads on (eventId, roundNumber) change - covers first entry, refresh,
+  // AND the rare case of landing back on this phase for a new round without
+  // a full page reload in between.
+  useEffect(() => {
+    let active = true;
+    setScore(null);
+    setMemo('');
+    setPhotoUrl(null);
+    void fetchParticipantPartnerPhoto(eventId)
+      .then((url) => {
+        if (active) setPhotoUrl(url);
+      })
+      .catch(() => undefined);
+    void fetchMyRoundRating(eventId, roundNumber)
+      .then((existing) => {
+        if (!active) return;
+        if (existing.score !== undefined) setScore(existing.score);
+        if (existing.memo) setMemo(existing.memo);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [eventId, roundNumber]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const phaseDuration = phaseDurationSeconds('transition');
+  const remaining = Math.max(
+    0,
+    phaseDuration -
+      computeLiveElapsedSeconds(
+        {
+          timerPositionSeconds: progress.timerPositionSeconds ?? 0,
+          timerStatus: progress.timerStatus ?? 'paused',
+          timerUpdatedAt: progress.timerUpdatedAt,
+        },
+        nowTick,
+      ),
+  );
+
+  const handleSubmit = async () => {
+    if (score === null || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await submitRoundRating(eventId, roundNumber, score, memo);
+      window.clearTimeout(toastTimerRef.current);
+      setToast('저장되었습니다');
+      toastTimerRef.current = window.setTimeout(() => setToast(''), toastDisplayMs);
+    } catch (caughtError) {
+      setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const copy = score !== null ? ratingCopy(score) : null;
+
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
-      <ScreenHeader onBack={onBack} />
-      <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
-        <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
-          <p className="text-[18px] font-black leading-tight">호감도 작성 및 자리 이동 중이에요</p>
-          <p className="mt-3 text-[14px] font-extrabold text-[#888]">잠시 후 다음 라운드 대화가 시작됩니다</p>
+      <ScreenHeader onBack={onBack} title="호감도 작성" />
+
+      <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+          <p className="text-center text-[17px] font-black leading-snug">
+            지금 대화를 나눈 분에게
+            <br />
+            호감도를 남겨주세요 💗
+          </p>
+
+          <div className="mt-4 aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-[#f5f7fa]">
+            {photoUrl ? (
+              <img alt="" className="h-full w-full object-cover" src={photoUrl} />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[#c3cad1]">
+                <PersonPlaceholderGlyph />
+              </div>
+            )}
+          </div>
+
+          <p className="mt-3 text-center text-[16px] font-black">
+            {[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+              .filter(Boolean)
+              .join(' / ')}
+          </p>
+
+          <p className="mt-6 text-center text-[15px] font-black text-[#333]">마음에 드셨나요?</p>
+          <HeartRatingInput onChange={setScore} value={score} />
+          {score !== null ? (
+            <p className="mx-auto mt-1 w-fit rounded-full bg-[#fdeef2] px-3 py-1 text-[13px] font-black text-[#ef4d7a]">
+              {score.toFixed(1)}/5 선택
+            </p>
+          ) : null}
+
+          {copy ? (
+            <div className="mt-4 rounded-[16px] bg-[#fdeef2] px-4 py-3 text-center">
+              <p className="text-[14px] font-black text-[#ef4d7a]">{copy.title}</p>
+              <p className="mt-1 text-[12px] font-bold text-[#c77b93]">{copy.subtitle}</p>
+            </div>
+          ) : null}
+
+          <div className="mt-5">
+            <label className="text-[13px] font-black text-[#555]" htmlFor="rating-memo">
+              메모
+            </label>
+            <textarea
+              className="mt-1.5 h-20 w-full resize-none rounded-[14px] border border-[#eee] bg-[#f9fafb] p-3 text-[14px] font-bold outline-none"
+              id="rating-memo"
+              maxLength={ratingMemoMaxLength}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="상대방에 대한 메모를 작성해보세요 (선택)"
+              value={memo}
+            />
+            <p className="mt-1 text-right text-[11px] font-bold text-[#aaa]">
+              {memo.length}/{ratingMemoMaxLength}
+            </p>
+          </div>
+
+          {submitError ? <p className="mt-2 text-center text-[12px] font-bold text-[#ef554a]">{submitError}</p> : null}
+
+          <button
+            className="mt-2 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+            disabled={score === null || submitting}
+            onClick={() => void handleSubmit()}
+            type="button"
+          >
+            제출하기
+          </button>
         </section>
+
+        {progress.timerUpdatedAt ? (
+          <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
+            <ClockGlyph />
+            다음 라운드 진행까지 <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
+          </p>
+        ) : null}
       </div>
+
+      <ToastBanner toast={toast} />
     </div>
   );
 }
@@ -465,6 +641,15 @@ function ChairGlyph() {
         strokeWidth="1.8"
       />
       <path d="M6.5 14 6 20M17.5 14l.5 6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function PersonPlaceholderGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-12 w-12" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="8.5" r="3.6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
     </svg>
   );
 }

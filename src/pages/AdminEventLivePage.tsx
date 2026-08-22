@@ -821,15 +821,18 @@ function ParticipantListPanel({
             ) : (
               <div className="mt-3 space-y-2 pb-6">
                 {ratings.map((rating) => (
-                  <div className="flex items-center justify-between rounded-[14px] border border-[#f0f0f0] px-4 py-3" key={rating.roundNumber}>
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-bold text-[#999]">{rating.roundNumber}라운드</p>
-                      <p className="truncate text-[14px] font-black">{rating.partnerNickname}</p>
+                  <div className="rounded-[14px] border border-[#f0f0f0] px-4 py-3" key={rating.roundNumber}>
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-bold text-[#999]">{rating.roundNumber}라운드</p>
+                        <p className="truncate text-[14px] font-black">{rating.partnerNickname}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <HeartRating score={rating.score} />
+                        <span className="text-[13px] font-black text-[#ef4d7a]">{rating.score.toFixed(1)}</span>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <HeartRating score={rating.score} />
-                      <span className="text-[13px] font-black text-[#ef4d7a]">{rating.score.toFixed(1)}</span>
-                    </div>
+                    {rating.memo ? <p className="mt-2 whitespace-pre-wrap text-[12px] font-bold text-[#888]">{rating.memo}</p> : null}
                   </div>
                 ))}
               </div>
