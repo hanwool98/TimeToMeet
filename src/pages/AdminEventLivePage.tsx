@@ -295,6 +295,7 @@ export default function AdminEventLivePage() {
             participantMedia={participantMedia}
             roundProgress={roundProgress}
             timerActionPending={timerActionPending}
+            totalTables={tabletRequired}
           />
         ) : progress.stage === 'ended' ? (
           <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
@@ -499,6 +500,7 @@ function RoundProgressSection({
   participantMedia,
   roundProgress,
   timerActionPending,
+  totalTables,
 }: {
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
@@ -506,6 +508,7 @@ function RoundProgressSection({
   participantMedia: Map<string, PublicParticipantMediaRow>;
   roundProgress: RoundProgress | null;
   timerActionPending: boolean;
+  totalTables: number;
 }) {
   const [nowTick, setNowTick] = useState(() => Date.now());
 
@@ -537,59 +540,67 @@ function RoundProgressSection({
   const remaining = Math.max(0, phaseDuration - liveElapsed);
   const phaseLabel = roundProgress.roundPhase === 'transition' ? '이동 및 호감도 작성' : '10분 대화';
 
+  const matchByTable = new Map(roundProgress.matches.map((match) => [match.tableNumber, match]));
+  const tableNumbers = Array.from({ length: Math.max(totalTables, roundProgress.matches.length) }, (_, index) => index + 1);
+
   return (
     <>
-      <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-5 shadow-calendar">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h2 className="text-[19px] font-black leading-tight">{roundProgress.currentRound ?? 1}라운드 진행 중</h2>
-            <span className="shrink-0 rounded-[8px] bg-[#fff1ee] px-2.5 py-1 text-[12px] font-black text-[#ef554a]">{phaseLabel}</span>
-          </div>
-          <button className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]" onClick={onOpenPauseRequests} type="button">
-            <BellIcon />
-            {roundProgress.pendingPauseCount > 0 ? (
-              <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
-                {roundProgress.pendingPauseCount}
-              </span>
-            ) : null}
-          </button>
-        </div>
-
-        <p className="mt-5 text-center text-[13px] font-bold text-[#999]">남은 시간</p>
-        <p className="mt-1 text-center text-[52px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
-
+      <section className="relative mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
         <button
-          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-[#ef554a] text-[15px] font-black text-[#ef554a] disabled:opacity-50"
-          disabled={timerActionPending}
-          onClick={onToggleTimer}
+          className="absolute right-4 top-4 z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
+          onClick={onOpenPauseRequests}
           type="button"
         >
-          {roundProgress.timerStatus === 'running' ? <PauseIcon /> : <PlayIcon />}
-          {roundProgress.timerStatus === 'running' ? '일시정지' : '재개'}
+          <BellIcon />
+          {roundProgress.pendingPauseCount > 0 ? (
+            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
+              {roundProgress.pendingPauseCount}
+            </span>
+          ) : null}
         </button>
+
+        <div className="grid grid-cols-[1.2fr_1fr] gap-2.5">
+          <div className="min-w-0 rounded-[16px] bg-[#fff8f5] p-3 pr-11">
+            <h2 className="truncate text-[14px] font-black leading-tight">{roundProgress.currentRound ?? 1}라운드 진행 중</h2>
+            <span className="mt-1.5 inline-block rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
+            <p className="mt-3 text-[11px] font-bold text-[#999]">남은 시간</p>
+            <p className="mt-0.5 text-[32px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
+            <button
+              className="mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-[10px] border border-[#ef554a] text-[12px] font-black text-[#ef554a] disabled:opacity-50"
+              disabled={timerActionPending}
+              onClick={onToggleTimer}
+              type="button"
+            >
+              {roundProgress.timerStatus === 'running' ? <PauseIcon /> : <PlayIcon />}
+              {roundProgress.timerStatus === 'running' ? '일시정지' : '재개'}
+            </button>
+          </div>
+
+          <div className="min-w-0 rounded-[16px] border border-[#f0f0f0] p-3">
+            <h3 className="text-[12px] font-black">전체 진행 현황</h3>
+            <dl className="mt-2 space-y-2 text-[12px] font-bold">
+              <StatRow label="총 참가자" value={`${roundProgress.totalParticipants}명`} />
+              <StatRow label="진행 테이블" value={`${roundProgress.activeTables}개`} />
+              <StatRow label="완료 라운드" value={`${roundProgress.completedRounds}/${roundProgress.totalRounds}`} />
+            </dl>
+          </div>
+        </div>
       </section>
 
-      <section className="mt-4 rounded-[20px] border border-[#f0f0f0] bg-white p-5">
-        <h3 className="text-[15px] font-black">전체 진행 현황</h3>
-        <dl className="mt-3 divide-y divide-[#f2f2f2] text-[14px] font-bold">
-          <StatRow label="총 참가자" value={`${roundProgress.totalParticipants}명`} />
-          <StatRow label="진행 테이블" value={`${roundProgress.activeTables}개`} />
-          <StatRow label="완료 라운드" value={`${roundProgress.completedRounds} / ${roundProgress.totalRounds}`} />
-        </dl>
-      </section>
-
-      <section className="mt-6">
-        <h3 className="text-[16px] font-black">테이블 현황</h3>
-        <p className="mt-1 text-[12px] font-bold text-[#999]">각 테이블의 현재 대화 상대를 확인하세요</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {roundProgress.matches.map((match) => (
-            <TableMatchCard key={match.tableNumber} match={match} participantMedia={participantMedia} />
+      <section className="mt-4">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-[15px] font-black">테이블 현황</h3>
+          <p className="text-[11px] font-bold text-[#999]">각 테이블의 현재 대화 상대</p>
+        </div>
+        <div className="mt-2.5 grid grid-cols-3 gap-2">
+          {tableNumbers.map((tableNumber) => (
+            <TableMatchCard key={tableNumber} match={matchByTable.get(tableNumber)} participantMedia={participantMedia} tableNumber={tableNumber} />
           ))}
         </div>
       </section>
 
       <button
-        className="mt-6 flex h-14 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
+        className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
         onClick={onOpenParticipantList}
         type="button"
       >
@@ -599,7 +610,7 @@ function RoundProgressSection({
 
       <p className="mt-4 flex items-center gap-2 rounded-[12px] bg-[#f5f5f5] px-4 py-3 text-[12px] font-bold text-[#888]">
         <InfoIcon />
-        각 테이블의 시간은 실시간으로 동기화됩니다
+        타이머는 모든 테이블에 실시간으로 동기화됩니다
       </p>
     </>
   );
@@ -608,32 +619,43 @@ function RoundProgressSection({
 function TableMatchCard({
   match,
   participantMedia,
+  tableNumber,
 }: {
-  match: RoundProgress['matches'][number];
+  match: RoundProgress['matches'][number] | undefined;
   participantMedia: Map<string, PublicParticipantMediaRow>;
+  tableNumber: number;
 }) {
+  if (!match) {
+    return (
+      <div className="flex min-h-[92px] flex-col items-center justify-center rounded-[12px] border border-dashed border-[#e5d9d3] bg-[#fafafa] p-2 text-center">
+        <p className="text-[11px] font-black text-[#bbb]">{tableNumber}번</p>
+        <p className="mt-1 text-[10px] font-bold text-[#bbb]">배정 대기</p>
+      </div>
+    );
+  }
+
   const malePhoto = (match.maleApplicationId ? participantMedia.get(match.maleApplicationId)?.photoUrl : undefined) ?? undefined;
   const femalePhoto = (match.femaleApplicationId ? participantMedia.get(match.femaleApplicationId)?.photoUrl : undefined) ?? undefined;
 
   return (
-    <div className="rounded-[16px] border border-[#f0f0f0] bg-white p-3">
-      <p className="text-center text-[13px] font-black text-[#999]">{match.tableNumber}번</p>
-      <div className="mt-2 flex items-center justify-center -space-x-2">
-        <PhotoAvatar fallbackColor="#5aa7e9" photoUrl={malePhoto} />
-        <PhotoAvatar fallbackColor="#ef8fa0" photoUrl={femalePhoto} />
+    <div className="rounded-[12px] border border-[#f0f0f0] bg-white p-2">
+      <p className="text-center text-[11px] font-black text-[#999]">{tableNumber}번</p>
+      <div className="mt-1 flex items-center justify-center -space-x-1.5">
+        <PhotoAvatar fallbackColor="#5aa7e9" photoUrl={malePhoto} size={30} />
+        <PhotoAvatar fallbackColor="#ef8fa0" photoUrl={femalePhoto} size={30} />
       </div>
-      <p className="mt-2 truncate text-center text-[13px] font-black">
-        {match.maleNickname ?? '미배정'} · {match.femaleNickname ?? '미배정'}
+      <p className="mt-1 truncate text-center text-[10.5px] font-black">
+        {match.maleNickname ?? '대기'} · {match.femaleNickname ?? '대기'}
       </p>
     </div>
   );
 }
 
-function PhotoAvatar({ fallbackColor, photoUrl }: { fallbackColor: string; photoUrl?: string }) {
+function PhotoAvatar({ fallbackColor, photoUrl, size = 48 }: { fallbackColor: string; photoUrl?: string; size?: number }) {
   return (
     <span
-      className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-white"
-      style={{ backgroundColor: `${fallbackColor}22` }}
+      className="grid shrink-0 place-items-center overflow-hidden rounded-full border-2 border-white"
+      style={{ backgroundColor: `${fallbackColor}22`, height: size, width: size }}
     >
       {photoUrl ? <img alt="" className="h-full w-full object-cover" src={photoUrl} /> : <PersonGlyph color={fallbackColor} />}
     </span>
