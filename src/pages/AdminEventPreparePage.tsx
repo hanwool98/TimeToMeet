@@ -58,11 +58,15 @@ export default function AdminEventPreparePage() {
 
   const handleStart = async () => {
     if (!eventId || starting) return;
+    if (eventStarted) {
+      navigate(`/admin/events/${eventId}/live`);
+      return;
+    }
     setStarting(true);
     setStartError('');
     try {
       await startAdminEvent(eventId);
-      await load();
+      navigate(`/admin/events/${eventId}/live`);
     } catch (caughtError) {
       setStartError(caughtError instanceof Error ? caughtError.message : '행사를 시작하지 못했습니다.');
     } finally {
@@ -206,11 +210,11 @@ export default function AdminEventPreparePage() {
               'flex h-16 w-full items-center justify-center gap-3 rounded-[14px] text-[20px] font-black text-white shadow-sm transition active:scale-[0.99]',
               eventStarted ? 'cursor-default bg-[#8fae7f]' : operationsActive ? 'bg-[#ef4039]' : 'cursor-not-allowed bg-[#e2c3bc]',
             ].join(' ')}
-            disabled={!operationsActive || starting || eventStarted}
+            disabled={!operationsActive || starting}
             onClick={() => void handleStart()}
             type="button"
           >
-            {eventStarted ? '행사 진행 중' : starting ? '시작하는 중' : '행사 시작'}
+            {eventStarted ? '행사 진행 중 · 이어서 보기' : starting ? '시작하는 중' : '행사 시작'}
           </button>
         </div>
       </div>

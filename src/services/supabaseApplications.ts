@@ -1405,6 +1405,136 @@ export async function startAdminEvent(eventId: string) {
   return data as string;
 }
 
+export type EventProgressStage = 'ended' | 'intro_video' | 'round_active' | 'round_waiting' | 'seat_guide';
+export type IntroVideoAction = 'complete' | 'pause' | 'play' | 'restart' | 'skip';
+
+export interface EventProgress {
+  currentRound?: number;
+  introVideoCompletedAt?: string;
+  introVideoDescription?: string;
+  introVideoPositionSeconds: number;
+  introVideoStatus: 'paused' | 'playing';
+  introVideoTitle?: string;
+  introVideoUpdatedAt?: string;
+  introVideoUrl?: string;
+  stage: EventProgressStage;
+}
+
+export type TabletEventProgress = { ok: false } | ({ ok: true } & EventProgress);
+
+interface EventProgressRow {
+  current_round: number | null;
+  intro_video_completed_at: string | null;
+  intro_video_description: string | null;
+  intro_video_position_seconds: number;
+  intro_video_status: 'paused' | 'playing';
+  intro_video_title: string | null;
+  intro_video_updated_at: string | null;
+  intro_video_url: string | null;
+  stage: EventProgressStage;
+}
+
+function mapEventProgressRow(row: EventProgressRow): EventProgress {
+  return {
+    currentRound: row.current_round ?? undefined,
+    introVideoCompletedAt: row.intro_video_completed_at ?? undefined,
+    introVideoDescription: row.intro_video_description ?? undefined,
+    introVideoPositionSeconds: row.intro_video_position_seconds,
+    introVideoStatus: row.intro_video_status,
+    introVideoTitle: row.intro_video_title ?? undefined,
+    introVideoUpdatedAt: row.intro_video_updated_at ?? undefined,
+    introVideoUrl: row.intro_video_url ?? undefined,
+    stage: row.stage,
+  };
+}
+
+export async function fetchAdminEventProgress(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_progress', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('행사 진행 상태를 불러오지 못했습니다.');
+  return mapEventProgressRow(row as EventProgressRow);
+}
+
+export async function fetchEventProgressForTablet(eventId: string, tableNumber: number, connectionToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_event_progress_for_tablet', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.ok) return { ok: false } satisfies TabletEventProgress;
+  return { ok: true, ...mapEventProgressRow(row as EventProgressRow) } satisfies TabletEventProgress;
+}
+
+export type IntroVideoControlResult = Pick<
+  EventProgress,
+  'introVideoCompletedAt' | 'introVideoPositionSeconds' | 'introVideoStatus' | 'introVideoUpdatedAt' | 'stage'
+>;
+
+export async function controlEventIntroVideo(eventId: string, action: IntroVideoAction) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('control_event_intro_video_for_session', {
+    action,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('영상 상태를 변경하지 못했습니다.');
+  return {
+    introVideoCompletedAt: row.intro_video_completed_at ?? undefined,
+    introVideoPositionSeconds: row.intro_video_position_seconds,
+    introVideoStatus: row.intro_video_status,
+    introVideoUpdatedAt: row.intro_video_updated_at ?? undefined,
+    stage: row.stage,
+  } satisfies IntroVideoControlResult;
+}
+
+export async function startFirstRound(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('start_first_round_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return data as number;
+}
+
+export async function endAdminEvent(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('end_admin_event_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return data as string;
+}
+
 export async function dismissPaymentInvitation(invitationId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();

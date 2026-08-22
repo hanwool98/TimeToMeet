@@ -7,8 +7,16 @@ import EventCard from './components/EventCard';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
 
-const initialSelectedDate = new Date(2026, 7, 16);
-const today = new Date(2026, 7, 3);
+const KOREA_TIME_ZONE = 'Asia/Seoul';
+
+function getKoreaToday() {
+  const formatter = new Intl.DateTimeFormat('en-CA', { day: '2-digit', month: '2-digit', timeZone: KOREA_TIME_ZONE, year: 'numeric' });
+  const parts = formatter.formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? '1970');
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? '1');
+  const day = Number(parts.find((part) => part.type === 'day')?.value ?? '1');
+  return new Date(year, month - 1, day);
+}
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -25,8 +33,9 @@ function formatKoreanDate(date: Date) {
 export default function App() {
   const navigate = useNavigate();
   const eventCardRef = useRef<HTMLDivElement>(null);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 7, 1));
-  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+  const [today] = useState(getKoreaToday);
+  const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(() => today);
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
