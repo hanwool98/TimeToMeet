@@ -10,6 +10,7 @@ import {
   fetchAdminEventModeSummaries,
   fetchAdminEventParticipantMedia,
   fetchAdminEventProgress,
+  fetchAdminMutualRatings,
   fetchAdminParticipantRatings,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
@@ -21,6 +22,7 @@ import {
   type EventPauseRequest,
   type EventProgress,
   type IntroVideoAction,
+  type MutualRating,
   type ParticipantRating,
   type PublicParticipantMediaRow,
   type RoundProgress,
@@ -55,6 +57,7 @@ export default function AdminEventLivePage() {
   const [pauseRequestsPanelOpen, setPauseRequestsPanelOpen] = useState(false);
   const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
   const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
+  const [mutualRatingsPanelOpen, setMutualRatingsPanelOpen] = useState(false);
 
   const { applications } = useOperationalData({ admin: true, eventId });
   const eventApplications = useMemo(() => applications.filter((item) => item.eventId === eventId), [applications, eventId]);
@@ -320,6 +323,7 @@ export default function AdminEventLivePage() {
         {isRoundStage ? (
           <RoundProgressSection
             isTestEvent={event.isTestEvent}
+            onOpenMutualRatings={() => setMutualRatingsPanelOpen(true)}
             onOpenParticipantList={() => setParticipantListPanelOpen(true)}
             onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
             onOpenRoundJump={() => setRoundJumpPanelOpen(true)}
@@ -460,6 +464,10 @@ export default function AdminEventLivePage() {
           totalRounds={roundProgress.totalRounds}
         />
       ) : null}
+
+      {mutualRatingsPanelOpen && eventId ? (
+        <MutualRatingsPanel eventId={eventId} onClose={() => setMutualRatingsPanelOpen(false)} />
+      ) : null}
     </main>
   );
 }
@@ -555,6 +563,7 @@ function SkipIcon() {
 
 function RoundProgressSection({
   isTestEvent,
+  onOpenMutualRatings,
   onOpenParticipantList,
   onOpenPauseRequests,
   onOpenRoundJump,
@@ -566,6 +575,7 @@ function RoundProgressSection({
   totalTables,
 }: {
   isTestEvent: boolean;
+  onOpenMutualRatings: () => void;
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
   onOpenRoundJump: () => void;
@@ -688,14 +698,24 @@ function RoundProgressSection({
         </div>
       </section>
 
-      <button
-        className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
-        onClick={onOpenParticipantList}
-        type="button"
-      >
-        <PeopleIcon />
-        참가자 리스트
-      </button>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <button
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
+          onClick={onOpenParticipantList}
+          type="button"
+        >
+          <PeopleIcon />
+          참가자 리스트
+        </button>
+        <button
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
+          onClick={onOpenMutualRatings}
+          type="button"
+        >
+          <HeartOutlineIcon />
+          호감도 확인
+        </button>
+      </div>
 
       <p className="mt-4 flex items-center gap-2 rounded-[12px] bg-[#f5f5f5] px-4 py-3 text-[12px] font-bold text-[#888]">
         <InfoIcon />
@@ -809,6 +829,80 @@ function RoundJumpPanel({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MutualRatingsPanel({ eventId, onClose }: { eventId: string; onClose: () => void }) {
+  const [ratings, setRatings] = useState<MutualRating[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    void fetchAdminMutualRatings(eventId)
+      .then((data) => {
+        if (active) setRatings(data);
+      })
+      .catch((caughtError) => {
+        if (active) setError(caughtError instanceof Error ? caughtError.message : '호감도를 불러오지 못했습니다.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">호감도 확인</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] font-bold text-[#999]">실제로 만난 조합의 상호 호감도이며, 합계가 높은 순으로 정렬됩니다.</p>
+
+        {!ratings && !error ? <p className="mt-8 text-center text-[13px] font-bold text-[#999]">불러오는 중</p> : null}
+        {error ? <p className="mt-8 text-center text-[13px] font-bold text-[#ef554a]">{error}</p> : null}
+        {ratings && ratings.length === 0 ? (
+          <p className="mt-8 text-center text-[13px] font-bold text-[#999]">아직 대화한 조합이 없습니다</p>
+        ) : null}
+
+        {ratings && ratings.length > 0 ? (
+          <div className="mt-4 space-y-2 pb-4">
+            <div className="grid grid-cols-[1fr_40px_56px_40px_1fr] items-center gap-1 px-1 text-[10px] font-bold text-[#bbb]">
+              <span className="text-right">남</span>
+              <span className="text-center">남→여</span>
+              <span className="text-center">합계</span>
+              <span className="text-center">여→남</span>
+              <span className="text-left">여</span>
+            </div>
+            {ratings.map((row) => (
+              <div
+                className="grid grid-cols-[1fr_40px_56px_40px_1fr] items-center gap-1 rounded-[14px] border border-[#f0f0f0] px-2 py-3"
+                key={`${row.maleApplicationId}-${row.femaleApplicationId}`}
+              >
+                <p className="truncate text-right text-[13px] font-black text-[#4f7fd1]">{row.maleNickname}</p>
+                <p className="text-center text-[12px] font-bold text-[#999]">{row.maleToFemaleScore?.toFixed(1) ?? '미작성'}</p>
+                <p
+                  className={[
+                    'text-center font-black tabular-nums',
+                    row.total !== undefined ? 'text-[19px] text-[#ef4d7a]' : 'text-[11px] text-[#bbb]',
+                  ].join(' ')}
+                >
+                  {row.total !== undefined ? row.total.toFixed(1) : '미확정'}
+                </p>
+                <p className="text-center text-[12px] font-bold text-[#999]">{row.femaleToMaleScore?.toFixed(1) ?? '미작성'}</p>
+                <p className="truncate text-left text-[13px] font-black text-[#ef7a9a]">{row.femaleNickname}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1069,6 +1163,20 @@ function PeopleIcon() {
       <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="17" cy="9.5" r="2.4" stroke="currentColor" strokeWidth="1.8" />
       <path d="M3 20c.8-3.2 3-5 6-5s5.2 1.8 6 5M15.5 15.5c2.3.2 3.8 1.7 4.5 4.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function HeartOutlineIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M12 20.5s-7.5-4.6-10-9.2C.4 8 2 4.5 5.4 3.8c2-.4 4 .5 5.1 2.3.4.6.9.6 1.3 0 1.1-1.8 3.1-2.7 5.1-2.3C20.3 4.5 21.9 8 20.4 11.3 17.5 15.9 12 20.5 12 20.5Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
     </svg>
   );
 }

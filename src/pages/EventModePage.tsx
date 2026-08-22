@@ -127,8 +127,21 @@ function ParticipantEventScreen({
     );
   }
 
-  if (!progress.stage) {
+  // No event_progress row yet (행사 시작 전), or the operator has started
+  // the event but is still on 자리유도/소개영상/라운드 대기 - the participant
+  // has nothing device-specific to do in any of these until the first round
+  // actually goes active, so they all share the same wait screen rather than
+  // flashing through separate "지금은 이 단계입니다" screens.
+  if (!progress.stage || progress.stage === 'seat_guide' || progress.stage === 'intro_video' || progress.stage === 'round_waiting') {
     return <WaitingScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
+  }
+
+  if (progress.stage === 'bonus_matching') {
+    return <BonusMatchingScreen onBack={onBack} />;
+  }
+
+  if (progress.stage === 'bonus_seat_guide') {
+    return <BonusSeatGuideScreen onBack={onBack} progress={progress} />;
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'conversation') {
@@ -144,9 +157,7 @@ function ParticipantEventScreen({
       <ScreenHeader onBack={onBack} />
       <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
         <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
-          <p className="text-[18px] font-black leading-tight">
-            {progress.stage === 'round_complete' || progress.stage === 'ended' ? '행사가 마무리되었습니다' : '곧 라운드가 시작됩니다'}
-          </p>
+          <p className="text-[18px] font-black leading-tight">행사가 마무리되었습니다</p>
           <p className="mt-3 text-[14px] font-extrabold text-[#888]">잠시만 기다려주세요</p>
         </section>
       </div>
@@ -373,6 +384,187 @@ function ConversationScreen({
   );
 }
 
+// 첨부 와이어프레임이 이 화면의 최종 디자인이므로 배치/여백/문구를 그대로
+// 재현한다 - 다른 화면들처럼 구조를 재해석하지 않는다.
+function BonusMatchingScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} title="보너스 매칭" />
+      <div className="mobile-container mx-auto mt-6 pb-8">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+          <BonusMatchingIllustration />
+
+          <p className="mt-8 text-[24px] font-black leading-tight">
+            <span style={{ color: '#1c2541' }}>보너스 대화 </span>
+            <span style={{ color: '#ef4d7a' }}>매칭 중</span>
+          </p>
+          <p className="mt-4 text-[15px] font-bold leading-relaxed" style={{ color: '#4b5468' }}>
+            지금까지의 만남을 바탕으로
+            <br />
+            조금 더 이야기해보고 싶은 상대를 찾고 있어요.
+          </p>
+
+          <BonusMatchingDots />
+
+          <p className="mx-auto mt-10 flex w-fit items-center gap-2 rounded-full bg-[#fdeef2] px-4 py-2 text-[13px] font-black text-[#ef4d7a]">
+            <ClockGlyph />
+            잠시만 기다려주세요
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function BonusMatchingIllustration() {
+  return (
+    <div className="relative mx-auto h-[230px] w-full max-w-[300px]">
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(45% 55% at 32% 42%, rgba(130,175,255,0.22), transparent 70%), radial-gradient(45% 55% at 68% 42%, rgba(255,140,175,0.22), transparent 70%)',
+        }}
+      />
+
+      <SparkleGlyph className="absolute left-[6%] top-[4%] h-6 w-6" color="#8fb3f5" />
+      <SparkleGlyph className="absolute right-[10%] top-[9%] h-4 w-4" color="#f39db5" />
+      <span className="absolute left-[4%] top-[52%] h-2 w-2 rounded-full bg-[#a9c6f7]" />
+
+      <svg className="absolute inset-0 h-full w-full" fill="none" viewBox="0 0 300 230">
+        <path d="M78 128 C95 78 130 62 150 82" stroke="#a9c6f7" strokeDasharray="5 6" strokeLinecap="round" strokeWidth="2" />
+        <path d="M150 82 C170 62 205 78 222 128" stroke="#f3aec1" strokeDasharray="5 6" strokeLinecap="round" strokeWidth="2" />
+      </svg>
+
+      <div className="absolute bottom-[6%] left-1/2 h-5 w-[62%] -translate-x-1/2 rounded-full bg-black/[0.06] blur-md" />
+
+      <div className="absolute bottom-[10%] left-[7%] z-0 flex h-[68%] w-[38%] -rotate-3 flex-col items-center rounded-[16px] border border-[#dbe7fb] bg-[#f2f6ff] p-2.5 shadow-[0_10px_20px_rgba(120,150,220,0.15)]">
+        <span className="relative mt-2 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#cddbfa]">
+          <PersonSilhouetteGlyph color="#6f96e6" />
+          <span className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-white shadow-sm">
+            <TinyHeartGlyph color="#ef7a9a" />
+          </span>
+        </span>
+        <span className="mt-2.5 h-1 w-[70%] rounded-full bg-[#cddbfa]" />
+        <span className="mt-1.5 h-1 w-[50%] rounded-full bg-[#dbe7fb]" />
+      </div>
+
+      <div className="absolute bottom-[16%] left-1/2 z-10 flex h-[76%] w-[40%] -translate-x-1/2 flex-col items-center justify-center rounded-[18px] border border-[#f4f0f6] bg-white p-2.5 shadow-[0_14px_26px_rgba(200,150,180,0.2)]">
+        <HeartGlyph className="h-12 w-12" />
+      </div>
+
+      <div className="absolute bottom-[10%] right-[7%] z-0 flex h-[68%] w-[38%] rotate-3 flex-col items-center rounded-[16px] border border-[#fbdde6] bg-[#fff1f5] p-2.5 shadow-[0_10px_20px_rgba(230,150,180,0.15)]">
+        <span className="relative mt-2 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#fbd0dd]">
+          <PersonSilhouetteGlyph color="#ef7a9a" />
+          <span className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-white shadow-sm">
+            <TinyHeartGlyph color="#ef7a9a" />
+          </span>
+        </span>
+        <span className="mt-2.5 h-1 w-[70%] rounded-full bg-[#fbd0dd]" />
+        <span className="mt-1.5 h-1 w-[50%] rounded-full bg-[#fce3ea]" />
+      </div>
+    </div>
+  );
+}
+
+function BonusMatchingDots() {
+  return (
+    <div className="mt-6 flex items-center justify-center gap-2">
+      <span className="h-2.5 w-2.5 rounded-full bg-[#9db8f0]" style={{ animation: 'bonus-dot-pulse 1.2s ease-in-out infinite' }} />
+      <span className="h-2.5 w-2.5 rounded-full bg-[#ef7a9a]" style={{ animation: 'bonus-dot-pulse 1.2s ease-in-out 0.2s infinite' }} />
+      <span className="h-2.5 w-2.5 rounded-full bg-[#9db8f0]" style={{ animation: 'bonus-dot-pulse 1.2s ease-in-out 0.4s infinite' }} />
+      <style>{`
+        @keyframes bonus-dot-pulse {
+          0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); }
+          40% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// No wireframe was provided for this step (only the bonus-matching screen
+// was) - kept intentionally minimal and consistent with the existing
+// transition/wait screens rather than inventing a new design.
+function BonusSeatGuideScreen({ onBack, progress }: { onBack: () => void; progress: ParticipantRoundProgress }) {
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const phaseDuration = phaseDurationSeconds('transition');
+  const remaining = Math.max(
+    0,
+    phaseDuration -
+      computeLiveElapsedSeconds(
+        {
+          timerPositionSeconds: progress.timerPositionSeconds ?? 0,
+          timerStatus: progress.timerStatus ?? 'paused',
+          timerUpdatedAt: progress.timerUpdatedAt,
+        },
+        nowTick,
+      ),
+  );
+
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} title="보너스 매칭" />
+      <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+        <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <p className="text-[18px] font-black leading-tight">보너스 라운드 자리를 안내하고 있어요</p>
+          <p className="mt-3 text-[14px] font-extrabold text-[#888]">안내에 따라 이동해주세요</p>
+          {progress.timerUpdatedAt ? (
+            <p className="mx-auto mt-5 flex w-fit items-center gap-1.5 rounded-full bg-[#f5f7fa] px-3.5 py-1.5 text-[13px] font-black tabular-nums text-[#666]">
+              <ClockGlyph />
+              {formatCountdown(remaining)}
+            </p>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SparkleGlyph({ className, color }: { className?: string; color: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill={color} viewBox="0 0 24 24">
+      <path d="M12 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" />
+    </svg>
+  );
+}
+
+function PersonSilhouetteGlyph({ color }: { color: string }) {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.4" stroke={color} strokeWidth="1.8" />
+      <path d="M5 20c1.3-3.8 4-5.6 7-5.6s5.7 1.8 7 5.6" stroke={color} strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function TinyHeartGlyph({ color }: { color: string }) {
+  return (
+    <svg aria-hidden="true" className="h-2.5 w-2.5" fill={color} viewBox="0 0 24 24">
+      <path d="M12 20.5s-7.5-4.6-10-9.2C.4 8 2 4.5 5.4 3.8c2-.4 4 .5 5.1 2.3.4.6.9.6 1.3 0 1.1-1.8 3.1-2.7 5.1-2.3C20.3 4.5 21.9 8 20.4 11.3 17.5 15.9 12 20.5 12 20.5Z" />
+    </svg>
+  );
+}
+
+function HeartGlyph({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
+      <path
+        d="M12 20.5s-7.5-4.6-10-9.2C.4 8 2 4.5 5.4 3.8c2-.4 4 .5 5.1 2.3.4.6.9.6 1.3 0 1.1-1.8 3.1-2.7 5.1-2.3C20.3 4.5 21.9 8 20.4 11.3 17.5 15.9 12 20.5 12 20.5Z"
+        fill="#ef7a9a"
+        stroke="#ef7a9a"
+        strokeWidth="0.5"
+      />
+    </svg>
+  );
+}
+
 const ratingMemoMaxLength = 200;
 
 function ratingCopy(score: number): { subtitle: string; title: string } {
@@ -405,9 +597,10 @@ function RatingScreen({
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [toast, setToast] = useState('');
-  const toastTimerRef = useRef<number | undefined>(undefined);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  // null while checking the server for an existing submission (avoids
+  // flashing the form before immediately swapping to the complete screen).
+  const [submitted, setSubmitted] = useState<boolean | null>(null);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
@@ -416,12 +609,16 @@ function RatingScreen({
 
   // Reloads on (eventId, roundNumber) change - covers first entry, refresh,
   // AND the rare case of landing back on this phase for a new round without
-  // a full page reload in between.
+  // a full page reload in between. Whether a rating already exists for this
+  // round is the server-side source of truth for showing the complete
+  // screen vs. the form - never inferred from local state alone, so a
+  // refresh or re-entry lands on the right screen.
   useEffect(() => {
     let active = true;
     setScore(null);
     setMemo('');
     setPhotoUrl(null);
+    setSubmitted(null);
     void fetchParticipantPartnerPhoto(eventId)
       .then((url) => {
         if (active) setPhotoUrl(url);
@@ -432,16 +629,15 @@ function RatingScreen({
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
         if (existing.memo) setMemo(existing.memo);
+        setSubmitted(existing.score !== undefined);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setSubmitted(false);
+      });
     return () => {
       active = false;
     };
   }, [eventId, roundNumber]);
-
-  useEffect(() => {
-    return () => window.clearTimeout(toastTimerRef.current);
-  }, []);
 
   const phaseDuration = phaseDurationSeconds('transition');
   const remaining = Math.max(
@@ -463,15 +659,28 @@ function RatingScreen({
     setSubmitError('');
     try {
       await submitRoundRating(eventId, roundNumber, score, memo);
-      window.clearTimeout(toastTimerRef.current);
-      setToast('저장되었습니다');
-      toastTimerRef.current = window.setTimeout(() => setToast(''), toastDisplayMs);
+      setSubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (submitted === null) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} title="호감도 작성" />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <p className="text-[16px] font-black text-[#999]">불러오는 중</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (submitted) {
+    return <RatingCompleteScreen onBack={onBack} />;
+  }
 
   const copy = score !== null ? ratingCopy(score) : null;
 
@@ -554,8 +763,33 @@ function RatingScreen({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
 
-      <ToastBanner toast={toast} />
+// Shown once the server confirms this round's rating is saved. Deliberately
+// minimal by design request - no status text, no progress/count of other
+// participants, no timer, no buttons - the next-phase transition is handled
+// entirely by the outer polling in ParticipantEventScreen re-rendering past
+// this component once the server round phase moves on.
+function RatingCompleteScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} title="호감도 작성" />
+      <div className="mobile-container mx-auto mt-6 pb-8">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-14 text-center shadow-calendar">
+          <img alt="" className="mx-auto h-[200px] w-[200px] object-contain" src="/assets/rating-complete-heart.png" />
+          <p className="mt-6 text-[26px] font-black leading-tight">
+            <span style={{ color: '#1c2541' }}>호감도 제출 </span>
+            <span style={{ color: '#ef4d7a' }}>완료!</span>
+          </p>
+          <p className="mt-4 text-[15px] font-bold leading-relaxed" style={{ color: '#4b5468' }}>
+            다른 참가자들이 호감도를 작성하는 동안
+            <br />
+            잠시만 기다려주세요.
+          </p>
+        </section>
+      </div>
     </div>
   );
 }

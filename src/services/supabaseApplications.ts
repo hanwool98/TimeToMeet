@@ -1412,7 +1412,15 @@ export async function startAdminEvent(eventId: string) {
   return data as string;
 }
 
-export type EventProgressStage = 'ended' | 'intro_video' | 'round_active' | 'round_complete' | 'round_waiting' | 'seat_guide';
+export type EventProgressStage =
+  | 'bonus_matching'
+  | 'bonus_seat_guide'
+  | 'ended'
+  | 'intro_video'
+  | 'round_active'
+  | 'round_complete'
+  | 'round_waiting'
+  | 'seat_guide';
 export type IntroVideoAction = 'complete' | 'pause' | 'play' | 'restart' | 'skip';
 
 export interface EventProgress {
@@ -1846,6 +1854,48 @@ export async function fetchAdminParticipantRatings(eventId: string, applicationI
     roundNumber: row.round_number,
     score: row.score,
   })) satisfies ParticipantRating[];
+}
+
+export interface MutualRating {
+  femaleApplicationId: string;
+  femaleNickname: string;
+  femaleToMaleScore?: number;
+  maleApplicationId: string;
+  maleNickname: string;
+  maleToFemaleScore?: number;
+  total?: number;
+}
+
+export async function fetchAdminMutualRatings(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_mutual_ratings_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (
+    (data ?? []) as Array<{
+      femaleApplicationId: string;
+      femaleNickname: string;
+      femaleToMaleScore: number | null;
+      maleApplicationId: string;
+      maleNickname: string;
+      maleToFemaleScore: number | null;
+      total: number | null;
+    }>
+  ).map((row) => ({
+    femaleApplicationId: row.femaleApplicationId,
+    femaleNickname: row.femaleNickname,
+    femaleToMaleScore: row.femaleToMaleScore ?? undefined,
+    maleApplicationId: row.maleApplicationId,
+    maleNickname: row.maleNickname,
+    maleToFemaleScore: row.maleToFemaleScore ?? undefined,
+    total: row.total ?? undefined,
+  })) satisfies MutualRating[];
 }
 
 export interface MyRoundRating {
