@@ -4,14 +4,18 @@ import { DataLoadingState } from '../components/DataState';
 import {
   fetchEventProgressForTablet,
   fetchEventTableSeatGuide,
+  fetchRoundProgressForTablet,
   type EventProgress,
   type EventTableSeatGuide,
+  type TabletRoundProgress,
 } from '../services/supabaseApplications';
 import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
+import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const storageKey = 'time2meet.tabletConnection';
 const progressPollIntervalMs = 3_000;
 const seatPollIntervalMs = 5_000;
+const roundPollIntervalMs = 3_000;
 
 interface StoredTabletConnection {
   connectionToken: string;
@@ -48,10 +52,12 @@ export default function AdminTabletSeatPage() {
 
   const [progress, setProgress] = useState<EventProgress | null>(null);
   const [seatGuide, setSeatGuide] = useState<EventTableSeatGuide | null>(null);
+  const [roundProgress, setRoundProgress] = useState<TabletRoundProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [videoMuted, setVideoMuted] = useState(false);
   const [displayTime, setDisplayTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   // Primary heartbeat + stage driver. This is also what proves the
   // connection is still valid server-side, so an admin disconnect bounces
@@ -117,6 +123,37 @@ export default function AdminTabletSeatPage() {
       window.clearInterval(intervalId);
     };
   }, [eventId, tableNumber, progress?.stage]);
+
+  // Round timer/matching only matters once the round stage is reached.
+  const isRoundStage = progress?.stage === 'round_active' || progress?.stage === 'round_complete';
+  useEffect(() => {
+    if (!eventId || !Number.isFinite(tableNumber) || !isRoundStage) return undefined;
+    let active = true;
+
+    const poll = async () => {
+      const stored = readStoredConnection(eventId, tableNumber);
+      if (!stored) return;
+      try {
+        const result = await fetchRoundProgressForTablet(eventId, tableNumber, stored.connectionToken);
+        if (active && result.ok) setRoundProgress(result);
+      } catch {
+        // Connectivity failures are already handled by the progress poll above.
+      }
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), roundPollIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [eventId, tableNumber, isRoundStage]);
+
+  useEffect(() => {
+    if (!isRoundStage) return undefined;
+    const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [isRoundStage]);
 
   // Keep the <video> element in step with the server snapshot: correct
   // noticeable drift, and mirror play/pause without fighting local playback.
@@ -202,22 +239,49 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'round_waiting') {
     return (
+      <main className="fixed inset-0 grid place-items-center bg-white px-10 text-center text-[#1f292d]">
+        <div>
+          <p className="text-[20px] font-black text-[#ef554a]">소개영상 종료</p>
+          <p className="mt-4 text-[32px] font-black leading-snug">소개팅 시작 대기 중</p>
+          <p className="mt-3 text-[14px] font-bold text-[#888]">운영자가 라운드를 시작하면 자동으로 전환됩니다</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (progress.stage === 'round_complete') {
+    return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
         <div>
-          <p className="text-[20px] font-black text-[#ff8a80]">소개영상 종료</p>
-          <p className="mt-4 text-[32px] font-black leading-snug">라운드 시작 대기 중</p>
-          <p className="mt-3 text-[14px] font-bold text-white/60">운영자가 라운드를 시작하면 자동으로 전환됩니다</p>
+          <p className="text-[20px] font-black text-[#ff8a80]">모든 라운드 종료</p>
+          <p className="mt-4 text-[28px] font-black">수고하셨습니다</p>
         </div>
       </main>
     );
   }
 
   if (progress.stage === 'round_active') {
+    if (!roundProgress) return <DataLoadingState />;
+    const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase);
+    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
+      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
+      timerStatus: roundProgress.timerStatus ?? 'paused',
+      timerUpdatedAt: roundProgress.timerUpdatedAt,
+    }, nowTick));
+    const phaseLabel = roundProgress.roundPhase === 'transition' ? '이동 및 호감도 작성' : '대화 중';
+
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
-        <div>
-          <p className="text-[20px] font-black text-[#ff8a80]">{progress.currentRound ?? 1}라운드</p>
-          <p className="mt-4 text-[28px] font-black">라운드 진행 화면 준비 중</p>
+      <main className="fixed inset-0 flex overflow-hidden bg-[#1f292d] text-white">
+        <div className="m-auto text-center">
+          <p className="text-[18px] font-black text-[#ff8a80]">
+            {roundProgress.currentRound ?? progress.currentRound ?? 1}라운드 · {phaseLabel}
+          </p>
+          <p className="mt-6 text-[64px] font-black leading-none tabular-nums">{formatCountdown(remaining)}</p>
+          <div className="mt-10 flex items-center justify-center gap-8">
+            <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#8ec7ff]">{roundProgress.maleNickname ?? '미배정'}</p>
+            <span className="text-[28px] font-black text-white/40">&amp;</span>
+            <p className="text-[clamp(36px,8vw,90px)] font-black leading-none text-[#ffb0c4]">{roundProgress.femaleNickname ?? '미배정'}</p>
+          </div>
         </div>
       </main>
     );

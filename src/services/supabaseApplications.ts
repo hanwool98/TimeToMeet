@@ -850,7 +850,7 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
   };
 }
 
-interface PublicParticipantMediaRow {
+export interface PublicParticipantMediaRow {
   id: string;
   audioUrl: string | null;
   photoUrl: string | null;
@@ -1405,7 +1405,7 @@ export async function startAdminEvent(eventId: string) {
   return data as string;
 }
 
-export type EventProgressStage = 'ended' | 'intro_video' | 'round_active' | 'round_waiting' | 'seat_guide';
+export type EventProgressStage = 'ended' | 'intro_video' | 'round_active' | 'round_complete' | 'round_waiting' | 'seat_guide';
 export type IntroVideoAction = 'complete' | 'pause' | 'play' | 'restart' | 'skip';
 
 export interface EventProgress {
@@ -1519,6 +1519,215 @@ export async function startFirstRound(eventId: string) {
 
   if (error) throw error;
   return data as number;
+}
+
+export interface RoundTableMatch {
+  femaleApplicationId?: string;
+  femaleNickname?: string;
+  maleApplicationId?: string;
+  maleNickname?: string;
+  tableNumber: number;
+}
+
+export interface RoundProgress {
+  activeTables: number;
+  completedRounds: number;
+  currentRound?: number;
+  matches: RoundTableMatch[];
+  pendingPauseCount: number;
+  roundPhase?: 'conversation' | 'transition';
+  stage: EventProgressStage;
+  timerPositionSeconds: number;
+  timerStatus: 'paused' | 'running';
+  timerUpdatedAt?: string;
+  totalParticipants: number;
+  totalRounds: number;
+}
+
+interface RoundProgressJson {
+  activeTables: number;
+  completedRounds: number;
+  currentRound: number | null;
+  matches: Array<{
+    femaleApplicationId: string | null;
+    femaleNickname: string | null;
+    maleApplicationId: string | null;
+    maleNickname: string | null;
+    tableNumber: number;
+  }>;
+  pendingPauseCount: number;
+  roundPhase: 'conversation' | 'transition' | null;
+  stage: EventProgressStage;
+  timerPositionSeconds: number;
+  timerStatus: 'paused' | 'running';
+  timerUpdatedAt: string | null;
+  totalParticipants: number;
+  totalRounds: number;
+}
+
+function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
+  return {
+    activeTables: row.activeTables,
+    completedRounds: row.completedRounds,
+    currentRound: row.currentRound ?? undefined,
+    matches: (row.matches ?? []).map((match) => ({
+      femaleApplicationId: match.femaleApplicationId ?? undefined,
+      femaleNickname: match.femaleNickname ?? undefined,
+      maleApplicationId: match.maleApplicationId ?? undefined,
+      maleNickname: match.maleNickname ?? undefined,
+      tableNumber: match.tableNumber,
+    })),
+    pendingPauseCount: row.pendingPauseCount,
+    roundPhase: row.roundPhase ?? undefined,
+    stage: row.stage,
+    timerPositionSeconds: row.timerPositionSeconds,
+    timerStatus: row.timerStatus,
+    timerUpdatedAt: row.timerUpdatedAt ?? undefined,
+    totalParticipants: row.totalParticipants,
+    totalRounds: row.totalRounds,
+  };
+}
+
+export async function fetchAdminRoundProgress(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_round_progress', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return mapRoundProgressJson(data as RoundProgressJson);
+}
+
+export type RoundTimerAction = 'pause' | 'resume';
+
+export async function controlRoundTimer(eventId: string, action: RoundTimerAction) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('control_round_timer_for_session', {
+    action,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
+export interface TabletRoundProgress {
+  currentRound?: number;
+  femaleNickname?: string;
+  maleNickname?: string;
+  ok: boolean;
+  roundPhase?: 'conversation' | 'transition';
+  stage?: EventProgressStage;
+  timerPositionSeconds?: number;
+  timerStatus?: 'paused' | 'running';
+  timerUpdatedAt?: string;
+  totalRounds?: number;
+}
+
+export async function fetchRoundProgressForTablet(eventId: string, tableNumber: number, connectionToken: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_round_progress_for_tablet', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+
+  if (error) throw error;
+  const row = data as { ok: boolean } & Partial<RoundProgressJson & { maleNickname: string | null; femaleNickname: string | null }>;
+  if (!row?.ok) return { ok: false } satisfies TabletRoundProgress;
+  return {
+    currentRound: row.currentRound ?? undefined,
+    femaleNickname: row.femaleNickname ?? undefined,
+    maleNickname: row.maleNickname ?? undefined,
+    ok: true,
+    roundPhase: row.roundPhase ?? undefined,
+    stage: row.stage,
+    timerPositionSeconds: row.timerPositionSeconds ?? undefined,
+    timerStatus: row.timerStatus,
+    timerUpdatedAt: row.timerUpdatedAt ?? undefined,
+    totalRounds: row.totalRounds ?? undefined,
+  } satisfies TabletRoundProgress;
+}
+
+export interface EventPauseRequest {
+  id: string;
+  nickname: string;
+  requestedAt: string;
+  status: 'acknowledged' | 'pending' | 'resolved';
+  tableNumber: number;
+}
+
+export async function fetchAdminPauseRequests(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_pause_requests', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (
+    data as Array<{ id: string; nickname: string; requested_at: string; status: EventPauseRequest['status']; table_number: number }>
+  ).map((row) => ({
+    id: row.id,
+    nickname: row.nickname,
+    requestedAt: row.requested_at,
+    status: row.status,
+    tableNumber: row.table_number,
+  })) satisfies EventPauseRequest[];
+}
+
+export async function updatePauseRequestStatus(requestId: string, status: EventPauseRequest['status']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_pause_request_status_for_session', {
+    request_id_value: requestId,
+    session_token: adminSession.token,
+    status_value: status,
+  });
+
+  if (error) throw error;
+}
+
+export interface ParticipantRating {
+  partnerApplicationId: string;
+  partnerNickname: string;
+  roundNumber: number;
+  score: number;
+}
+
+export async function fetchAdminParticipantRatings(eventId: string, applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_participant_ratings', {
+    application_id_value: applicationId,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (
+    data as Array<{ partner_application_id: string; partner_nickname: string; round_number: number; score: number }>
+  ).map((row) => ({
+    partnerApplicationId: row.partner_application_id,
+    partnerNickname: row.partner_nickname,
+    roundNumber: row.round_number,
+    score: row.score,
+  })) satisfies ParticipantRating[];
 }
 
 export async function endAdminEvent(eventId: string) {

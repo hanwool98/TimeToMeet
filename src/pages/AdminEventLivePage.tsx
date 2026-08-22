@@ -1,20 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
+import HeartRating from '../components/HeartRating';
+import useOperationalData from '../hooks/useOperationalData';
 import {
   controlEventIntroVideo,
+  controlRoundTimer,
   endAdminEvent,
   fetchAdminEventModeSummaries,
+  fetchAdminEventParticipantMedia,
   fetchAdminEventProgress,
+  fetchAdminParticipantRatings,
+  fetchAdminPauseRequests,
+  fetchAdminRoundProgress,
   startFirstRound,
   subscribeToAdminEventModeChanges,
+  updatePauseRequestStatus,
   type AdminEventModeSummary,
+  type EventPauseRequest,
   type EventProgress,
   type IntroVideoAction,
+  type ParticipantRating,
+  type PublicParticipantMediaRow,
+  type RoundProgress,
 } from '../services/supabaseApplications';
+import type { StoredApplication } from '../utils/adminApplications';
 import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
+import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const pollIntervalMs = 2_000;
+const pauseRequestPollIntervalMs = 5_000;
 
 export default function AdminEventLivePage() {
   const navigate = useNavigate();
@@ -31,6 +46,16 @@ export default function AdminEventLivePage() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [videoMuted, setVideoMuted] = useState(false);
   const [ending, setEnding] = useState(false);
+
+  const [roundProgress, setRoundProgress] = useState<RoundProgress | null>(null);
+  const [participantMedia, setParticipantMedia] = useState<Map<string, PublicParticipantMediaRow>>(new Map());
+  const [timerActionPending, setTimerActionPending] = useState(false);
+  const [pauseRequests, setPauseRequests] = useState<EventPauseRequest[]>([]);
+  const [pauseRequestsPanelOpen, setPauseRequestsPanelOpen] = useState(false);
+  const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
+
+  const { applications } = useOperationalData({ admin: true, eventId });
+  const eventApplications = useMemo(() => applications.filter((item) => item.eventId === eventId), [applications, eventId]);
 
   const load = useCallback(async () => {
     if (!eventId) return;
@@ -88,6 +113,62 @@ export default function AdminEventLivePage() {
     }
   }, [progress]);
 
+  const isRoundStage = progress?.stage === 'round_active' || progress?.stage === 'round_complete';
+
+  // Round-specific state (timer, current table matches, pending pause
+  // requests) only matters once the round stage is reached, so it's polled
+  // separately from the general intro-video progress above.
+  useEffect(() => {
+    if (!eventId || !isRoundStage) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await fetchAdminRoundProgress(eventId);
+        if (active) setRoundProgress(next);
+      } catch {
+        // Transient failures just keep showing the last known state.
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), pollIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [eventId, isRoundStage]);
+
+  // Representative photos rarely change mid-event, so this is fetched once
+  // per round stage entry rather than on every 2s poll.
+  useEffect(() => {
+    if (!eventId || !isRoundStage) return undefined;
+    let active = true;
+    void fetchAdminEventParticipantMedia(eventId).then((media) => {
+      if (active) setParticipantMedia(media);
+    });
+    return () => {
+      active = false;
+    };
+  }, [eventId, isRoundStage]);
+
+  useEffect(() => {
+    if (!eventId || !pauseRequestsPanelOpen) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await fetchAdminPauseRequests(eventId);
+        if (active) setPauseRequests(next);
+      } catch {
+        // keep last known list on transient failure
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), pauseRequestPollIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [eventId, pauseRequestsPanelOpen]);
+
   const runAction = async (action: IntroVideoAction) => {
     if (!eventId || actionPending) return;
     setActionPending(true);
@@ -118,6 +199,30 @@ export default function AdminEventLivePage() {
       setActionError(caughtError instanceof Error ? caughtError.message : '라운드를 시작하지 못했습니다.');
     } finally {
       setActionPending(false);
+    }
+  };
+
+  const handleToggleRoundTimer = async () => {
+    if (!eventId || !roundProgress || timerActionPending) return;
+    setTimerActionPending(true);
+    try {
+      await controlRoundTimer(eventId, roundProgress.timerStatus === 'running' ? 'pause' : 'resume');
+      setRoundProgress(await fetchAdminRoundProgress(eventId));
+    } catch (caughtError) {
+      setActionError(caughtError instanceof Error ? caughtError.message : '타이머를 변경하지 못했습니다.');
+    } finally {
+      setTimerActionPending(false);
+    }
+  };
+
+  const handleResolvePauseRequest = async (requestId: string) => {
+    if (!eventId) return;
+    try {
+      await updatePauseRequestStatus(requestId, 'resolved');
+      setPauseRequests(await fetchAdminPauseRequests(eventId));
+      setRoundProgress(await fetchAdminRoundProgress(eventId));
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '요청을 처리하지 못했습니다.');
     }
   };
 
@@ -182,12 +287,15 @@ export default function AdminEventLivePage() {
           </button>
         </header>
 
-        {progress.stage === 'round_active' ? (
-          <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
-            <p className="text-[15px] font-black text-[#ef554a]">라운드 진행 중</p>
-            <p className="mt-2 text-[28px] font-black">{progress.currentRound ?? 1}라운드</p>
-            <p className="mt-4 text-[13px] font-bold text-[#999]">라운드 진행 화면은 다음 단계에서 이어서 구현됩니다.</p>
-          </section>
+        {isRoundStage ? (
+          <RoundProgressSection
+            onOpenParticipantList={() => setParticipantListPanelOpen(true)}
+            onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
+            onToggleTimer={() => void handleToggleRoundTimer()}
+            participantMedia={participantMedia}
+            roundProgress={roundProgress}
+            timerActionPending={timerActionPending}
+          />
         ) : progress.stage === 'ended' ? (
           <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
             <p className="text-[20px] font-black">행사가 종료되었습니다</p>
@@ -300,6 +408,14 @@ export default function AdminEventLivePage() {
           {!allTabletsConnected ? <p className="mt-2 text-[12px] font-bold text-[#a35850]">연결되지 않은 태블릿이 있습니다.</p> : null}
         </section>
       </div>
+
+      {pauseRequestsPanelOpen ? (
+        <PauseRequestsPanel onClose={() => setPauseRequestsPanelOpen(false)} onResolve={(id) => void handleResolvePauseRequest(id)} requests={pauseRequests} />
+      ) : null}
+
+      {participantListPanelOpen && eventId ? (
+        <ParticipantListPanel applications={eventApplications} eventId={eventId} onClose={() => setParticipantListPanelOpen(false)} />
+      ) : null}
     </main>
   );
 }
@@ -372,6 +488,418 @@ function SkipIcon() {
     <svg aria-hidden="true" className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
       <path d="M6 5.5v13l9-6.5-9-6.5Z" />
       <rect height="13" rx="1" width="2.4" x="16.5" y="5.5" />
+    </svg>
+  );
+}
+
+function RoundProgressSection({
+  onOpenParticipantList,
+  onOpenPauseRequests,
+  onToggleTimer,
+  participantMedia,
+  roundProgress,
+  timerActionPending,
+}: {
+  onOpenParticipantList: () => void;
+  onOpenPauseRequests: () => void;
+  onToggleTimer: () => void;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
+  roundProgress: RoundProgress | null;
+  timerActionPending: boolean;
+}) {
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  if (!roundProgress) {
+    return (
+      <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
+        <p className="text-[14px] font-bold text-[#999]">라운드 진행 상태를 불러오는 중</p>
+      </section>
+    );
+  }
+
+  if (roundProgress.stage === 'round_complete') {
+    return (
+      <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
+        <p className="text-[15px] font-black text-[#ef554a]">모든 라운드 종료</p>
+        <p className="mt-2 text-[24px] font-black">수고하셨습니다</p>
+        <p className="mt-3 text-[13px] font-bold text-[#999]">전체 {roundProgress.totalRounds}라운드가 모두 완료되었습니다</p>
+      </section>
+    );
+  }
+
+  const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase);
+  const liveElapsed = computeLiveElapsedSeconds(roundProgress, nowTick);
+  const remaining = Math.max(0, phaseDuration - liveElapsed);
+  const phaseLabel = roundProgress.roundPhase === 'transition' ? '이동 및 호감도 작성' : '10분 대화';
+
+  return (
+    <>
+      <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-5 shadow-calendar">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="text-[19px] font-black leading-tight">{roundProgress.currentRound ?? 1}라운드 진행 중</h2>
+            <span className="shrink-0 rounded-[8px] bg-[#fff1ee] px-2.5 py-1 text-[12px] font-black text-[#ef554a]">{phaseLabel}</span>
+          </div>
+          <button className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]" onClick={onOpenPauseRequests} type="button">
+            <BellIcon />
+            {roundProgress.pendingPauseCount > 0 ? (
+              <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
+                {roundProgress.pendingPauseCount}
+              </span>
+            ) : null}
+          </button>
+        </div>
+
+        <p className="mt-5 text-center text-[13px] font-bold text-[#999]">남은 시간</p>
+        <p className="mt-1 text-center text-[52px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
+
+        <button
+          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-[#ef554a] text-[15px] font-black text-[#ef554a] disabled:opacity-50"
+          disabled={timerActionPending}
+          onClick={onToggleTimer}
+          type="button"
+        >
+          {roundProgress.timerStatus === 'running' ? <PauseIcon /> : <PlayIcon />}
+          {roundProgress.timerStatus === 'running' ? '일시정지' : '재개'}
+        </button>
+      </section>
+
+      <section className="mt-4 rounded-[20px] border border-[#f0f0f0] bg-white p-5">
+        <h3 className="text-[15px] font-black">전체 진행 현황</h3>
+        <dl className="mt-3 divide-y divide-[#f2f2f2] text-[14px] font-bold">
+          <StatRow label="총 참가자" value={`${roundProgress.totalParticipants}명`} />
+          <StatRow label="진행 테이블" value={`${roundProgress.activeTables}개`} />
+          <StatRow label="완료 라운드" value={`${roundProgress.completedRounds} / ${roundProgress.totalRounds}`} />
+        </dl>
+      </section>
+
+      <section className="mt-6">
+        <h3 className="text-[16px] font-black">테이블 현황</h3>
+        <p className="mt-1 text-[12px] font-bold text-[#999]">각 테이블의 현재 대화 상대를 확인하세요</p>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {roundProgress.matches.map((match) => (
+            <TableMatchCard key={match.tableNumber} match={match} participantMedia={participantMedia} />
+          ))}
+        </div>
+      </section>
+
+      <button
+        className="mt-6 flex h-14 w-full items-center justify-center gap-2 rounded-[14px] border border-[#e5e5e5] bg-white text-[15px] font-black text-[#333]"
+        onClick={onOpenParticipantList}
+        type="button"
+      >
+        <PeopleIcon />
+        참가자 리스트
+      </button>
+
+      <p className="mt-4 flex items-center gap-2 rounded-[12px] bg-[#f5f5f5] px-4 py-3 text-[12px] font-bold text-[#888]">
+        <InfoIcon />
+        각 테이블의 시간은 실시간으로 동기화됩니다
+      </p>
+    </>
+  );
+}
+
+function TableMatchCard({
+  match,
+  participantMedia,
+}: {
+  match: RoundProgress['matches'][number];
+  participantMedia: Map<string, PublicParticipantMediaRow>;
+}) {
+  const malePhoto = (match.maleApplicationId ? participantMedia.get(match.maleApplicationId)?.photoUrl : undefined) ?? undefined;
+  const femalePhoto = (match.femaleApplicationId ? participantMedia.get(match.femaleApplicationId)?.photoUrl : undefined) ?? undefined;
+
+  return (
+    <div className="rounded-[16px] border border-[#f0f0f0] bg-white p-3">
+      <p className="text-center text-[13px] font-black text-[#999]">{match.tableNumber}번</p>
+      <div className="mt-2 flex items-center justify-center -space-x-2">
+        <PhotoAvatar fallbackColor="#5aa7e9" photoUrl={malePhoto} />
+        <PhotoAvatar fallbackColor="#ef8fa0" photoUrl={femalePhoto} />
+      </div>
+      <p className="mt-2 truncate text-center text-[13px] font-black">
+        {match.maleNickname ?? '미배정'} · {match.femaleNickname ?? '미배정'}
+      </p>
+    </div>
+  );
+}
+
+function PhotoAvatar({ fallbackColor, photoUrl }: { fallbackColor: string; photoUrl?: string }) {
+  return (
+    <span
+      className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-white"
+      style={{ backgroundColor: `${fallbackColor}22` }}
+    >
+      {photoUrl ? <img alt="" className="h-full w-full object-cover" src={photoUrl} /> : <PersonGlyph color={fallbackColor} />}
+    </span>
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-2.5">
+      <span className="text-[#777]">{label}</span>
+      <span className="text-[#1f292d]">{value}</span>
+    </div>
+  );
+}
+
+function PauseRequestsPanel({
+  onClose,
+  onResolve,
+  requests,
+}: {
+  onClose: () => void;
+  onResolve: (id: string) => void;
+  requests: EventPauseRequest[];
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">일시정지 요청</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+
+        {requests.length === 0 ? (
+          <p className="mt-6 text-center text-[14px] font-bold text-[#999]">요청이 없습니다</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {requests.map((request) => (
+              <div
+                className={[
+                  'rounded-[14px] border px-4 py-3',
+                  request.status === 'pending' ? 'border-[#ef554a]/40 bg-[#fff1ee]' : 'border-[#f0f0f0] bg-white',
+                ].join(' ')}
+                key={request.id}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[15px] font-black">{request.tableNumber}번 테이블</p>
+                  {request.status === 'pending' ? (
+                    <span className="text-[11px] font-black text-[#ef554a]">미확인</span>
+                  ) : (
+                    <span className="text-[11px] font-black text-[#3f9142]">처리됨</span>
+                  )}
+                </div>
+                <p className="mt-1 text-[14px] font-bold">{request.nickname}님</p>
+                <p className="mt-0.5 text-[12px] font-bold text-[#999]">{formatKstTime(request.requestedAt)} 요청</p>
+                {request.status === 'pending' ? (
+                  <button
+                    className="mt-2 h-9 rounded-[10px] bg-[#ef4039] px-4 text-[12px] font-black text-white"
+                    onClick={() => onResolve(request.id)}
+                    type="button"
+                  >
+                    확인 처리
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ParticipantListPanel({
+  applications,
+  eventId,
+  onClose,
+}: {
+  applications: StoredApplication[];
+  eventId: string;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<StoredApplication | null>(null);
+  const [ratings, setRatings] = useState<ParticipantRating[]>([]);
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+
+  const confirmedApplicants = useMemo(() => applications.filter((item) => item.status === '참가 확정'), [applications]);
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return confirmedApplicants;
+    return confirmedApplicants.filter(
+      (item) => (item.profile?.nickname ?? '').toLowerCase().includes(keyword) || item.id.toLowerCase().includes(keyword),
+    );
+  }, [confirmedApplicants, search]);
+
+  const selectParticipant = async (application: StoredApplication) => {
+    setSelected(application);
+    if (!application.dbId) return;
+    setRatingsLoading(true);
+    try {
+      setRatings(await fetchAdminParticipantRatings(eventId, application.dbId));
+    } catch {
+      setRatings([]);
+    } finally {
+      setRatingsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-[520px] flex-col overflow-hidden rounded-t-[28px] bg-white pb-[calc(20px+env(safe-area-inset-bottom))]"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="shrink-0 px-5 pt-5">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+          <div className="mt-4 flex items-center justify-between">
+            <h3 className="text-[18px] font-black">참가자 리스트</h3>
+            <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+              닫기
+            </button>
+          </div>
+        </div>
+
+        {selected ? (
+          <div className="overflow-y-auto px-5 pt-4">
+            <button className="text-[13px] font-black text-[#999]" onClick={() => setSelected(null)} type="button">
+              ‹ 목록으로
+            </button>
+            <div className="mt-3 flex items-center gap-3">
+              <Avatar gender={selected.gender} />
+              <div className="min-w-0">
+                <p className="truncate text-[18px] font-black">{selected.profile?.nickname || selected.userId}님</p>
+                <p className="text-[13px] font-bold text-[#999]">{selected.id}</p>
+              </div>
+            </div>
+
+            <h4 className="mt-6 text-[14px] font-black text-[#555]">호감도 작성 기록</h4>
+            {ratingsLoading ? (
+              <p className="mt-3 text-[13px] font-bold text-[#999]">불러오는 중</p>
+            ) : ratings.length === 0 ? (
+              <p className="mt-3 text-[13px] font-bold text-[#999]">아직 작성한 호감도 기록이 없습니다</p>
+            ) : (
+              <div className="mt-3 space-y-2 pb-6">
+                {ratings.map((rating) => (
+                  <div className="flex items-center justify-between rounded-[14px] border border-[#f0f0f0] px-4 py-3" key={rating.roundNumber}>
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-bold text-[#999]">{rating.roundNumber}라운드</p>
+                      <p className="truncate text-[14px] font-black">{rating.partnerNickname}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <HeartRating score={rating.score} />
+                      <span className="text-[13px] font-black text-[#ef4d7a]">{rating.score.toFixed(1)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mt-1 shrink-0 px-5">
+              <input
+                className="h-12 w-full rounded-[14px] bg-[#f5f5f5] px-4 text-[15px] font-bold outline-none"
+                onChange={(changeEvent) => setSearch(changeEvent.target.value)}
+                placeholder="닉네임 또는 신청번호로 검색"
+                value={search}
+              />
+            </div>
+            <div className="mt-3 flex-1 overflow-y-auto px-5">
+              {filtered.length === 0 ? (
+                <p className="mt-6 text-center text-[14px] font-bold text-[#999]">참가확정된 참가자가 없습니다</p>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {filtered.map((item) => (
+                    <button
+                      className="flex w-full items-center gap-3 rounded-[14px] border border-[#f0f0f0] px-3 py-2.5 text-left active:scale-[0.99]"
+                      key={item.dbId}
+                      onClick={() => void selectParticipant(item)}
+                      type="button"
+                    >
+                      <Avatar gender={item.gender} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-black">{item.profile?.nickname || item.userId}님</p>
+                        <p className="text-[12px] font-bold text-[#999]">{item.id}</p>
+                      </div>
+                      <ChevronRightIcon />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Avatar({ gender }: { gender?: '남성' | '여성' }) {
+  const color = gender === '남성' ? '#5aa7e9' : gender === '여성' ? '#ef8fa0' : '#ccc';
+  return (
+    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full" style={{ backgroundColor: `${color}22` }}>
+      <PersonGlyph color={color} />
+    </span>
+  );
+}
+
+function PersonGlyph({ color = 'currentColor' }: { color?: string }) {
+  return (
+    <svg aria-hidden="true" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.6" stroke={color} strokeWidth="1.8" />
+      <path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6" stroke={color} strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function formatKstTime(value: string) {
+  const date = new Date(value);
+  return date.toLocaleTimeString('ko-KR', { hour: '2-digit', hour12: false, minute: '2-digit', second: '2-digit', timeZone: 'Asia/Seoul' });
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5 shrink-0 text-[#ccc]" fill="none" viewBox="0 0 24 24">
+      <path d="m9 5 7 7-7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M18 16v-5a6 6 0 1 0-12 0v5l-1.5 2.5h15L18 16Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path d="M9.5 21a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17" cy="9.5" r="2.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3 20c.8-3.2 3-5 6-5s5.2 1.8 6 5M15.5 15.5c2.3.2 3.8 1.7 4.5 4.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 11v5.5M12 8v.01" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
     </svg>
   );
 }
