@@ -18,6 +18,16 @@ const progressPollIntervalMs = 3_000;
 const seatPollIntervalMs = 5_000;
 const roundPollIntervalMs = 3_000;
 
+// Near-white with only a whisper of warm pink (top-left) and lavender
+// (bottom-right) - deliberately not a solid peach/pink fill.
+const tabletBackground: React.CSSProperties = {
+  background: [
+    'radial-gradient(58% 50% at 16% 8%, rgba(255,214,203,0.4) 0%, rgba(255,214,203,0) 70%)',
+    'radial-gradient(50% 45% at 88% 92%, rgba(222,212,244,0.28) 0%, rgba(222,212,244,0) 72%)',
+    '#fffdfc',
+  ].join(', '),
+};
+
 interface StoredTabletConnection {
   connectionToken: string;
   eventId: string;
@@ -276,12 +286,10 @@ export default function AdminTabletSeatPage() {
       // round label, no partner names, no card deck) - this phase is just
       // "move + rate on your phone," per the wireframe.
       return (
-        <main
-          className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]"
-          style={{ background: 'radial-gradient(120% 140% at 50% 0%, #fffaf8 0%, #fdf1ec 55%, #fbe8e1 100%)' }}
-        >
-          <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#e1988a" />
-          <p className="px-6 text-center text-[clamp(14px,2vh,20px)] font-bold text-[#c08d81]">
+        <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+          <PetalDecor />
+          <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+          <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
             2분 안에 자리 이동 및 호감도 작성을 완료해주세요
           </p>
         </main>
@@ -291,12 +299,10 @@ export default function AdminTabletSeatPage() {
     const stored = readStoredConnection(eventId ?? '', tableNumber);
 
     return (
-      <main
-        className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]"
-        style={{ background: 'radial-gradient(120% 140% at 12% 0%, #fff6f2 0%, #ffeae3 45%, #ffe0d8 100%)' }}
-      >
-        <div className="flex h-full w-full items-center justify-between gap-[3vw] px-[6vw]">
-          <div className="flex flex-1 items-center justify-center">
+      <main className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <PetalDecor />
+        <div className="flex h-full w-full items-center px-[5vw]">
+          <div className="flex flex-[68] items-center justify-center">
             <RoundTimerRing
               phaseLabel="10분 대화"
               phaseDuration={phaseDuration}
@@ -304,7 +310,7 @@ export default function AdminTabletSeatPage() {
               roundLabel={`${currentRound}라운드 진행 중`}
             />
           </div>
-          <div className="w-[24vw] max-w-[300px] min-w-[190px] shrink-0">
+          <div className="flex flex-[32] justify-center">
             {stored?.connectionToken && eventId ? (
               <ConversationTopicDeck connectionToken={stored.connectionToken} eventId={eventId} tableNumber={tableNumber} />
             ) : null}
@@ -343,7 +349,7 @@ function RoundTimerRing({
   phaseDuration,
   phaseLabel,
   remaining,
-  ringColor = '#e17b6b',
+  ringColor = '#d98a76',
   roundLabel,
 }: {
   phaseDuration: number;
@@ -354,7 +360,7 @@ function RoundTimerRing({
 }) {
   const elapsedFraction = phaseDuration > 0 ? Math.min(1, Math.max(0, 1 - remaining / phaseDuration)) : 0;
   const size = 100;
-  const strokeWidth = 3;
+  const strokeWidth = 0.6;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - elapsedFraction);
@@ -363,9 +369,9 @@ function RoundTimerRing({
   const dotY = size / 2 + radius * Math.sin(angleRad);
 
   return (
-    <div className="relative grid shrink-0 place-items-center" style={{ height: 'clamp(340px, 62vh, 620px)', width: 'clamp(340px, 62vh, 620px)' }}>
+    <div className="relative grid shrink-0 place-items-center" style={{ height: 'clamp(420px, 72vh, 760px)', width: 'clamp(420px, 72vh, 760px)' }}>
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="#f6dcd6" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} fill="none" opacity={0.55} r={radius} stroke="#f2ddd6" strokeWidth={strokeWidth} />
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle
             cx={size / 2}
@@ -383,30 +389,71 @@ function RoundTimerRing({
       </svg>
       {elapsedFraction > 0 ? (
         <span
-          className="absolute h-[3%] w-[3%] rounded-full"
+          className="absolute h-[1.5%] w-[1.5%] rounded-full"
           style={{
             backgroundColor: ringColor,
-            boxShadow: `0 0 0 5px ${ringColor}2e`,
+            boxShadow: `0 0 0 5px ${ringColor}20`,
             left: `${dotX}%`,
             top: `${dotY}%`,
             transform: 'translate(-50%, -50%)',
           }}
         />
       ) : null}
-      <div className="px-[8%] text-center">
-        {roundLabel ? <p className="text-[clamp(13px,1.9vh,19px)] font-black tracking-wide text-[#c98276]">{roundLabel}</p> : null}
-        {phaseLabel ? <p className="mt-1 text-[clamp(10px,1.4vh,14px)] font-bold text-[#d9a79d]">{phaseLabel}</p> : null}
+      <div className="px-[12%] text-center">
+        {roundLabel ? (
+          <p style={{ color: '#c1897c', fontSize: 'clamp(14px,1.7vh,19px)', fontWeight: 600, letterSpacing: '0.01em' }}>{roundLabel}</p>
+        ) : null}
+        {phaseLabel ? (
+          <p className="mt-1" style={{ color: '#d6ab9f', fontSize: 'clamp(11px,1.25vh,14px)', fontWeight: 500 }}>
+            {phaseLabel}
+          </p>
+        ) : null}
         <p
-          className="font-black leading-none text-[#a34237]"
           style={{
+            backgroundClip: 'text',
+            backgroundImage: 'linear-gradient(180deg, #d99284 0%, #a24c3e 100%)',
+            color: 'transparent',
+            fontSize: 'clamp(84px,14.5vh,180px)',
             fontVariantNumeric: 'tabular-nums',
-            fontSize: 'clamp(56px,10.2vh,124px)',
-            marginTop: roundLabel || phaseLabel ? '0.75rem' : 0,
+            fontWeight: 300,
+            letterSpacing: '0.01em',
+            lineHeight: 1,
+            marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
           }}
         >
           {formatCountdown(remaining)}
         </p>
       </div>
+    </div>
+  );
+}
+
+// Sparse, low-opacity SVG petals/leaves in the corners, matching the
+// reference's soft botanical touch - pure CSS/SVG, no image assets.
+function PetalDecor() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      <svg className="absolute -left-6 -top-6 h-[230px] w-[230px]" fill="none" style={{ opacity: 0.22 }} viewBox="0 0 200 200">
+        <path d="M14 8 C40 28, 55 46, 62 78" stroke="#e7a79c" strokeLinecap="round" strokeWidth="1.4" />
+        <ellipse cx="34" cy="22" fill="#efb2ab" rx="15" ry="8" transform="rotate(-28 34 22)" />
+        <ellipse cx="52" cy="44" fill="#eeb9ac" rx="13" ry="7" transform="rotate(-10 52 44)" />
+        <ellipse cx="30" cy="56" fill="#f0c2b6" rx="12" ry="6.5" transform="rotate(24 30 56)" />
+        <ellipse cx="66" cy="30" fill="#e9ada4" rx="10" ry="5.5" transform="rotate(8 66 30)" />
+      </svg>
+      <svg className="absolute right-10 top-8 h-9 w-9" fill="none" style={{ opacity: 0.26 }} viewBox="0 0 36 36">
+        <ellipse cx="18" cy="15" fill="#eba89f" rx="11" ry="6" transform="rotate(38 18 15)" />
+      </svg>
+      <svg className="absolute right-24 top-28 h-5 w-5" fill="none" style={{ opacity: 0.2 }} viewBox="0 0 20 20">
+        <ellipse cx="10" cy="8" fill="#eeb2a9" rx="6" ry="3.4" transform="rotate(-24 10 8)" />
+      </svg>
+      <svg className="absolute bottom-10 left-16 h-5 w-5" fill="none" style={{ opacity: 0.18 }} viewBox="0 0 20 20">
+        <ellipse cx="10" cy="8" fill="#f0b6ae" rx="6" ry="3.4" transform="rotate(52 10 8)" />
+      </svg>
+      <svg className="absolute bottom-14 right-14 h-7 w-7" fill="none" style={{ opacity: 0.2 }} viewBox="0 0 28 28">
+        <ellipse cx="14" cy="12" fill="#e8a89f" rx="8" ry="4.4" transform="rotate(-38 14 12)" />
+      </svg>
     </div>
   );
 }

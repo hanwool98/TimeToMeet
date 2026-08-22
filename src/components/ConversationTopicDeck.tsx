@@ -69,64 +69,112 @@ export default function ConversationTopicDeck({
   };
 
   return (
-    <div className="flex w-full flex-col items-center gap-4" style={{ touchAction: 'none' }}>
+    <div className="flex w-full flex-col items-center" style={{ touchAction: 'none' }}>
       {!currentTopic ? (
-        <p className="text-center text-[clamp(13px,1.3vw,17px)] font-bold leading-snug text-[#b3675f]">
-          대화가 막혔다면
-          <br />
-          새로운 대화주제를 뽑아보세요!
-        </p>
+        <div className="mb-1 flex flex-col items-center">
+          <p
+            className="text-center leading-snug"
+            style={{ color: '#c1897c', fontSize: 'clamp(12px,1.35vh,15px)', fontWeight: 600 }}
+          >
+            대화가 막혔다면
+            <br />
+            새로운 대화주제를 뽑아보세요!
+          </p>
+          <ArrowGlyph />
+        </div>
       ) : null}
 
       <div
         className="relative grid w-full place-items-center"
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
-        style={{ height: 'clamp(220px, 24vw, 320px)' }}
+        style={{ height: 'clamp(230px, 30vh, 340px)' }}
       >
-        {currentTopic ? (
-          <div
-            className="flex h-full w-full max-w-[280px] flex-col items-center justify-center rounded-[20px] border border-white/70 bg-white/90 p-5 text-center shadow-[0_18px_40px_rgba(200,110,110,0.18)]"
-            key={revealKey}
-            style={{ animation: 'topic-card-in 260ms ease-out' }}
-          >
-            <p className="text-fluid-safe break-keep text-[clamp(16px,1.9vw,24px)] font-black leading-snug text-[#8a3f3f]">
-              {currentTopic.content}
-            </p>
-            <p className="mt-4 text-[clamp(11px,1vw,13px)] font-bold text-[#c99]">눌러서 다음 주제 보기</p>
+        <div className="relative" style={{ height: 'clamp(180px, 23vh, 260px)', width: 'clamp(128px, 16vh, 185px)' }}>
+          <DeckCard rotate={7} translate="42% 6%" tone="back" />
+          <DeckCard rotate={-5} translate="-38% -4%" tone="middle" />
+          <div className="absolute inset-0" key={revealKey} style={{ animation: 'topic-card-in 280ms cubic-bezier(0.22,1,0.36,1)' }}>
+            <DeckCard rotate={0} tone="front">
+              {currentTopic ? (
+                <div className="flex h-full w-full flex-col items-center justify-center px-[10%] text-center">
+                  <p
+                    className="text-fluid-safe break-keep leading-snug"
+                    style={{ color: '#8a5145', fontSize: 'clamp(13px,1.7vh,17px)', fontWeight: 600 }}
+                  >
+                    {currentTopic.content}
+                  </p>
+                  <p className="mt-3" style={{ color: '#cba79d', fontSize: 'clamp(9px,1vh,11px)', fontWeight: 600 }}>
+                    눌러서 다음 주제 보기
+                  </p>
+                </div>
+              ) : (
+                <CardsGlyph />
+              )}
+            </DeckCard>
           </div>
-        ) : (
-          <CardStack />
-        )}
+        </div>
       </div>
 
       <style>{`
         @keyframes topic-card-in {
-          from { opacity: 0; transform: scale(0.92) translateY(6px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
+          from { opacity: 0; transform: translateX(10px) scale(0.95); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
         }
       `}</style>
     </div>
   );
 }
 
-function CardStack() {
+function DeckCard({
+  children,
+  rotate,
+  tone,
+  translate = '0 0',
+}: {
+  children?: React.ReactNode;
+  rotate: number;
+  tone: 'back' | 'front' | 'middle';
+  translate?: string;
+}) {
+  const [tx, ty] = translate.split(' ');
+  const background =
+    tone === 'front'
+      ? 'linear-gradient(160deg, #ffffff 0%, #fff3ee 100%)'
+      : tone === 'middle'
+        ? 'linear-gradient(160deg, #ffe7dd 0%, #ffd6c6 100%)'
+        : 'linear-gradient(160deg, #ffdccf 0%, #ffc7b3 100%)';
+  const shadow = tone === 'front' ? '0 14px 28px rgba(196,122,104,0.22)' : '0 8px 18px rgba(196,122,104,0.14)';
+
   return (
-    <div className="relative h-full w-full max-w-[200px]">
-      <div className="absolute left-1/2 top-1/2 h-[70%] w-[60%] -translate-x-[68%] -translate-y-1/2 rotate-[-11deg] rounded-[16px] border border-[#f3ab98] bg-gradient-to-br from-[#ffcfba] to-[#ffb69f] shadow-[0_10px_22px_rgba(200,110,110,0.2)]" />
-      <div className="absolute left-1/2 top-1/2 h-[70%] w-[60%] -translate-x-[32%] -translate-y-1/2 rotate-[10deg] rounded-[16px] border border-[#f6bfaf] bg-gradient-to-br from-[#ffdcc9] to-[#ffc4b0] shadow-[0_10px_22px_rgba(200,110,110,0.18)]" />
-      <div className="absolute left-1/2 top-1/2 grid h-[76%] w-[66%] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[18px] border border-white bg-gradient-to-br from-white to-[#fff4f0] shadow-[0_16px_32px_rgba(200,110,110,0.25)]">
-        <CardsGlyph />
-      </div>
+    <div
+      className="absolute inset-0 grid place-items-center rounded-[16px] border"
+      style={{
+        background,
+        borderColor: 'rgba(255,255,255,0.85)',
+        boxShadow: shadow,
+        transform: `translate(${tx}, ${ty}) rotate(${rotate}deg)`,
+        zIndex: tone === 'front' ? 3 : tone === 'middle' ? 2 : 1,
+      }}
+    >
+      {children}
     </div>
   );
 }
 
 function CardsGlyph() {
   return (
-    <svg aria-hidden="true" className="h-[26%] w-[26%] text-[#ef8f80]" fill="none" viewBox="0 0 24 24">
-      <rect height="16" rx="2.5" stroke="currentColor" strokeWidth="1.6" width="12" x="6" y="4" />
-      <path d="M9 9h6M9 13h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+    <svg aria-hidden="true" className="h-[22%] w-[22%]" fill="none" style={{ color: '#e3a89a' }} viewBox="0 0 24 24">
+      <rect height="16" rx="2.5" stroke="currentColor" strokeWidth="1.4" width="12" x="6" y="4" />
+      <path d="M9 9h6M9 13h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function ArrowGlyph() {
+  return (
+    <svg aria-hidden="true" className="mt-1 h-8 w-10" fill="none" style={{ color: '#e0a99d' }} viewBox="0 0 40 32">
+      <path d="M4 4c2 10 8 18 18 22" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      <path d="M15 24 22 26.5 20 19" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
     </svg>
   );
 }
