@@ -18,6 +18,7 @@ import {
 } from '../services/supabaseApplications';
 import useOperationalData from '../hooks/useOperationalData';
 import type { StoredApplication } from '../utils/adminApplications';
+import { createRequestGuard, debounce } from '../utils/requestGuard';
 
 declare global {
   interface Window {
@@ -40,10 +41,12 @@ export default function AdminCheckInPage() {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
 
+  const summariesGuardRef = useRef(createRequestGuard());
+
   const loadSummaries = useCallback(async () => {
     setSummaryError(null);
     try {
-      setSummaries(await fetchAdminEventModeSummaries());
+      await summariesGuardRef.current.run(fetchAdminEventModeSummaries, setSummaries, { skipIfInFlight: true });
     } catch (caughtError) {
       setSummaryError(caughtError instanceof Error ? caughtError.message : '행사 데이터를 불러오지 못했습니다.');
     } finally {
@@ -57,12 +60,21 @@ export default function AdminCheckInPage() {
       if (active) await loadSummaries();
     };
     void safeLoad();
-    const unsubscribe = subscribeToAdminEventModeChanges(() => void safeLoad());
+    const debouncedLoad = debounce(() => void safeLoad(), 300);
+    const unsubscribe = subscribeToAdminEventModeChanges(() => debouncedLoad());
     const intervalId = window.setInterval(() => void safeLoad(), 30_000);
+    const handleReconnectSignal = () => void safeLoad();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
+      debouncedLoad.cancel();
       unsubscribe();
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [loadSummaries]);
 

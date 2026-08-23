@@ -10,6 +10,7 @@ import {
   type AdminEventModeSummary,
   type AdminEventTabletStatus,
 } from '../services/supabaseApplications';
+import { unlockTabletAlertAudio } from '../utils/tabletAlertAudio';
 
 const KOREA_TIME_ZONE = 'Asia/Seoul';
 const storageKey = 'time2meet.tabletConnection';
@@ -131,6 +132,11 @@ export default function AdminTabletConnectPage() {
 
   const handleSelect = async (tableNumber: number) => {
     if (!eventId || connectingNumber !== null) return;
+    // Must happen synchronously here, before the first `await` below - this
+    // tap is the one guaranteed user gesture the tablet gets all event, and
+    // later timer-alert playback needs audio already unlocked by then (old
+    // Android/autoplay policies block .play() outside a gesture call stack).
+    unlockTabletAlertAudio();
     setConnectError('');
     setConnectingNumber(tableNumber);
     try {
@@ -214,7 +220,10 @@ export default function AdminTabletConnectPage() {
 
             <button
               className="mt-8 h-14 w-full rounded-[16px] bg-[#ef4039] text-[17px] font-black text-white"
-              onClick={() => navigate(`/admin/events/${eventId}/tablet/${connectedInfo.tableNumber}/seat`)}
+              onClick={() => {
+                unlockTabletAlertAudio();
+                navigate(`/admin/events/${eventId}/tablet/${connectedInfo.tableNumber}/seat`);
+              }}
               type="button"
             >
               자리 유도 화면으로 이동

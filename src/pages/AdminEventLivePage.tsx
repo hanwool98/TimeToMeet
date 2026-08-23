@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import HeartRating from '../components/HeartRating';
 import ParticipantPhoto from '../components/ParticipantPhoto';
 import useOperationalData from '../hooks/useOperationalData';
+import { isConnectionStale } from '../utils/connectionStatus';
+import { createRequestGuard, debounce } from '../utils/requestGuard';
 import {
   controlEventIntroVideo,
   controlRoundTimer,
@@ -63,22 +66,30 @@ export default function AdminEventLivePage() {
   const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
   const [mutualRatingsPanelOpen, setMutualRatingsPanelOpen] = useState(false);
   const [finalSelectionResults, setFinalSelectionResults] = useState<AdminFinalSelectionResults | null>(null);
+  const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const { applications } = useOperationalData({ admin: true, eventId });
   const eventApplications = useMemo(() => applications.filter((item) => item.eventId === eventId), [applications, eventId]);
 
+  const loadGuardRef = useRef(createRequestGuard());
+  const roundProgressGuardRef = useRef(createRequestGuard());
+
   const load = useCallback(async () => {
     if (!eventId) return;
-    try {
-      const [summaries, nextProgress] = await Promise.all([fetchAdminEventModeSummaries(), fetchAdminEventProgress(eventId)]);
-      setEvent(summaries.find((item) => item.id === eventId) ?? null);
-      setProgress(nextProgress);
-      setLoadError(null);
-    } catch (caughtError) {
+    await loadGuardRef.current.run(
+      () => Promise.all([fetchAdminEventModeSummaries(), fetchAdminEventProgress(eventId)]),
+      ([summaries, nextProgress]) => {
+        setEvent(summaries.find((item) => item.id === eventId) ?? null);
+        setProgress(nextProgress);
+        setLoadError(null);
+        setLastSuccessAt(Date.now());
+      },
+    ).catch((caughtError: unknown) => {
       setLoadError(caughtError instanceof Error ? caughtError.message : '행사 진행 상태를 불러오지 못했습니다.');
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   }, [eventId]);
 
   useEffect(() => {
@@ -87,14 +98,31 @@ export default function AdminEventLivePage() {
       if (active) await load();
     };
     void safeLoad();
-    const unsubscribe = subscribeToAdminEventModeChanges(() => void safeLoad());
+    const debouncedLoad = debounce(() => void safeLoad(), 300);
+    const unsubscribe = subscribeToAdminEventModeChanges(() => debouncedLoad());
     const intervalId = window.setInterval(() => void safeLoad(), pollIntervalMs);
+    const handleReconnectSignal = () => void safeLoad();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
+      debouncedLoad.cancel();
       unsubscribe();
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [load]);
+
+  // Drives the connection-status banner only - not the round countdown
+  // (RoundProgressSection ticks its own, separate 1s clock for that).
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+  const isStale = isConnectionStale(lastSuccessAt, nowTick);
 
   // Reconcile the actual <video> element with the polled server state: only
   // resync playback position once drift is noticeable, and only touch
@@ -131,6 +159,16 @@ export default function AdminEventLivePage() {
     progress?.stage === 'bonus_rating' ||
     progress?.stage === 'final_selection';
 
+  // applyRoundProgress + roundProgressGuardRef are shared with the manual
+  // timer/resume/round-jump/pause-request handlers below, so a slow poll
+  // response landing just after a fresher manual-action response never
+  // overwrites it (latest-request-wins), and a poll tick never overlaps a
+  // manual action or a previous still-in-flight poll.
+  const applyRoundProgress = useCallback((next: RoundProgress) => {
+    setRoundProgress(next);
+    setLastSuccessAt(Date.now());
+  }, []);
+
   // Round-specific state (timer, current table matches, pending pause
   // requests) only matters once the round stage is reached, so it's polled
   // separately from the general intro-video progress above.
@@ -139,19 +177,27 @@ export default function AdminEventLivePage() {
     let active = true;
     const poll = async () => {
       try {
-        const next = await fetchAdminRoundProgress(eventId);
-        if (active) setRoundProgress(next);
+        await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), (next) => {
+          if (active) applyRoundProgress(next);
+        }, { skipIfInFlight: true });
       } catch {
         // Transient failures just keep showing the last known state.
       }
     };
     void poll();
     const intervalId = window.setInterval(() => void poll(), pollIntervalMs);
+    const handleReconnectSignal = () => void poll();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
-  }, [eventId, isRoundStage]);
+  }, [eventId, isRoundStage, applyRoundProgress]);
 
   useEffect(() => {
     if (!eventId || progress?.stage !== 'final_selection') return undefined;
@@ -159,7 +205,10 @@ export default function AdminEventLivePage() {
     const poll = async () => {
       try {
         const next = await fetchAdminFinalSelectionResults(eventId);
-        if (active) setFinalSelectionResults(next);
+        if (active) {
+          setFinalSelectionResults(next);
+          setLastSuccessAt(Date.now());
+        }
       } catch {
         // Keep the last known submission count during a transient poll error.
       }
@@ -242,7 +291,7 @@ export default function AdminEventLivePage() {
     setTimerActionPending(true);
     try {
       await controlRoundTimer(eventId, roundProgress.timerStatus === 'running' ? 'pause' : 'resume');
-      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
     } catch (caughtError) {
       setActionError(caughtError instanceof Error ? caughtError.message : '타이머를 변경하지 못했습니다.');
     } finally {
@@ -255,7 +304,7 @@ export default function AdminEventLivePage() {
     setTimerActionPending(true);
     try {
       await controlRoundTimer(eventId, 'skip');
-      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
     } catch (caughtError) {
       setActionError(caughtError instanceof Error ? caughtError.message : '시간을 건너뛰지 못했습니다.');
     } finally {
@@ -268,7 +317,7 @@ export default function AdminEventLivePage() {
     setTimerActionPending(true);
     try {
       await resumeAfterRegularRounds(eventId);
-      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '재개하지 못했습니다.');
     } finally {
@@ -282,7 +331,7 @@ export default function AdminEventLivePage() {
     setTimerActionPending(true);
     try {
       await setCurrentRoundForSession(eventId, roundNumber);
-      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
       setRoundJumpPanelOpen(false);
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '라운드를 이동하지 못했습니다.');
@@ -296,7 +345,7 @@ export default function AdminEventLivePage() {
     try {
       await updatePauseRequestStatus(requestId, 'resolved');
       setPauseRequests(await fetchAdminPauseRequests(eventId));
-      setRoundProgress(await fetchAdminRoundProgress(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '요청을 처리하지 못했습니다.');
     }
@@ -338,6 +387,7 @@ export default function AdminEventLivePage() {
 
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-[#fffaf4] text-[#1f292d]">
+      <ConnectionStatusBanner visible={isStale} />
       <div className="mx-auto min-h-screen w-full max-w-[520px] px-5 pb-[calc(28px+env(safe-area-inset-bottom))] pt-[calc(16px+env(safe-area-inset-top))]">
         <header className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -725,7 +775,7 @@ function RoundProgressSection({
     roundProgress.stage === 'bonus_rating'
       ? BONUS_RATING_PHASE_SECONDS
       : phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds);
-  const liveElapsed = computeLiveElapsedSeconds(roundProgress, nowTick);
+  const liveElapsed = computeLiveElapsedSeconds(roundProgress, nowTick + roundProgress.clockOffsetMs);
   const remaining = Math.max(0, phaseDuration - liveElapsed);
   const phaseLabel =
     roundProgress.stage === 'bonus_rating'

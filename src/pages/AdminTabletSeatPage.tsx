@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import ConversationTopicDeck from '../components/ConversationTopicDeck';
 import { DataLoadingState } from '../components/DataState';
+import TimerAlertToast from '../components/TimerAlertToast';
+import { useTabletTimerAlerts } from '../hooks/useTabletTimerAlerts';
 import {
   fetchEventProgressForTablet,
   fetchEventTableSeatGuide,
@@ -10,13 +13,16 @@ import {
   type EventTableSeatGuide,
   type TabletRoundProgress,
 } from '../services/supabaseApplications';
+import { isConnectionStale } from '../utils/connectionStatus';
 import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
+import { createRequestGuard } from '../utils/requestGuard';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const storageKey = 'time2meet.tabletConnection';
 const progressPollIntervalMs = 3_000;
 const seatPollIntervalMs = 5_000;
 const roundPollIntervalMs = 3_000;
+const tabletConnectionBannerLines = ['인터넷에 연결되어 있지 않습니다.', '연결을 확인해주세요.'];
 
 // Near-white with only a whisper of warm pink (top-left) and lavender
 // (bottom-right) - deliberately not a solid peach/pink fill.
@@ -69,6 +75,66 @@ export default function AdminTabletSeatPage() {
   const [displayTime, setDisplayTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
+  const [connTick, setConnTick] = useState(() => Date.now());
+  const progressGuardRef = useRef(createRequestGuard());
+  const seatGuideGuardRef = useRef(createRequestGuard());
+  const roundGuardRef = useRef(createRequestGuard());
+
+  // Always-on 1s tick for the connection-status banner, independent of the
+  // round-stage-gated countdown tick below.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setConnTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+  const isStale = isConnectionStale(lastSuccessAt, connTick);
+
+  // "연결이 복구되었습니다" fires once on the true->false edge, not on every
+  // render while connected - a ref (not state) tracks the previous value so
+  // this doesn't re-trigger itself.
+  const wasStaleRef = useRef(false);
+  const [showRecoveredToast, setShowRecoveredToast] = useState(false);
+  useEffect(() => {
+    if (wasStaleRef.current && !isStale) {
+      setShowRecoveredToast(true);
+      const timeoutId = window.setTimeout(() => setShowRecoveredToast(false), 2_500);
+      wasStaleRef.current = isStale;
+      return () => window.clearTimeout(timeoutId);
+    }
+    wasStaleRef.current = isStale;
+    return undefined;
+  }, [isStale]);
+
+  // Landscape is the only supported layout - orientation.lock is best-effort
+  // (many older/kiosk-mode tablets reject or don't expose it at all), so the
+  // real guarantee is this portrait-viewport check + overlay below, not the
+  // lock call succeeding.
+  const [isPortraitViewport, setIsPortraitViewport] = useState(
+    () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia('(orientation: portrait)');
+    const update = () => setIsPortraitViewport(mediaQuery.matches);
+    update();
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', update);
+      return () => mediaQuery.removeEventListener('change', update);
+    }
+    // Older WebView: MediaQueryList only supports the deprecated
+    // addListener/removeListener pair.
+    mediaQuery.addListener(update);
+    return () => mediaQuery.removeListener(update);
+  }, []);
+  useEffect(() => {
+    const orientation = (screen as unknown as { orientation?: { lock?: (type: string) => Promise<void> } }).orientation;
+    if (!orientation?.lock) return;
+    orientation.lock('landscape').catch(() => {
+      // Expected to fail on many tablets (no fullscreen, unsupported, kiosk
+      // policy) - the portrait-overlay above is the real guard, this is
+      // purely a nice-to-have when it happens to work.
+    });
+  }, []);
 
   // Primary heartbeat + stage driver. This is also what proves the
   // connection is still valid server-side, so an admin disconnect bounces
@@ -89,14 +155,20 @@ export default function AdminTabletSeatPage() {
         return;
       }
       try {
-        const result = await fetchEventProgressForTablet(eventId, tableNumber, stored.connectionToken);
-        if (!active) return;
-        if (!result.ok) {
-          goToConnect();
-          return;
-        }
-        setProgress(result);
-        setLoading(false);
+        await progressGuardRef.current.run(
+          () => fetchEventProgressForTablet(eventId, tableNumber, stored.connectionToken),
+          (result) => {
+            if (!active) return;
+            if (!result.ok) {
+              goToConnect();
+              return;
+            }
+            setProgress(result);
+            setLoading(false);
+            setLastSuccessAt(Date.now());
+          },
+          { skipIfInFlight: true },
+        );
       } catch {
         if (active) setLoading(false);
       }
@@ -104,9 +176,16 @@ export default function AdminTabletSeatPage() {
 
     void poll();
     const intervalId = window.setInterval(() => void poll(), progressPollIntervalMs);
+    const handleReconnectSignal = () => void poll();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [eventId, navigate, tableNumber]);
 
@@ -120,8 +199,16 @@ export default function AdminTabletSeatPage() {
       const stored = readStoredConnection(eventId, tableNumber);
       if (!stored) return;
       try {
-        const result = await fetchEventTableSeatGuide(eventId, tableNumber, stored.connectionToken);
-        if (active && result.ok) setSeatGuide(result);
+        await seatGuideGuardRef.current.run(
+          () => fetchEventTableSeatGuide(eventId, tableNumber, stored.connectionToken),
+          (result) => {
+            if (active && result.ok) {
+              setSeatGuide(result);
+              setLastSuccessAt(Date.now());
+            }
+          },
+          { skipIfInFlight: true },
+        );
       } catch {
         // Connectivity failures are already handled by the progress poll above.
       }
@@ -129,9 +216,16 @@ export default function AdminTabletSeatPage() {
 
     void poll();
     const intervalId = window.setInterval(() => void poll(), seatPollIntervalMs);
+    const handleReconnectSignal = () => void poll();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [eventId, tableNumber, progress?.stage]);
 
@@ -152,8 +246,16 @@ export default function AdminTabletSeatPage() {
       const stored = readStoredConnection(eventId, tableNumber);
       if (!stored) return;
       try {
-        const result = await fetchRoundProgressForTablet(eventId, tableNumber, stored.connectionToken);
-        if (active && result.ok) setRoundProgress(result);
+        await roundGuardRef.current.run(
+          () => fetchRoundProgressForTablet(eventId, tableNumber, stored.connectionToken),
+          (result) => {
+            if (active && result.ok) {
+              setRoundProgress(result);
+              setLastSuccessAt(Date.now());
+            }
+          },
+          { skipIfInFlight: true },
+        );
       } catch {
         // Connectivity failures are already handled by the progress poll above.
       }
@@ -161,9 +263,16 @@ export default function AdminTabletSeatPage() {
 
     void poll();
     const intervalId = window.setInterval(() => void poll(), roundPollIntervalMs);
+    const handleReconnectSignal = () => void poll();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [eventId, tableNumber, isRoundStage]);
 
@@ -197,11 +306,59 @@ export default function AdminTabletSeatPage() {
     }
   }, [progress]);
 
+  // Timer-bearing phases only - round_complete/bonus_matching are part of
+  // isRoundStage (for polling) but have no countdown to warn about.
+  const hasTimerPhase =
+    progress?.stage === 'round_active' || progress?.stage === 'bonus_seat_guide' || progress?.stage === 'bonus_rating';
+
+  const timerPhaseDuration = !hasTimerPhase
+    ? 0
+    : progress?.stage === 'bonus_seat_guide'
+      ? phaseDurationSeconds('transition')
+      : progress?.stage === 'bonus_rating'
+        ? BONUS_RATING_PHASE_SECONDS
+        : phaseDurationSeconds(roundProgress?.roundPhase, roundProgress?.isBonusRound, roundProgress?.conversationDurationSeconds);
+
+  const timerRemaining =
+    !hasTimerPhase || !roundProgress
+      ? 0
+      : Math.max(
+          0,
+          timerPhaseDuration -
+            computeLiveElapsedSeconds(
+              {
+                timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
+                timerStatus: roundProgress.timerStatus ?? 'paused',
+                timerUpdatedAt: roundProgress.timerUpdatedAt,
+              },
+              nowTick + (roundProgress.clockOffsetMs ?? 0),
+            ),
+        );
+
+  // bonus_rating is itself only 1 minute long, so a "1 minute left" warning
+  // would fire immediately at phase start - skipped there per spec.
+  const shouldWarnForPhase = progress?.stage !== 'bonus_rating';
+
+  const timerNotificationKey =
+    eventId && hasTimerPhase && roundProgress
+      ? [eventId, progress?.stage, roundProgress.currentRound ?? '', roundProgress.isBonusRound ? 1 : 0, roundProgress.roundPhase ?? ''].join(':')
+      : '';
+
+  const timerAlertToast = useTabletTimerAlerts({
+    enabled: hasTimerPhase && Boolean(roundProgress) && Boolean(timerNotificationKey),
+    notificationKey: timerNotificationKey,
+    playWarning: shouldWarnForPhase,
+    remaining: timerRemaining,
+  });
+
   if (loading || !progress) return <DataLoadingState />;
 
   if (progress.stage === 'intro_video') {
     return (
       <main className="fixed inset-0 bg-black">
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
         {progress.introVideoUrl ? (
           <video
             className="h-full w-full object-contain"
@@ -258,6 +415,9 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'round_waiting') {
     return (
       <main className="fixed inset-0 grid place-items-center bg-white px-10 text-center text-[#1f292d]">
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ef554a]">소개영상 종료</p>
           <p className="mt-4 text-[32px] font-black leading-snug">소개팅 시작 대기 중</p>
@@ -270,9 +430,12 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'round_complete') {
     return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
         <div>
-          <p className="text-[20px] font-black text-[#ff8a80]">모든 라운드 종료</p>
-          <p className="mt-4 text-[28px] font-black">수고하셨습니다</p>
+          <p className="text-[20px] font-black text-[#ff8a80]">잠시 쉬어가는 시간이에요</p>
+          <p className="mt-4 text-[24px] font-black">운영자의 안내를 기다려주세요</p>
         </div>
       </main>
     );
@@ -282,6 +445,9 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'bonus_matching') {
     return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ff8a80]">추가시간 매칭 중</p>
           <p className="mt-4 text-[22px] font-black">잠시만 기다려주세요</p>
@@ -294,16 +460,14 @@ export default function AdminTabletSeatPage() {
   // 하나)지만 이 phase에는 호감도 작성이 없으므로 문구만 다르다.
   if (progress.stage === 'bonus_seat_guide') {
     if (!roundProgress) return <DataLoadingState />;
-    const phaseDuration = phaseDurationSeconds('transition');
-    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
-      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
-      timerStatus: roundProgress.timerStatus ?? 'paused',
-      timerUpdatedAt: roundProgress.timerUpdatedAt,
-    }, nowTick));
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
+        <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
-        <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
         <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
           2분 안에 자리 이동을 완료해주세요
         </p>
@@ -314,16 +478,14 @@ export default function AdminTabletSeatPage() {
   // 추가시간 대화 종료 후 1분 기존 호감도 수정 phase.
   if (progress.stage === 'bonus_rating') {
     if (!roundProgress) return <DataLoadingState />;
-    const phaseDuration = BONUS_RATING_PHASE_SECONDS;
-    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
-      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
-      timerStatus: roundProgress.timerStatus ?? 'paused',
-      timerUpdatedAt: roundProgress.timerUpdatedAt,
-    }, nowTick));
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
+        <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
-        <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
         <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
           1분 안에 호감도 수정을 완료해주세요
         </p>
@@ -333,12 +495,6 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'round_active') {
     if (!roundProgress) return <DataLoadingState />;
-    const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds);
-    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
-      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
-      timerStatus: roundProgress.timerStatus ?? 'paused',
-      timerUpdatedAt: roundProgress.timerUpdatedAt,
-    }, nowTick));
     const currentRound = roundProgress.currentRound ?? progress.currentRound ?? 1;
     const roundLabel =
       roundProgress.isBonusRound && roundProgress.bonusRoundIndex ? `추가시간 ${roundProgress.bonusRoundIndex} 진행 중` : `${currentRound}라운드 진행 중`;
@@ -351,8 +507,12 @@ export default function AdminTabletSeatPage() {
       // stage branch above.
       return (
         <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+          <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+          <PortraitWarningOverlay visible={isPortraitViewport} />
+          <ReconnectedToast visible={showRecoveredToast} />
+          <TimerAlertToast toast={timerAlertToast} />
           <PetalDecor />
-          <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+          <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
           <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
             2분 안에 자리 이동 및 호감도 작성을 완료해주세요
           </p>
@@ -361,16 +521,32 @@ export default function AdminTabletSeatPage() {
     }
 
     const stored = readStoredConnection(eventId ?? '', tableNumber);
+    const partnerNames = [roundProgress.maleNickname, roundProgress.femaleNickname].filter(Boolean).join(' · ');
 
     return (
       <main className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
+        <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
+        {partnerNames ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 px-6 pt-6 text-center">
+            <p className="max-w-[70vw] truncate text-[15px] font-black tracking-wide" style={{ color: '#a35850' }}>
+              {partnerNames}
+            </p>
+            <p className="text-[12px] font-bold tracking-[0.2em]" style={{ color: '#c1897c' }}>
+              TABLE {tableNumber}
+            </p>
+          </div>
+        ) : null}
         <div className="flex h-full w-full items-center px-[5vw]">
           <div className="flex flex-[68] items-center justify-center">
             <RoundTimerRing
-              phaseLabel={`${Math.round(phaseDuration / 60)}분 대화`}
-              phaseDuration={phaseDuration}
-              remaining={remaining}
+              offline={isStale}
+              phaseLabel={`${Math.round(timerPhaseDuration / 60)}분 대화`}
+              phaseDuration={timerPhaseDuration}
+              remaining={timerRemaining}
               roundLabel={roundLabel}
             />
           </div>
@@ -387,6 +563,9 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'final_selection') {
     return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <PortraitWarningOverlay visible={isPortraitViewport} />
+        <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ff8a80]">모든 대화 종료</p>
           <p className="mt-4 text-[28px] font-black">최종 선택 진행 중</p>
@@ -398,13 +577,19 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'ended') {
     return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
-        <p className="text-[22px] font-black">행사가 종료되었습니다</p>
+        <div>
+          <p className="text-[22px] font-black">오늘의 모든 일정이 종료되었습니다</p>
+          <p className="mt-4 text-[18px] font-black text-white/80">수고하셨습니다</p>
+        </div>
       </main>
     );
   }
 
   return (
     <main className="fixed inset-0 flex overflow-hidden">
+      <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+      <PortraitWarningOverlay visible={isPortraitViewport} />
+      <ReconnectedToast visible={showRecoveredToast} />
       <span className="pointer-events-none absolute left-1/2 top-6 z-10 -translate-x-1/2 text-[13px] font-black tracking-[0.35em] text-[#8a94a6]">
         <span className="mr-3">—</span>
         SEAT GUIDE
@@ -422,11 +607,13 @@ export default function AdminTabletSeatPage() {
 
 function RoundTimerRing({
   phaseDuration,
+  offline = false,
   phaseLabel,
   remaining,
   ringColor = '#d98a76',
   roundLabel,
 }: {
+  offline?: boolean;
   phaseDuration: number;
   phaseLabel?: string;
   remaining: number;
@@ -483,23 +670,67 @@ function RoundTimerRing({
             {phaseLabel}
           </p>
         ) : null}
-        <p
-          style={{
-            backgroundClip: 'text',
-            backgroundImage: 'linear-gradient(180deg, #d99284 0%, #a24c3e 100%)',
-            color: 'transparent',
-            fontSize: 'clamp(84px,14.5vh,180px)',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 300,
-            letterSpacing: '0.01em',
-            lineHeight: 1,
-            marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
-          {formatCountdown(remaining)}
-        </p>
+        {offline ? (
+          <p
+            style={{
+              color: '#a35850',
+              fontSize: 'clamp(24px,4.2vh,40px)',
+              fontWeight: 700,
+              letterSpacing: '0.01em',
+              lineHeight: 1.3,
+              marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
+            }}
+          >
+            연결 확인 중
+          </p>
+        ) : (
+          <p
+            style={{
+              backgroundClip: 'text',
+              backgroundImage: 'linear-gradient(180deg, #d99284 0%, #a24c3e 100%)',
+              color: 'transparent',
+              fontSize: 'clamp(84px,14.5vh,180px)',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 300,
+              letterSpacing: '0.01em',
+              lineHeight: 1,
+              marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            {formatCountdown(remaining)}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Landscape is the only supported layout - this overlay (not a CSS
+// transform-rotate hack) is the fallback for tablets where orientation.lock
+// isn't available or was rejected. The existing tablet screens underneath
+// are untouched; this just sits on top until the device is turned.
+function PortraitWarningOverlay({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+      <div>
+        <p className="text-[22px] font-black">태블릿을 가로로 놓고</p>
+        <p className="text-[22px] font-black">사용해주세요</p>
+      </div>
+    </div>
+  );
+}
+
+// One-shot "connection restored" confirmation - fires only on the stale ->
+// not-stale edge (see wasStaleRef in AdminTabletSeatPage), auto-dismisses.
+function ReconnectedToast({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center px-4 pt-[max(12px,env(safe-area-inset-top))]">
+      <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-[#2f7d4f] px-4 py-2.5 text-[13px] font-bold text-white shadow-lg">
+        연결이 복구되었습니다
       </div>
     </div>
   );

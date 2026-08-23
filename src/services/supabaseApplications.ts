@@ -1596,6 +1596,7 @@ export interface RoundProgress {
   activeTables: number;
   bonusRoundCount: number;
   bonusRoundIndex?: number;
+  clockOffsetMs: number;
   completedRounds: number;
   conversationDurationSeconds: number;
   currentRound?: number;
@@ -1628,6 +1629,7 @@ interface RoundProgressJson {
   }>;
   pendingPauseCount: number;
   roundPhase: 'conversation' | 'transition' | null;
+  serverNow?: string | null;
   stage: EventProgressStage;
   timerPositionSeconds: number;
   timerStatus: 'paused' | 'running';
@@ -1636,11 +1638,27 @@ interface RoundProgressJson {
   totalRounds: number;
 }
 
+// The server timestamp each round-progress RPC now includes lets every
+// device correct for its own system-clock drift instead of trusting
+// Date.now() outright: offset = (server's "now" at response time) - (this
+// device's "now" at response time), so callers can feed `Date.now() +
+// clockOffsetMs` into computeLiveElapsedSeconds wherever they currently
+// pass a raw tick. A missing/unparseable serverNow (e.g. an older cached
+// response shape) just falls back to 0 - i.e. trusting the local clock,
+// exactly like before this existed.
+function computeClockOffsetMs(serverNowIso?: string | null): number {
+  if (!serverNowIso) return 0;
+  const serverNowMs = new Date(serverNowIso).getTime();
+  if (!Number.isFinite(serverNowMs)) return 0;
+  return serverNowMs - Date.now();
+}
+
 function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
   return {
     activeTables: row.activeTables,
     bonusRoundCount: row.bonusRoundCount ?? 0,
     bonusRoundIndex: row.bonusRoundIndex ?? undefined,
+    clockOffsetMs: computeClockOffsetMs(row.serverNow),
     completedRounds: row.completedRounds,
     conversationDurationSeconds: row.conversationDurationSeconds ?? 600,
     currentRound: row.currentRound ?? undefined,
@@ -1726,6 +1744,7 @@ export async function setCurrentRoundForSession(eventId: string, roundNumber: nu
 export interface TabletRoundProgress {
   bonusRoundCount?: number;
   bonusRoundIndex?: number;
+  clockOffsetMs?: number;
   conversationDurationSeconds?: number;
   currentRound?: number;
   femaleNickname?: string;
@@ -1755,6 +1774,7 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
   return {
     bonusRoundCount: row.bonusRoundCount ?? undefined,
     bonusRoundIndex: row.bonusRoundIndex ?? undefined,
+    clockOffsetMs: computeClockOffsetMs(row.serverNow),
     conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     femaleNickname: row.femaleNickname ?? undefined,
@@ -1824,6 +1844,7 @@ export async function updatePauseRequestStatus(requestId: string, status: EventP
 }
 
 export interface ParticipantRoundProgress {
+  clockOffsetMs?: number;
   conversationDurationSeconds?: number;
   currentRound?: number;
   gender?: '남성' | '여성';
@@ -1865,6 +1886,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     partnerJob?: string | null;
     partnerNickname?: string | null;
     roundPhase?: 'conversation' | 'transition' | null;
+    serverNow?: string | null;
     stage?: EventProgressStage | null;
     tableNumber?: number | null;
     timerPositionSeconds?: number | null;
@@ -1874,6 +1896,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   };
   if (!row?.ok) return { ok: false };
   return {
+    clockOffsetMs: computeClockOffsetMs(row.serverNow),
     conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     gender: row.gender ?? undefined,

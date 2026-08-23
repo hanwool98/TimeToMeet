@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAdminApplicationsFromSupabase,
   fetchAdminEventSummariesFromSupabase,
@@ -10,6 +10,7 @@ import {
 import type { EventData } from '../types/event';
 import type { ParticipantData } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
+import { createRequestGuard, debounce } from '../utils/requestGuard';
 
 interface UseOperationalDataOptions {
   admin?: boolean;
@@ -36,8 +37,9 @@ export default function useOperationalData({
   const [applications, setApplications] = useState<StoredApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const guardRef = useRef(createRequestGuard());
 
-  const load = useCallback(async () => {
+  const performLoad = useCallback(async () => {
     setError(null);
     try {
       const [nextEvents, nextParticipants, nextApplications] = await Promise.all([
@@ -72,6 +74,11 @@ export default function useOperationalData({
     }
   }, [admin, eventId, previewToken]);
 
+  const load = useCallback(
+    () => guardRef.current.run(performLoad, () => {}, { skipIfInFlight: true }),
+    [performLoad],
+  );
+
   useEffect(() => {
     let active = true;
     const safeLoad = async () => {
@@ -80,17 +87,32 @@ export default function useOperationalData({
     };
 
     void safeLoad();
+    const debouncedLoad = debounce(() => void safeLoad(), 300);
     const unsubscribe = subscribeToSupabaseChanges(() => {
-      void safeLoad();
+      debouncedLoad();
     });
     const intervalId = window.setInterval(() => {
       void safeLoad();
     }, 30_000);
 
+    // A device that was offline/backgrounded shouldn't have to wait for its
+    // next 30s poll tick to catch up once it's reachable again - refetch
+    // immediately on any reconnect signal (guarded by the same requestGuard,
+    // so this just piggybacks on whichever fetch is already in flight if
+    // one happens to be running).
+    const handleReconnectSignal = () => void safeLoad();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
+
     return () => {
       active = false;
+      debouncedLoad.cancel();
       unsubscribe();
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [load]);
 

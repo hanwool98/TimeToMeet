@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import HeartRatingInput from '../components/HeartRatingInput';
 import ParticipantPhoto from '../components/ParticipantPhoto';
 import PrimaryButton from '../components/PrimaryButton';
@@ -21,6 +22,8 @@ import {
   type ParticipantPhotoInfo,
   type ParticipantRoundProgress,
 } from '../services/supabaseApplications';
+import { isConnectionStale } from '../utils/connectionStatus';
+import { createRequestGuard } from '../utils/requestGuard';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
@@ -35,6 +38,15 @@ export default function EventModePage() {
   const [ticket, setTicket] = useState<MyEventTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ParticipantRoundProgress | null>(null);
+  const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
+  const [connTick, setConnTick] = useState(() => Date.now());
+  const progressGuardRef = useRef(createRequestGuard());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setConnTick(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+  const isStale = isConnectionStale(lastSuccessAt, connTick);
 
   useEffect(() => {
     let active = true;
@@ -66,17 +78,32 @@ export default function EventModePage() {
     let active = true;
     const poll = async () => {
       try {
-        const next = await fetchParticipantRoundProgress(eventId);
-        if (active) setProgress(next);
+        await progressGuardRef.current.run(
+          () => fetchParticipantRoundProgress(eventId),
+          (next) => {
+            if (active) {
+              setProgress(next);
+              setLastSuccessAt(Date.now());
+            }
+          },
+          { skipIfInFlight: true },
+        );
       } catch {
         // Keep showing the last known state on a transient failure.
       }
     };
     void poll();
     const intervalId = window.setInterval(() => void poll(), progressPollIntervalMs);
+    const handleReconnectSignal = () => void poll();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [eventId, ticket]);
 
@@ -109,6 +136,7 @@ export default function EventModePage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
+      <ConnectionStatusBanner visible={isStale} />
       <ParticipantEventScreen eventId={ticket.eventId} eventTitle={ticket.eventTitle} progress={progress} />
     </main>
   );
@@ -358,7 +386,7 @@ function ConversationScreen({
           timerStatus: progress.timerStatus ?? 'paused',
           timerUpdatedAt: progress.timerUpdatedAt,
         },
-        nowTick,
+        nowTick + (progress.clockOffsetMs ?? 0),
       ),
   );
 
@@ -595,7 +623,7 @@ function BonusSeatGuideScreen({
           timerStatus: progress.timerStatus ?? 'paused',
           timerUpdatedAt: progress.timerUpdatedAt,
         },
-        nowTick,
+        nowTick + (progress.clockOffsetMs ?? 0),
       ),
   );
 
@@ -823,7 +851,7 @@ function RatingScreen({
           timerStatus: progress.timerStatus ?? 'paused',
           timerUpdatedAt: progress.timerUpdatedAt,
         },
-        nowTick,
+        nowTick + (progress.clockOffsetMs ?? 0),
       ),
   );
 
