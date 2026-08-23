@@ -107,7 +107,7 @@ function useObjectUrls(files: File[]) {
   return urls;
 }
 
-function getSupportedAudioMimeType() {
+export function getSupportedAudioMimeType() {
   if (typeof MediaRecorder === 'undefined') return '';
   const candidates = [
     'audio/mp4;codecs=mp4a.40.2',
@@ -119,14 +119,14 @@ function getSupportedAudioMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
-function getAudioFileName(mimeType: string) {
+export function getAudioFileName(mimeType: string) {
   if (mimeType.includes('mp4')) return 'voice-intro.m4a';
   if (mimeType.includes('ogg')) return 'voice-intro.ogg';
   if (mimeType.includes('webm')) return 'voice-intro.webm';
   return 'voice-intro.audio';
 }
 
-const voiceRecordingMaxSeconds = 3;
+export const voiceRecordingMaxSeconds = 3;
 
 function BackIcon() {
   return (

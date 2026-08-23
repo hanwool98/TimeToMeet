@@ -103,7 +103,8 @@ export default function ConversationTopicDeck({
                   >
                     {currentTopic.content}
                   </p>
-                  <p className="mt-3" style={{ color: '#cba79d', fontSize: 'clamp(9px,1vh,11px)', fontWeight: 600 }}>
+                  <span className="mt-3 h-[3px] w-6 rounded-full" style={{ background: '#f5709a' }} />
+                  <p className="mt-2" style={{ color: '#cba79d', fontSize: 'clamp(9px,1vh,11px)', fontWeight: 600 }}>
                     눌러서 다음 주제 보기
                   </p>
                 </div>
@@ -143,14 +144,17 @@ function DeckCard({
       : tone === 'middle'
         ? 'linear-gradient(160deg, #ffe7dd 0%, #ffd6c6 100%)'
         : 'linear-gradient(160deg, #ffdccf 0%, #ffc7b3 100%)';
-  const shadow = tone === 'front' ? '0 14px 28px rgba(196,122,104,0.22)' : '0 8px 18px rgba(196,122,104,0.14)';
+  const shadow =
+    tone === 'front'
+      ? '0 4px 10px rgba(196,122,104,0.12), 0 16px 32px rgba(196,122,104,0.24)'
+      : '0 8px 18px rgba(196,122,104,0.14)';
 
   return (
     <div
-      className="absolute inset-0 grid place-items-center rounded-[16px] border"
+      className="absolute inset-0 grid place-items-center rounded-[20px] border"
       style={{
         background,
-        borderColor: 'rgba(255,255,255,0.85)',
+        borderColor: 'rgba(255,255,255,0.9)',
         boxShadow: shadow,
         transform: `translate(${tx}, ${ty}) rotate(${rotate}deg)`,
         zIndex: tone === 'front' ? 3 : tone === 'middle' ? 2 : 1,

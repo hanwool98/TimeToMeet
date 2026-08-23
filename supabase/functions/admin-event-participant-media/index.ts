@@ -11,7 +11,12 @@ type MediaPayload = {
   sessionToken?: string;
 };
 
-const signedUrlExpirySeconds = 600;
+// This map is fetched once per round-stage entry and NOT refetched for the
+// rest of the event (including the transition into bonus rounds) - a real
+// event easily runs past 10 minutes, so a short expiry here made photos
+// silently stop loading partway through (root cause of "추가시간 대표사진
+// 누락"). 6 hours comfortably covers a single day's event.
+const signedUrlExpirySeconds = 21_600;
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });

@@ -9,6 +9,12 @@ const corsHeaders = {
 type Payload = {
   eventId?: string;
   sessionToken?: string;
+  // Only honored server-side while stage is actually bonus_seat_guide (the
+  // merged "호감도 수정 + 다음 자리 이동" phase) - lets the "다음 상대"
+  // reveal card fetch that upcoming partner's photo instead of the one the
+  // rating form on the same screen is about (current_round's partner,
+  // which is still the just-finished one during this phase).
+  useNextRound?: boolean;
 };
 
 const signedUrlExpirySeconds = 600;
@@ -60,23 +66,25 @@ Deno.serve(async (request) => {
 
   const { data: progress, error: progressError } = await supabase
     .from('event_progress')
-    .select('current_round')
+    .select('current_round, stage')
     .eq('event_id', payload.eventId)
     .maybeSingle();
 
-  // current_round already points at the correct row in
-  // event_table_assignments no matter the stage - it's bumped to the next
-  // 추가시간 round number as soon as bonus_matching for that round starts,
-  // not deferred until the bonus conversation actually begins.
   if (progressError || !progress?.current_round) {
     return json({ ok: true, photoUrl: null, representativeCrop: null });
   }
+
+  // current_round points at the just-finished/current match for every
+  // stage - bonus_seat_guide (the merged rating-edit + next-move phase) is
+  // the one exception where the caller may explicitly ask for the
+  // already-precomputed NEXT round's match instead.
+  const lookupRound = payload.useNextRound && progress.stage === 'bonus_seat_guide' ? progress.current_round + 1 : progress.current_round;
 
   const { data: assignment, error: assignmentError } = await supabase
     .from('event_table_assignments')
     .select('male_application_id, female_application_id')
     .eq('event_id', payload.eventId)
-    .eq('round_number', progress.current_round)
+    .eq('round_number', lookupRound)
     .or(`male_application_id.eq.${myApplication.id},female_application_id.eq.${myApplication.id}`)
     .maybeSingle();
 

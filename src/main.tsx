@@ -19,6 +19,7 @@ import AdminFinalSelectionsPage from './pages/AdminFinalSelectionsPage';
 import AdminPage from './pages/AdminPage';
 import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
 import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
+import EmergencyProfileFormPage from './pages/EmergencyProfileFormPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
 import EventModePage from './pages/EventModePage';
@@ -85,6 +86,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/profile/new" element={<ProfileFormPage />} />
           <Route path="/events/:eventId/apply/profile" element={<ProfileFormPage />} />
           <Route path="/application-complete" element={<ApplicationCompletePage />} />
+          <Route path="/events/:eventId/emergency-apply" element={<EmergencyProfileFormPage />} />
           <Route path="/events/:eventId" element={<EventDetailPage />} />
           <Route path="/events/:eventId/info" element={<EventInfoPage />} />
           <Route path="/events/:eventId/mode" element={<EventModePage />} />

@@ -207,8 +207,12 @@ export default function EventInfoPage() {
                 <p className="mt-5 font-black text-black">모집 대상</p>
                 <p>25~35세 미혼 남녀</p>
                 <p className="mt-5 font-black text-black">모집 인원</p>
-                <p>남성 {counts.male}/10 · 여성 {counts.female}/10</p>
-                <p>※ 최소 6:6부터 진행됩니다.</p>
+                <p>
+                  남성 {counts.male}/{event?.maleCapacity ?? 10} · 여성 {counts.female}/{event?.femaleCapacity ?? 10}
+                </p>
+                {!event || ((event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6) ? (
+                  <p>※ 최소 6:6부터 진행됩니다.</p>
+                ) : null}
               </div>
             )}
           </section>

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
+import HashtagPicker from '../components/HashtagPicker';
 import HeartRatingInput from '../components/HeartRatingInput';
 import ParticipantPhoto from '../components/ParticipantPhoto';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   createParticipantPauseRequest,
+  createParticipantReport,
   fetchFinalSelectionCandidatePhotos,
   fetchFinalSelectionCandidates,
   fetchMyBonusRating,
@@ -24,7 +26,7 @@ import {
 } from '../services/supabaseApplications';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard } from '../utils/requestGuard';
-import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
+import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
 
@@ -173,12 +175,36 @@ function ParticipantEventScreen({
     return <WaitingScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
   }
 
+  // bonus_matching은 더 이상 살아있는 stage가 아니다(대화 종료 시 매칭을
+  // current_round를 올리지 않은 채 미리 계산해두고 bonus_seat_guide로 바로
+  // 전환) - 도달하지 않지만 혹시 남아있는 이전 상태를 위해 대기 화면으로
+  // 안전하게 fallback한다.
   if (progress.stage === 'bonus_matching') {
     return <BonusMatchingScreen onBack={onBack} />;
   }
 
+  // 추가시간 통합 phase: 방금 끝난 상대에 대한 호감도 수정과(있다면) 다음
+  // 상대 자리 이동 안내를 한 화면에서 같이 보여준다 - 예전에는 이게
+  // bonus_rating(1분, 수정만) + bonus_seat_guide(2분, 안내만) 두 단계였다.
   if (progress.stage === 'bonus_seat_guide') {
     return <BonusSeatGuideScreen eventId={eventId} onBack={onBack} progress={progress} />;
+  }
+
+  // 성비 불균형으로 이번 라운드에 상대가 배정되지 않은 참가자(순환 휴식) -
+  // undefined 닉네임이나 빈 프로필을 그대로 보여주는 대신 명시적으로 안내한다.
+  // 서버가 다음 라운드부터 다시 상대를 배정하므로 폴링만으로 자동 복귀된다.
+  if (progress.stage === 'round_active' && progress.isResting) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+            <p className="text-[18px] font-black leading-tight">이번 라운드는 잠시 쉬어가는 시간이에요</p>
+            <p className="mt-3 text-[14px] font-extrabold text-[#888]">다음 라운드부터 다시 만남이 이어집니다</p>
+          </section>
+        </div>
+      </div>
+    );
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'conversation') {
@@ -186,14 +212,7 @@ function ParticipantEventScreen({
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'transition') {
-    return <RatingScreen eventId={eventId} mode="regular" onBack={onBack} progress={progress} />;
-  }
-
-  // 추가시간 대화가 끝난 뒤 1분간 기존(정규 라운드) 호감도를 수정하는
-  // phase - 새 화면을 만들지 않고 정규 라운드와 같은 RatingScreen을
-  // mode="bonus"로 재사용한다(폼 UI 동일, fetch/submit 대상만 다름).
-  if (progress.stage === 'bonus_rating') {
-    return <RatingScreen eventId={eventId} mode="bonus" onBack={onBack} progress={progress} />;
+    return <RatingScreen eventId={eventId} onBack={onBack} progress={progress} />;
   }
 
   // 마지막 추가시간까지 끝난 뒤(또는 추가시간 0회 설정 시 정규 라운드
@@ -237,7 +256,7 @@ function ParticipantEventScreen({
 function ScreenHeader({ onBack, title }: { onBack: () => void; title?: string }) {
   const navigate = useNavigate();
   return (
-    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2">
+    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2 rounded-[20px] border border-[#f0f3f6] bg-white px-2 py-2 shadow-calendar">
       <button aria-label="뒤로가기" className="grid h-10 w-10 shrink-0 place-items-center text-[#333]" onClick={onBack} type="button">
         <BackIcon />
       </button>
@@ -370,11 +389,25 @@ function ConversationScreen({
 }) {
   const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setPhoto(null);
+    void fetchParticipantPartnerPhoto(eventId)
+      .then((result) => {
+        if (active) setPhoto(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [eventId, progress.partnerApplicationId]);
 
   const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds);
   const remaining = Math.max(
@@ -395,11 +428,23 @@ function ConversationScreen({
       <ScreenHeader onBack={onBack} />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-8 text-center shadow-calendar">
           <p className="text-[15px] font-black text-meet-blue">현재 대화 중</p>
-          <p className="text-fluid-safe mt-4 break-keep text-[clamp(40px,11vw,56px)] font-black leading-none">
+          <ParticipantPhoto
+            className="mx-auto mt-4 rounded-full bg-[#f5f7fa]"
+            crop={photo?.representativeCrop}
+            fallback={<PersonPlaceholderGlyph />}
+            photoUrl={photo?.photoUrl}
+            sizePx={136}
+          />
+          <p className="text-fluid-safe mt-4 break-keep text-[clamp(30px,8vw,40px)] font-black leading-none">
             {progress.partnerNickname ?? '상대 확인 중'}
           </p>
+          {progress.partnerAge || progress.partnerJob ? (
+            <p className="mt-1.5 text-[15px] font-bold text-[#888]">
+              {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob].filter(Boolean).join(' / ')}
+            </p>
+          ) : null}
           {progress.timerUpdatedAt ? (
             <p className="mx-auto mt-4 flex w-fit items-center gap-1.5 rounded-full bg-[#f5f7fa] px-3.5 py-1.5 text-[13px] font-black tabular-nums text-[#666]">
               <ClockGlyph />
@@ -579,6 +624,11 @@ function guidanceFontStyle(text: string): CSSProperties {
 // 분기하고, 참가자에게는 숫자 테이블 번호를 절대 노출하지 않는다 -
 // event_table_assignments.table_number는 useHelpRequest로 운영자 호출
 // 컨텍스트에만 조용히 전달된다.
+// 추가시간 통합 2분 phase: 방금 끝난 대화 상대에 대한 호감도/메모/해시태그
+// 수정(RatingForm, submitMyBonusRating이 원래 정규 라운드 행을 그대로
+// upsert)과, 다음 추가시간이 남아있을 때만 그 상대의 자리 이동 안내를 한
+// 화면에서 같이 보여준다. 마지막 추가시간이면(progress.nextPartnerNickname
+// 없음) 이동 안내 카드 자체를 숨긴다.
 function BonusSeatGuideScreen({
   eventId,
   onBack,
@@ -589,8 +639,16 @@ function BonusSeatGuideScreen({
   progress: ParticipantRoundProgress;
 }) {
   const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
+  const [nextPhoto, setNextPhoto] = useState<ParticipantPhotoInfo | null>(null);
+  const [score, setScore] = useState<number | null>(null);
+  const [memo, setMemo] = useState('');
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
+  const { errorMessage: helpErrorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
@@ -598,20 +656,47 @@ function BonusSeatGuideScreen({
   }, []);
 
   // Keyed on partnerApplicationId so a refresh, or landing on a later
-  // 추가시간 for a different partner, always re-fetches the right photo
-  // rather than keeping a stale one from the previous reveal.
+  // 추가시간 for a different partner, always re-loads the right person
+  // rather than keeping stale state from the previous phase.
   useEffect(() => {
     let active = true;
     setPhoto(null);
+    setScore(null);
+    setMemo('');
+    setHashtags([]);
+    setAutoSubmitted(false);
+    setReportModalOpen(false);
     void fetchParticipantPartnerPhoto(eventId)
       .then((result) => {
         if (active) setPhoto(result);
+      })
+      .catch(() => undefined);
+    void fetchMyBonusRating(eventId)
+      .then((existing) => {
+        if (!active) return;
+        if (existing.score !== undefined) setScore(existing.score);
+        if (existing.memo) setMemo(existing.memo);
+        if (existing.hashtags) setHashtags(existing.hashtags);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
   }, [eventId, progress.partnerApplicationId]);
+
+  useEffect(() => {
+    let active = true;
+    setNextPhoto(null);
+    if (!progress.nextPartnerNickname) return undefined;
+    void fetchParticipantPartnerPhoto(eventId, true)
+      .then((result) => {
+        if (active) setNextPhoto(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [eventId, progress.nextPartnerNickname, progress.nextTableNumber]);
 
   const phaseDuration = phaseDurationSeconds('transition');
   const remaining = Math.max(
@@ -627,76 +712,121 @@ function BonusSeatGuideScreen({
       ),
   );
 
+  const handleSubmit = async () => {
+    if (score === null || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await submitMyBonusRating(eventId, score, memo, hashtags);
+    } catch (caughtError) {
+      setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // 2분이 끝나기 전까지 수정하지 않으면 마지막으로 입력한 값을 그대로
+  // 저장해둔다(호감도를 아예 고르지 않았다면 0점을 임의로 만들지 않고
+  // 그대로 둔다 - 정규 라운드에서 이미 남긴 원래 점수가 유지된다).
+  useEffect(() => {
+    if (remaining > 0 || autoSubmitted || score === null || submitting) return;
+    setAutoSubmitted(true);
+    void submitMyBonusRating(eventId, score, memo, hashtags).catch(() => undefined);
+  }, [autoSubmitted, eventId, hashtags, memo, remaining, score, submitting]);
+
   const isFemale = progress.gender === '여성';
-  const nickname = progress.partnerNickname ?? '상대 확인 중';
-  const moveGuidanceText = `${nickname}님의 테이블로 이동해주세요`;
+  const nextNickname = progress.nextPartnerNickname;
+  const hasNextPartner = Boolean(nextNickname);
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-9 text-center shadow-calendar">
-          <span className="mx-auto flex w-fit items-center rounded-full bg-meet-blueSoft px-4 py-1.5 text-[13px] font-black text-meet-blue">
-            추가시간
-          </span>
-          <h1 className="mt-4 break-keep text-[26px] font-black leading-tight">다시 만나게 된 행운의 상대</h1>
+        <RatingForm
+          hashtags={hashtags}
+          memo={memo}
+          onHashtagsChange={setHashtags}
+          onMemoChange={setMemo}
+          onScoreChange={setScore}
+          onSubmit={() => void handleSubmit()}
+          partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+            .filter(Boolean)
+            .join(' / ')}
+          photo={photo}
+          reportButton={
+            progress.partnerApplicationId ? (
+              <button className="text-[12px] font-bold text-[#aaa] underline" onClick={() => setReportModalOpen(true)} type="button">
+                신고
+              </button>
+            ) : undefined
+          }
+          score={score}
+          submitError={submitError}
+          submitting={submitting}
+          title={
+            <>
+              방금 대화한 분에게
+              <br />
+              호감도를 수정해보세요 💗
+            </>
+          }
+        />
 
-          <ParticipantPhoto
-            className="mx-auto mt-6 rounded-full bg-[#f5f7fa] shadow-[0_10px_24px_rgba(30,43,63,0.12)]"
-            crop={photo?.representativeCrop}
-            fallback={<PersonPlaceholderGlyph />}
-            photoUrl={photo?.photoUrl}
-            sizePx={168}
-          />
-
-          <p className="mx-auto mt-5 max-w-full break-words font-black leading-tight" style={nicknameFontStyle(nickname)}>
-            {nickname}
-          </p>
-          <p className="mt-2 text-[15px] font-bold text-[#888]">
-            {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob].filter(Boolean).join(' | ')}
-          </p>
-
-          <p className="mt-5 flex items-center justify-center gap-1.5 text-[16px] font-extrabold text-[#333]">
-            <SmallHeartGlyph />
-            곧 이분과 <span className="font-black text-meet-blue">7분간</span> 다시 대화해요
-          </p>
-
-          <div className="mt-6 flex items-center gap-3 rounded-[18px] bg-meet-blueSoft px-4 py-4 text-left">
-            <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-meet-blue shadow-sm">
-              {isFemale ? <SeatedPersonGlyph /> : <ChairGlyph />}
-              {!isFemale ? (
-                <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-meet-blue text-white">
-                  <ArrowRightGlyph />
-                </span>
-              ) : null}
+        {hasNextPartner ? (
+          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-8 text-center shadow-calendar">
+            <span className="mx-auto flex w-fit items-center rounded-full bg-meet-blueSoft px-4 py-1.5 text-[13px] font-black text-meet-blue">
+              추가시간
             </span>
-            <p
-              className="min-w-0 flex-1 break-keep font-black leading-snug text-[#1c2541]"
-              style={guidanceFontStyle(isFemale ? '자리에서 잠시 기다려주세요' : moveGuidanceText)}
-            >
-              {isFemale ? (
-                '자리에서 잠시 기다려주세요'
-              ) : (
-                <>
-                  <span className="break-words">{nickname}</span>님의 테이블로 이동해주세요
-                </>
-              )}
-            </p>
-          </div>
+            <h1 className="mt-4 break-keep text-[22px] font-black leading-tight">다시 만나게 된 행운의 상대</h1>
 
-          {progress.timerUpdatedAt ? (
-            <div className="mt-6 flex flex-col items-center gap-1">
-              <p className="flex items-center gap-1.5 text-[13px] font-black text-meet-blue">
-                <ClockGlyph />
-              </p>
-              <p className="text-[40px] font-black tabular-nums leading-none text-meet-blue">{formatCountdown(remaining)}</p>
-              <p className="mt-1 text-[13px] font-bold text-[#888]">
-                {isFemale ? '자리에서 기다리며 다음 대화를 준비해주세요' : '안내에 따라 이동한 뒤 대화를 준비해주세요'}
+            <ParticipantPhoto
+              className="mx-auto mt-5 rounded-full bg-[#f5f7fa] shadow-[0_10px_24px_rgba(30,43,63,0.12)]"
+              crop={nextPhoto?.representativeCrop}
+              fallback={<PersonPlaceholderGlyph />}
+              photoUrl={nextPhoto?.photoUrl}
+              sizePx={140}
+            />
+
+            <p className="mx-auto mt-4 max-w-full break-words font-black leading-tight" style={nicknameFontStyle(nextNickname ?? '')}>
+              {nextNickname}
+            </p>
+            <p className="mt-2 text-[15px] font-bold text-[#888]">
+              {[progress.nextPartnerAge ? `${progress.nextPartnerAge}세` : null, progress.nextPartnerJob].filter(Boolean).join(' | ')}
+            </p>
+
+            <div className="mt-5 flex items-center gap-3 rounded-[18px] bg-meet-blueSoft px-4 py-4 text-left">
+              <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-meet-blue shadow-sm">
+                {isFemale ? <SeatedPersonGlyph /> : <ChairGlyph />}
+                {!isFemale ? (
+                  <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-meet-blue text-white">
+                    <ArrowRightGlyph />
+                  </span>
+                ) : null}
+              </span>
+              <p
+                className="min-w-0 flex-1 break-keep font-black leading-snug text-[#1c2541]"
+                style={guidanceFontStyle(isFemale ? '자리에서 잠시 기다려주세요' : `${nextNickname}님의 테이블로 이동해주세요`)}
+              >
+                {isFemale ? (
+                  '자리에서 잠시 기다려주세요'
+                ) : (
+                  <>
+                    <span className="break-words">{nextNickname}</span>님의 테이블로 이동해주세요
+                  </>
+                )}
               </p>
             </div>
-          ) : null}
-        </section>
+          </section>
+        ) : null}
+
+        {progress.timerUpdatedAt ? (
+          <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
+            <ClockGlyph />
+            {hasNextPartner ? '다음 대화까지' : '다음 단계까지'}{' '}
+            <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
+          </p>
+        ) : null}
 
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
           <h2 className="text-[16px] font-black">도움이 필요하신가요?</h2>
@@ -711,9 +841,18 @@ function BonusSeatGuideScreen({
               운영자 호출
             </button>
           </div>
-          {errorMessage ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{errorMessage}</p> : null}
+          {helpErrorMessage ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{helpErrorMessage}</p> : null}
         </section>
       </div>
+
+      {reportModalOpen && progress.partnerApplicationId ? (
+        <ReportModal
+          eventId={eventId}
+          onClose={() => setReportModalOpen(false)}
+          reportedApplicationId={progress.partnerApplicationId}
+          reportedNickname={progress.partnerNickname}
+        />
+      ) : null}
 
       <ToastBanner toast={toast} />
     </div>
@@ -769,37 +908,232 @@ function ratingCopy(score: number): { subtitle: string; title: string } {
   return { subtitle: '정말 특별한 느낌이었어요.', title: '내가 찾던 사람이에요!' };
 }
 
-// 2분 이동 및 호감도 작성 phase(mode="regular"): the participant rates the
-// partner they were just matched with (progress.roundPhase === 'transition'
-// still resolves to that just-finished round's match, since current_round
-// only advances once this phase itself expires). Editing is allowed for as
-// long as the server still reports this same round as current -
-// submit_round_rating enforces that server-side too.
-//
-// 추가시간 1분 호감도 수정 phase(mode="bonus"): 새 rating을 만드는 게
-// 아니라 정규 라운드에서 이미 이 상대에게 남긴 점수를 서버가 찾아 수정하는
-// 구조라, "기존 값이 이미 있음 = 방금 제출 완료"로 취급하면 안 된다(항상
-// 값이 있을 수밖에 없음) - submitted는 이 phase에서 실제로 제출 버튼을
-// 눌렀을 때만 true가 된다. 폼 UI 자체는 정규/추가시간 모두 동일하게
-// 재사용한다.
-function RatingScreen({
+// Shared by RatingScreen(정규) and BonusSeatGuideScreen(추가시간 통합
+// phase) - photo/score/memo/hashtags/report all render and behave
+// identically in both, only the surrounding chrome (timer, "다음 상대"
+// banner, submit-then-lock vs always-editable) differs per caller.
+function RatingForm({
+  hashtags,
+  memo,
+  onHashtagsChange,
+  onMemoChange,
+  onScoreChange,
+  onSubmit,
+  partnerLabel,
+  photo,
+  reportButton,
+  score,
+  submitError,
+  submitting,
+  title,
+}: {
+  hashtags: string[];
+  memo: string;
+  onHashtagsChange: (next: string[]) => void;
+  onMemoChange: (value: string) => void;
+  onScoreChange: (value: number) => void;
+  onSubmit: () => void;
+  partnerLabel: string;
+  photo: ParticipantPhotoInfo | null;
+  reportButton?: ReactNode;
+  score: number | null;
+  submitError: string;
+  submitting: boolean;
+  title: ReactNode;
+}) {
+  const copy = score !== null ? ratingCopy(score) : null;
+
+  return (
+    <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+      <p className="text-center text-[17px] font-black leading-snug">{title}</p>
+
+      <ParticipantPhoto
+        className="mt-4 aspect-[4/3] w-full rounded-[20px] bg-[#f5f7fa]"
+        crop={photo?.representativeCrop}
+        fallback={<PersonPlaceholderGlyph />}
+        photoUrl={photo?.photoUrl}
+      />
+
+      <div className="mt-3 flex items-center justify-center gap-2">
+        <p className="text-center text-[16px] font-black">{partnerLabel}</p>
+        {reportButton}
+      </div>
+
+      <p className="mt-6 text-center text-[15px] font-black text-[#333]">마음에 드셨나요?</p>
+      <HeartRatingInput onChange={onScoreChange} value={score} />
+      {score !== null ? (
+        <p className="mx-auto mt-1 w-fit rounded-full bg-[#fdeef2] px-3 py-1 text-[13px] font-black text-[#ef4d7a]">{score.toFixed(1)}/5 선택</p>
+      ) : null}
+
+      {copy ? (
+        <div className="mt-4 rounded-[16px] bg-[#fdeef2] px-4 py-3 text-center">
+          <p className="text-[14px] font-black text-[#ef4d7a]">{copy.title}</p>
+          <p className="mt-1 text-[12px] font-bold text-[#c77b93]">{copy.subtitle}</p>
+        </div>
+      ) : null}
+
+      <div className="mt-5">
+        <label className="text-[13px] font-black text-[#555]">어떤 점이 좋았나요? (선택)</label>
+        <div className="mt-1.5">
+          <HashtagPicker onChange={onHashtagsChange} selected={hashtags} />
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <label className="text-[13px] font-black text-[#555]" htmlFor="rating-memo">
+          메모
+        </label>
+        <textarea
+          className="mt-1.5 h-20 w-full resize-none rounded-[14px] border border-[#eee] bg-[#f9fafb] p-3 text-[14px] font-bold outline-none"
+          id="rating-memo"
+          maxLength={ratingMemoMaxLength}
+          onChange={(event) => onMemoChange(event.target.value)}
+          placeholder="상대방에 대한 메모를 작성해보세요 (선택)"
+          value={memo}
+        />
+        <p className="mt-1 text-right text-[11px] font-bold text-[#aaa]">
+          {memo.length}/{ratingMemoMaxLength}
+        </p>
+      </div>
+
+      {submitError ? <p className="mt-2 text-center text-[12px] font-bold text-[#ef554a]">{submitError}</p> : null}
+
+      <button
+        className="mt-2 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+        disabled={score === null || submitting}
+        onClick={onSubmit}
+        type="button"
+      >
+        {submitting ? '저장 중' : '제출하기'}
+      </button>
+    </section>
+  );
+}
+
+const reportReasonOptions = ['부적절한 언행', '무례한 태도', '허위 정보 기재', '기타'];
+const reportReasonMaxLength = 200;
+
+// 운영자 호출/일시정지 요청과는 완전히 별개 기능 - 실제로 대화한 상대만
+// 신고 가능 여부는 서버(create_participant_report)가 검증한다.
+function ReportModal({
   eventId,
-  mode,
-  onBack,
-  progress,
+  onClose,
+  reportedApplicationId,
+  reportedNickname,
 }: {
   eventId: string;
-  mode: 'bonus' | 'regular';
-  onBack: () => void;
-  progress: ParticipantRoundProgress;
+  onClose: () => void;
+  reportedApplicationId: string;
+  reportedNickname?: string;
 }) {
+  const [reason, setReason] = useState<string | null>(null);
+  const [customReason, setCustomReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    const finalReason = (reason === '기타' ? customReason : reason)?.trim();
+    if (!finalReason) {
+      setError('신고 사유를 선택해주세요.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await createParticipantReport(eventId, reportedApplicationId, finalReason);
+      setDone(true);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : '신고를 접수하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-[520px] rounded-t-[28px] bg-white p-6" onClick={(event) => event.stopPropagation()}>
+        {done ? (
+          <>
+            <p className="text-center text-[16px] font-black">신고가 접수되었습니다</p>
+            <p className="mt-2 text-center text-[13px] font-bold text-[#999]">운영자가 확인 후 처리합니다</p>
+            <button
+              className="mt-6 h-12 w-full rounded-[14px] bg-meet-blue text-[15px] font-black text-white"
+              onClick={onClose}
+              type="button"
+            >
+              닫기
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-[17px] font-black">{reportedNickname ?? '상대방'}님을 신고하시겠어요?</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {reportReasonOptions.map((option) => (
+                <button
+                  className={`rounded-full border px-3 py-1.5 text-[13px] font-bold transition ${
+                    reason === option ? 'border-meet-pink bg-meet-pinkSoft text-meet-pink' : 'border-[#eee] bg-white text-[#777]'
+                  }`}
+                  key={option}
+                  onClick={() => setReason(option)}
+                  type="button"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            {reason === '기타' ? (
+              <textarea
+                className="mt-3 h-20 w-full resize-none rounded-[14px] border border-[#eee] bg-[#f9fafb] p-3 text-[13px] font-bold outline-none"
+                maxLength={reportReasonMaxLength}
+                onChange={(event) => setCustomReason(event.target.value)}
+                placeholder="구체적인 사유를 입력해주세요"
+                value={customReason}
+              />
+            ) : null}
+            {error ? <p className="mt-2 text-[12px] font-bold text-[#ef554a]">{error}</p> : null}
+            <div className="mt-5 flex gap-2">
+              <button
+                className="h-12 flex-1 rounded-[14px] border border-[#eee] text-[14px] font-black text-[#777]"
+                onClick={onClose}
+                type="button"
+              >
+                취소
+              </button>
+              <button
+                className="h-12 flex-1 rounded-[14px] bg-[#ef554a] text-[14px] font-black text-white disabled:opacity-60"
+                disabled={submitting}
+                onClick={() => void handleSubmit()}
+                type="button"
+              >
+                {submitting ? '접수 중' : '신고하기'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 2분 이동 및 호감도 작성 phase: the participant rates the partner they
+// were just matched with (progress.roundPhase === 'transition' still
+// resolves to that just-finished round's match, since current_round only
+// advances once this phase itself expires). Editing is allowed for as long
+// as the server still reports this same round as current -
+// submit_round_rating enforces that server-side too. (추가시간 쪽은 더 이상
+// 이 컴포넌트를 쓰지 않는다 - 통합된 BonusSeatGuideScreen 참고.)
+function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: () => void; progress: ParticipantRoundProgress }) {
   const roundNumber = progress.currentRound ?? 1;
   const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [memo, setMemo] = useState('');
+  const [hashtags, setHashtags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   // null while checking the server for an existing submission (avoids
   // flashing the form before immediately swapping to the complete screen).
   const [submitted, setSubmitted] = useState<boolean | null>(null);
@@ -809,29 +1143,29 @@ function RatingScreen({
     return () => window.clearInterval(intervalId);
   }, []);
 
-  // Reloads on (eventId, mode, roundNumber) change - covers first entry,
-  // refresh, AND landing back on this phase for a new round/추가시간 without
-  // a full page reload in between (RatingScreen doesn't unmount between a
-  // regular rating and a bonus rating, or between two bonus ratings - same
-  // component type, just re-rendered with new props).
+  // Reloads on (eventId, roundNumber) change - covers first entry, refresh,
+  // AND landing back on this phase for a new round without a full page
+  // reload in between.
   useEffect(() => {
     let active = true;
     setScore(null);
     setMemo('');
+    setHashtags([]);
     setPhoto(null);
     setSubmitted(null);
+    setReportModalOpen(false);
     void fetchParticipantPartnerPhoto(eventId)
       .then((result) => {
         if (active) setPhoto(result);
       })
       .catch(() => undefined);
-    const fetchExisting = mode === 'bonus' ? fetchMyBonusRating(eventId) : fetchMyRoundRating(eventId, roundNumber);
-    void fetchExisting
+    void fetchMyRoundRating(eventId, roundNumber)
       .then((existing) => {
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
         if (existing.memo) setMemo(existing.memo);
-        setSubmitted(mode === 'bonus' ? false : existing.score !== undefined);
+        if (existing.hashtags) setHashtags(existing.hashtags);
+        setSubmitted(existing.score !== undefined);
       })
       .catch(() => {
         if (active) setSubmitted(false);
@@ -839,9 +1173,9 @@ function RatingScreen({
     return () => {
       active = false;
     };
-  }, [eventId, mode, roundNumber]);
+  }, [eventId, roundNumber]);
 
-  const phaseDuration = mode === 'bonus' ? BONUS_RATING_PHASE_SECONDS : phaseDurationSeconds('transition');
+  const phaseDuration = phaseDurationSeconds('transition');
   const remaining = Math.max(
     0,
     phaseDuration -
@@ -860,11 +1194,7 @@ function RatingScreen({
     setSubmitting(true);
     setSubmitError('');
     try {
-      if (mode === 'bonus') {
-        await submitMyBonusRating(eventId, score, memo);
-      } else {
-        await submitRoundRating(eventId, roundNumber, score, memo);
-      }
+      await submitRoundRating(eventId, roundNumber, score, memo, hashtags);
       setSubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
@@ -872,6 +1202,19 @@ function RatingScreen({
       setSubmitting(false);
     }
   };
+
+  // 2분이 끝나기 전까지 제출하기를 누르지 않으면 현재까지 입력한 내용을
+  // 그대로 자동 저장한다(호감도를 아예 고르지 않았다면 0점을 임의로
+  // 만들지 않는다 - 다음 라운드 진행 자체는 서버 stage 전환이 담당하므로
+  // 막지 않음).
+  // Deliberately not watching `handleSubmit`/`submitting` here (both change
+  // every render) - `submitting`'s own check inside handleSubmit already
+  // guards against overlapping calls while remaining sits at 0.
+  useEffect(() => {
+    if (remaining > 0 || submitted !== false || score === null || submitting) return;
+    void handleSubmit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remaining, submitted, score]);
 
   if (submitted === null) {
     return (
@@ -888,85 +1231,57 @@ function RatingScreen({
     return <RatingCompleteScreen onBack={onBack} />;
   }
 
-  const copy = score !== null ? ratingCopy(score) : null;
-
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} title="호감도 작성" />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
-          <p className="text-center text-[17px] font-black leading-snug">
-            지금 대화를 나눈 분에게
-            <br />
-            호감도를 남겨주세요 💗
-          </p>
-
-          <ParticipantPhoto
-            className="mt-4 aspect-[4/3] w-full rounded-[20px] bg-[#f5f7fa]"
-            crop={photo?.representativeCrop}
-            fallback={<PersonPlaceholderGlyph />}
-            photoUrl={photo?.photoUrl}
-          />
-
-          <p className="mt-3 text-center text-[16px] font-black">
-            {[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
-              .filter(Boolean)
-              .join(' / ')}
-          </p>
-
-          <p className="mt-6 text-center text-[15px] font-black text-[#333]">마음에 드셨나요?</p>
-          <HeartRatingInput onChange={setScore} value={score} />
-          {score !== null ? (
-            <p className="mx-auto mt-1 w-fit rounded-full bg-[#fdeef2] px-3 py-1 text-[13px] font-black text-[#ef4d7a]">
-              {score.toFixed(1)}/5 선택
-            </p>
-          ) : null}
-
-          {copy ? (
-            <div className="mt-4 rounded-[16px] bg-[#fdeef2] px-4 py-3 text-center">
-              <p className="text-[14px] font-black text-[#ef4d7a]">{copy.title}</p>
-              <p className="mt-1 text-[12px] font-bold text-[#c77b93]">{copy.subtitle}</p>
-            </div>
-          ) : null}
-
-          <div className="mt-5">
-            <label className="text-[13px] font-black text-[#555]" htmlFor="rating-memo">
-              메모
-            </label>
-            <textarea
-              className="mt-1.5 h-20 w-full resize-none rounded-[14px] border border-[#eee] bg-[#f9fafb] p-3 text-[14px] font-bold outline-none"
-              id="rating-memo"
-              maxLength={ratingMemoMaxLength}
-              onChange={(event) => setMemo(event.target.value)}
-              placeholder="상대방에 대한 메모를 작성해보세요 (선택)"
-              value={memo}
-            />
-            <p className="mt-1 text-right text-[11px] font-bold text-[#aaa]">
-              {memo.length}/{ratingMemoMaxLength}
-            </p>
-          </div>
-
-          {submitError ? <p className="mt-2 text-center text-[12px] font-bold text-[#ef554a]">{submitError}</p> : null}
-
-          <button
-            className="mt-2 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-            disabled={score === null || submitting}
-            onClick={() => void handleSubmit()}
-            type="button"
-          >
-            제출하기
-          </button>
-        </section>
+        <RatingForm
+          hashtags={hashtags}
+          memo={memo}
+          onHashtagsChange={setHashtags}
+          onMemoChange={setMemo}
+          onScoreChange={setScore}
+          onSubmit={() => void handleSubmit()}
+          partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+            .filter(Boolean)
+            .join(' / ')}
+          photo={photo}
+          reportButton={
+            progress.partnerApplicationId ? (
+              <button className="text-[12px] font-bold text-[#aaa] underline" onClick={() => setReportModalOpen(true)} type="button">
+                신고
+              </button>
+            ) : undefined
+          }
+          score={score}
+          submitError={submitError}
+          submitting={submitting}
+          title={
+            <>
+              지금 대화를 나눈 분에게
+              <br />
+              호감도를 남겨주세요 💗
+            </>
+          }
+        />
 
         {progress.timerUpdatedAt ? (
           <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
             <ClockGlyph />
-            {mode === 'bonus' ? '다음 단계까지' : '다음 라운드 진행까지'}{' '}
-            <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
+            다음 라운드 진행까지 <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
           </p>
         ) : null}
       </div>
+
+      {reportModalOpen && progress.partnerApplicationId ? (
+        <ReportModal
+          eventId={eventId}
+          onClose={() => setReportModalOpen(false)}
+          reportedApplicationId={progress.partnerApplicationId}
+          reportedNickname={progress.partnerNickname}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1299,6 +1614,21 @@ function FinalSelectionCandidateCard({
               <SmallHeartGlyph />
               내 호감도 {candidate.score.toFixed(1)}
             </p>
+          ) : null}
+
+          {candidate.hashtags && candidate.hashtags.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {candidate.hashtags.slice(0, 4).map((tag) => (
+                <span className="rounded-full bg-meet-pinkSoft px-2 py-0.5 text-[11px] font-bold text-meet-pink" key={tag}>
+                  {tag}
+                </span>
+              ))}
+              {candidate.hashtags.length > 4 ? (
+                <span className="rounded-full bg-[#f5f7fa] px-2 py-0.5 text-[11px] font-bold text-[#999]">
+                  +{candidate.hashtags.length - 4}
+                </span>
+              ) : null}
+            </div>
           ) : null}
 
           {candidate.memo ? <p className="mt-1.5 line-clamp-2 text-[12px] font-bold leading-snug text-[#888]">{candidate.memo}</p> : null}

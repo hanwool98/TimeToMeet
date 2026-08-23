@@ -105,36 +105,67 @@ export default function AdminTabletSeatPage() {
     return undefined;
   }, [isStale]);
 
-  // Landscape is the only supported layout - orientation.lock is best-effort
-  // (many older/kiosk-mode tablets reject or don't expose it at all), so the
-  // real guarantee is this portrait-viewport check + overlay below, not the
-  // lock call succeeding.
+  // Landscape is the only supported layout. orientation.lock is best-effort
+  // (many older/kiosk-mode tablets reject it, don't expose it, or the OS
+  // simply never rotates the raster at all for any app). The real guarantee
+  // is this: whenever the viewport itself is still portrait, the whole
+  // screen is rendered rotated 90deg via CSS transform instead - the
+  // operator physically turns the tablet sideways and the content appears
+  // upright to them, independent of whatever the OS/orientation-sensor is
+  // doing. CSS transforms don't affect hit-testing (touch/pointer events
+  // already resolve against the rotated on-screen position), so no manual
+  // touch-coordinate remapping is needed.
   const [isPortraitViewport, setIsPortraitViewport] = useState(
     () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth,
   );
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const mediaQuery = window.matchMedia('(orientation: portrait)');
-    const update = () => setIsPortraitViewport(mediaQuery.matches);
+    const update = () => setIsPortraitViewport(window.innerHeight > window.innerWidth);
     update();
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', update);
-      return () => mediaQuery.removeEventListener('change', update);
+    window.addEventListener('resize', update);
+    let mediaQuery: MediaQueryList | undefined;
+    if (typeof window.matchMedia === 'function') {
+      mediaQuery = window.matchMedia('(orientation: portrait)');
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', update);
+      } else {
+        // Older WebView: MediaQueryList only supports the deprecated
+        // addListener/removeListener pair.
+        mediaQuery.addListener(update);
+      }
     }
-    // Older WebView: MediaQueryList only supports the deprecated
-    // addListener/removeListener pair.
-    mediaQuery.addListener(update);
-    return () => mediaQuery.removeListener(update);
+    return () => {
+      window.removeEventListener('resize', update);
+      if (!mediaQuery) return;
+      if (typeof mediaQuery.removeEventListener === 'function') mediaQuery.removeEventListener('change', update);
+      else mediaQuery.removeListener(update);
+    };
   }, []);
   useEffect(() => {
     const orientation = (screen as unknown as { orientation?: { lock?: (type: string) => Promise<void> } }).orientation;
     if (!orientation?.lock) return;
     orientation.lock('landscape').catch(() => {
       // Expected to fail on many tablets (no fullscreen, unsupported, kiosk
-      // policy) - the portrait-overlay above is the real guard, this is
-      // purely a nice-to-have when it happens to work.
+      // policy) - the CSS rotate above is the real guard, this is purely a
+      // nice-to-have when it happens to work (native rotation is smoother).
     });
   }, []);
+
+  // Merged into every screen's <main style={...}> below - rotates the
+  // fixed-full-viewport root 90deg and swaps its own box to
+  // 100vh(width) x 100vw(height) so the rotated box's landscape-designed
+  // content exactly fills the (still-portrait) physical screen.
+  const landscapeRotateStyle: React.CSSProperties = isPortraitViewport
+    ? {
+        bottom: 'auto',
+        height: '100vw',
+        left: '50%',
+        position: 'fixed',
+        right: 'auto',
+        top: '50%',
+        transform: 'translate(-50%, -50%) rotate(90deg)',
+        width: '100vh',
+      }
+    : {};
 
   // Primary heartbeat + stage driver. This is also what proves the
   // connection is still valid server-side, so an admin disconnect bounces
@@ -306,16 +337,29 @@ export default function AdminTabletSeatPage() {
     }
   }, [progress]);
 
+  // `progress` and `roundProgress` come from two INDEPENDENT polls (see the
+  // two effects above) that can land at different times - deriving phase
+  // duration from progress.stage while deriving elapsed time from
+  // roundProgress's timer snapshot let those two disagree for one render
+  // right at a stage transition (e.g. progress.stage already flipped to
+  // bonus_rating while roundProgress still held the just-finished
+  // conversation's snapshot), which briefly clamped `remaining` to 0 and
+  // fired a spurious "finish" chime. roundProgress carries its own `stage`
+  // field from the SAME snapshot as its timer data - preferring that (and
+  // only falling back to progress.stage before roundProgress has loaded at
+  // all) keeps duration and elapsed-time always sourced from one snapshot.
+  const effectiveStage = roundProgress?.stage ?? progress?.stage;
+
   // Timer-bearing phases only - round_complete/bonus_matching are part of
   // isRoundStage (for polling) but have no countdown to warn about.
   const hasTimerPhase =
-    progress?.stage === 'round_active' || progress?.stage === 'bonus_seat_guide' || progress?.stage === 'bonus_rating';
+    effectiveStage === 'round_active' || effectiveStage === 'bonus_seat_guide' || effectiveStage === 'bonus_rating';
 
   const timerPhaseDuration = !hasTimerPhase
     ? 0
-    : progress?.stage === 'bonus_seat_guide'
+    : effectiveStage === 'bonus_seat_guide'
       ? phaseDurationSeconds('transition')
-      : progress?.stage === 'bonus_rating'
+      : effectiveStage === 'bonus_rating'
         ? BONUS_RATING_PHASE_SECONDS
         : phaseDurationSeconds(roundProgress?.roundPhase, roundProgress?.isBonusRound, roundProgress?.conversationDurationSeconds);
 
@@ -337,11 +381,11 @@ export default function AdminTabletSeatPage() {
 
   // bonus_rating is itself only 1 minute long, so a "1 minute left" warning
   // would fire immediately at phase start - skipped there per spec.
-  const shouldWarnForPhase = progress?.stage !== 'bonus_rating';
+  const shouldWarnForPhase = effectiveStage !== 'bonus_rating';
 
   const timerNotificationKey =
     eventId && hasTimerPhase && roundProgress
-      ? [eventId, progress?.stage, roundProgress.currentRound ?? '', roundProgress.isBonusRound ? 1 : 0, roundProgress.roundPhase ?? ''].join(':')
+      ? [eventId, effectiveStage, roundProgress.currentRound ?? '', roundProgress.isBonusRound ? 1 : 0, roundProgress.roundPhase ?? ''].join(':')
       : '';
 
   const timerAlertToast = useTabletTimerAlerts({
@@ -355,9 +399,8 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'intro_video') {
     return (
-      <main className="fixed inset-0 bg-black">
+      <main className="fixed inset-0 bg-black" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         {progress.introVideoUrl ? (
           <video
@@ -414,9 +457,8 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'round_waiting') {
     return (
-      <main className="fixed inset-0 grid place-items-center bg-white px-10 text-center text-[#1f292d]">
+      <main className="fixed inset-0 grid place-items-center bg-white px-10 text-center text-[#1f292d]" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ef554a]">소개영상 종료</p>
@@ -429,9 +471,8 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'round_complete') {
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ff8a80]">잠시 쉬어가는 시간이에요</p>
@@ -444,9 +485,8 @@ export default function AdminTabletSeatPage() {
   // 추가시간 매칭 계산 중 - 순간적이라 타이머 없이 짧게만 보여진다.
   if (progress.stage === 'bonus_matching') {
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ff8a80]">추가시간 매칭 중</p>
@@ -456,20 +496,23 @@ export default function AdminTabletSeatPage() {
     );
   }
 
-  // 추가시간 상대공개/자리 이동 2분 - 정규 이동 phase와 같은 형태(바 타이머
-  // 하나)지만 이 phase에는 호감도 작성이 없으므로 문구만 다르다.
+  // 추가시간 통합 2분 - 참가자 폰에서는 방금 상대 호감도 수정 + 다음 상대
+  // 안내를 같이 보여주지만, 태블릿은 원래도 이름을 노출하지 않던 화면이라
+  // 문구만 "다음 라운드가 있는지"에 따라 조건 분기한다. current_round는
+  // 이 phase 동안 아직 방금 끝난 라운드를 가리키므로 bonusRoundIndex도
+  // 그 라운드 기준 - 그게 곧 마지막 추가시간이면 다음 이동 안내가 없다.
   if (progress.stage === 'bonus_seat_guide') {
     if (!roundProgress) return <DataLoadingState />;
+    const isLastBonusRound = (roundProgress.bonusRoundIndex ?? 0) >= (roundProgress.bonusRoundCount ?? 0);
     return (
-      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
         <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
         <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
-          2분 안에 자리 이동을 완료해주세요
+          {isLastBonusRound ? '곧 최종 선택으로 넘어갑니다' : '2분 안에 자리 이동을 완료해주세요'}
         </p>
       </main>
     );
@@ -479,9 +522,8 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'bonus_rating') {
     if (!roundProgress) return <DataLoadingState />;
     return (
-      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
@@ -506,9 +548,8 @@ export default function AdminTabletSeatPage() {
       // regular rounds now - the bonus equivalent is the bonus_seat_guide
       // stage branch above.
       return (
-        <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
           <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-          <PortraitWarningOverlay visible={isPortraitViewport} />
           <ReconnectedToast visible={showRecoveredToast} />
           <TimerAlertToast toast={timerAlertToast} />
           <PetalDecor />
@@ -520,13 +561,29 @@ export default function AdminTabletSeatPage() {
       );
     }
 
+    // 성비 불균형으로 이번 라운드에 이 테이블에 실제 pair가 없는 경우
+    // (남/여 닉네임 중 하나라도 null) - 잘못된 닉네임이나 빈 pair를 그대로
+    // 보여주는 대신 명시적으로 안내한다. 다음 라운드부터 서버가 다시
+    // 배정하므로 새로고침 없이 폴링만으로 자동 복귀된다.
+    if (roundProgress.isResting) {
+      return (
+        <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
+          <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+          <ReconnectedToast visible={showRecoveredToast} />
+          <div>
+            <p className="text-[20px] font-black text-[#ff8a80]">이번 라운드는 잠시 쉬어가는 시간이에요</p>
+            <p className="mt-4 text-[24px] font-black">다음 라운드부터 다시 진행됩니다</p>
+          </div>
+        </main>
+      );
+    }
+
     const stored = readStoredConnection(eventId ?? '', tableNumber);
     const partnerNames = [roundProgress.maleNickname, roundProgress.femaleNickname].filter(Boolean).join(' · ');
 
     return (
-      <main className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]" style={tabletBackground}>
+      <main className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
@@ -562,9 +619,8 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'final_selection') {
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <PortraitWarningOverlay visible={isPortraitViewport} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
           <p className="text-[20px] font-black text-[#ff8a80]">모든 대화 종료</p>
@@ -576,7 +632,7 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'ended') {
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
         <div>
           <p className="text-[22px] font-black">오늘의 모든 일정이 종료되었습니다</p>
           <p className="mt-4 text-[18px] font-black text-white/80">수고하셨습니다</p>
@@ -586,9 +642,8 @@ export default function AdminTabletSeatPage() {
   }
 
   return (
-    <main className="fixed inset-0 flex overflow-hidden">
+    <main className="fixed inset-0 flex overflow-hidden" style={landscapeRotateStyle}>
       <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-      <PortraitWarningOverlay visible={isPortraitViewport} />
       <ReconnectedToast visible={showRecoveredToast} />
       <span className="pointer-events-none absolute left-1/2 top-6 z-10 -translate-x-1/2 text-[13px] font-black tracking-[0.35em] text-[#8a94a6]">
         <span className="mr-3">—</span>
@@ -702,22 +757,6 @@ function RoundTimerRing({
             {formatCountdown(remaining)}
           </p>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Landscape is the only supported layout - this overlay (not a CSS
-// transform-rotate hack) is the fallback for tablets where orientation.lock
-// isn't available or was rejected. The existing tablet screens underneath
-// are untouched; this just sits on top until the device is turned.
-function PortraitWarningOverlay({ visible }: { visible: boolean }) {
-  if (!visible) return null;
-  return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-[#1f292d] px-10 text-center text-white">
-      <div>
-        <p className="text-[22px] font-black">태블릿을 가로로 놓고</p>
-        <p className="text-[22px] font-black">사용해주세요</p>
       </div>
     </div>
   );

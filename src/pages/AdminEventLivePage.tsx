@@ -17,12 +17,14 @@ import {
   fetchAdminFinalSelectionResults,
   fetchAdminMutualRatings,
   fetchAdminParticipantRatings,
+  fetchAdminParticipantReports,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
   resumeAfterRegularRounds,
   setCurrentRoundForSession,
   startFirstRound,
   subscribeToAdminEventModeChanges,
+  updateParticipantReportStatus,
   updatePauseRequestStatus,
   type AdminEventModeSummary,
   type AdminFinalSelectionResults,
@@ -31,6 +33,7 @@ import {
   type IntroVideoAction,
   type MutualRating,
   type ParticipantRating,
+  type ParticipantReport,
   type PublicParticipantMediaRow,
   type RoundProgress,
 } from '../services/supabaseApplications';
@@ -62,6 +65,8 @@ export default function AdminEventLivePage() {
   const [timerActionPending, setTimerActionPending] = useState(false);
   const [pauseRequests, setPauseRequests] = useState<EventPauseRequest[]>([]);
   const [pauseRequestsPanelOpen, setPauseRequestsPanelOpen] = useState(false);
+  const [reports, setReports] = useState<ParticipantReport[]>([]);
+  const [reportsPanelOpen, setReportsPanelOpen] = useState(false);
   const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
   const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
   const [mutualRatingsPanelOpen, setMutualRatingsPanelOpen] = useState(false);
@@ -253,6 +258,25 @@ export default function AdminEventLivePage() {
     };
   }, [eventId, pauseRequestsPanelOpen]);
 
+  useEffect(() => {
+    if (!eventId || !reportsPanelOpen) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await fetchAdminParticipantReports(eventId);
+        if (active) setReports(next);
+      } catch {
+        // keep last known list on transient failure
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), pauseRequestPollIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [eventId, reportsPanelOpen]);
+
   const runAction = async (action: IntroVideoAction) => {
     if (!eventId || actionPending) return;
     setActionPending(true);
@@ -351,6 +375,17 @@ export default function AdminEventLivePage() {
     }
   };
 
+  const handleResolveReport = async (reportId: string) => {
+    if (!eventId) return;
+    try {
+      await updateParticipantReportStatus(reportId, 'resolved');
+      setReports(await fetchAdminParticipantReports(eventId));
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '신고를 처리하지 못했습니다.');
+    }
+  };
+
   const handleEndEvent = async () => {
     if (!eventId || ending) return;
     if (!window.confirm('행사를 종료하시겠습니까?')) return;
@@ -420,6 +455,7 @@ export default function AdminEventLivePage() {
             onOpenFinalSelections={() => navigate(`/admin/content/final-selections/${encodeURIComponent(eventId)}?from=live`)}
             onOpenParticipantList={() => setParticipantListPanelOpen(true)}
             onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
+            onOpenReports={() => setReportsPanelOpen(true)}
             onOpenRoundJump={() => setRoundJumpPanelOpen(true)}
             onResume={() => void handleResume()}
             onSkipTimer={() => void handleSkipTimer()}
@@ -547,6 +583,10 @@ export default function AdminEventLivePage() {
         <PauseRequestsPanel onClose={() => setPauseRequestsPanelOpen(false)} onResolve={(id) => void handleResolvePauseRequest(id)} requests={pauseRequests} />
       ) : null}
 
+      {reportsPanelOpen ? (
+        <ReportsPanel onClose={() => setReportsPanelOpen(false)} onResolve={(id) => void handleResolveReport(id)} reports={reports} />
+      ) : null}
+
       {participantListPanelOpen && eventId ? (
         <ParticipantListPanel
           applications={eventApplications}
@@ -669,6 +709,7 @@ function RoundProgressSection({
   onOpenMutualRatings,
   onOpenParticipantList,
   onOpenPauseRequests,
+  onOpenReports,
   onOpenRoundJump,
   onResume,
   onSkipTimer,
@@ -684,6 +725,7 @@ function RoundProgressSection({
   onOpenMutualRatings: () => void;
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
+  onOpenReports: () => void;
   onOpenRoundJump: () => void;
   onResume: () => void;
   onSkipTimer: () => void;
@@ -782,7 +824,7 @@ function RoundProgressSection({
       ? '호감도 수정'
       : roundProgress.roundPhase === 'transition'
         ? roundProgress.isBonusRound
-          ? '자리 이동'
+          ? '이동+호감도 수정'
           : '이동 및 호감도 작성'
         : `${Math.round(phaseDuration / 60)}분 대화`;
   const isBonusConversation = roundProgress.isBonusRound && roundProgress.roundPhase === 'conversation' && roundProgress.stage !== 'bonus_rating';
@@ -798,28 +840,42 @@ function RoundProgressSection({
     <>
       <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-[14px] font-black leading-tight">{roundHeaderLabel}</h2>
-            <span className="shrink-0 rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
+          <h2 className="min-w-0 truncate text-[13px] font-bold text-[#999]">{roundHeaderLabel}</h2>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
+              onClick={onOpenPauseRequests}
+              type="button"
+            >
+              <BellIcon />
+              {roundProgress.pendingPauseCount > 0 ? (
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
+                  {roundProgress.pendingPauseCount}
+                </span>
+              ) : null}
+            </button>
+            <button
+              className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
+              onClick={onOpenReports}
+              type="button"
+            >
+              <ReportIcon />
+              {roundProgress.pendingReportCount > 0 ? (
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
+                  {roundProgress.pendingReportCount}
+                </span>
+              ) : null}
+            </button>
           </div>
-          <button
-            className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff1ee] text-[#ef554a]"
-            onClick={onOpenPauseRequests}
-            type="button"
-          >
-            <BellIcon />
-            {roundProgress.pendingPauseCount > 0 ? (
-              <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-[#ef4039] px-1 text-[11px] font-black text-white">
-                {roundProgress.pendingPauseCount}
-              </span>
-            ) : null}
-          </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-[1.15fr_1fr] items-stretch gap-2.5">
+        <div className="mt-3 grid grid-cols-[3fr_2fr] items-stretch gap-2.5">
           <div className="min-w-0 rounded-[16px] bg-[#fff8f5] p-3">
-            <p className="text-[11px] font-bold text-[#999]">남은 시간</p>
-            <p className="mt-0.5 text-[28px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
+            <div className="flex items-center justify-between gap-1.5">
+              <p className="text-[11px] font-bold text-[#999]">남은 시간</p>
+              <span className="shrink-0 rounded-[6px] bg-[#ef554a]/10 px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
+            </div>
+            <p className="mt-0.5 text-[34px] font-black leading-none tabular-nums text-[#ef554a]">{formatCountdown(remaining)}</p>
             <button
               className="mt-2.5 flex h-9 w-full items-center justify-center gap-1 rounded-[10px] border border-[#ef554a] text-[12px] font-black text-[#ef554a] disabled:opacity-50"
               disabled={timerActionPending}
@@ -1051,19 +1107,19 @@ function MutualRatingsPanel({ eventId, onClose }: { eventId: string; onClose: ()
 
         {ratings && ratings.length > 0 ? (
           <div className="mt-4 space-y-2 pb-4">
-            <div className="grid grid-cols-[1fr_40px_56px_40px_1fr] items-center gap-1 px-1 text-[10px] font-bold text-[#bbb]">
-              <span className="text-right">남</span>
+            <div className="grid grid-cols-[1fr_44px_60px_44px_1fr] items-center gap-3 px-1 text-[10px] font-bold text-[#bbb]">
+              <span className="text-left">남</span>
               <span className="text-center">남→여</span>
               <span className="text-center">합계</span>
               <span className="text-center">여→남</span>
-              <span className="text-left">여</span>
+              <span className="text-right">여</span>
             </div>
             {ratings.map((row) => (
               <div
-                className="grid grid-cols-[1fr_40px_56px_40px_1fr] items-center gap-1 rounded-[14px] border border-[#f0f0f0] px-2 py-3"
+                className="grid grid-cols-[1fr_44px_60px_44px_1fr] items-center gap-3 rounded-[14px] border border-[#f0f0f0] px-3 py-3"
                 key={`${row.maleApplicationId}-${row.femaleApplicationId}`}
               >
-                <p className="truncate text-right text-[13px] font-black text-[#4f7fd1]">{row.maleNickname}</p>
+                <p className="truncate text-left text-[13px] font-black text-[#4f7fd1]">{row.maleNickname}</p>
                 <p className="text-center text-[12px] font-bold text-[#999]">{row.maleToFemaleScore?.toFixed(1) ?? '미작성'}</p>
                 <p
                   className={[
@@ -1074,7 +1130,7 @@ function MutualRatingsPanel({ eventId, onClose }: { eventId: string; onClose: ()
                   {row.total !== undefined ? row.total.toFixed(1) : '미확정'}
                 </p>
                 <p className="text-center text-[12px] font-bold text-[#999]">{row.femaleToMaleScore?.toFixed(1) ?? '미작성'}</p>
-                <p className="truncate text-left text-[13px] font-black text-[#ef7a9a]">{row.femaleNickname}</p>
+                <p className="truncate text-right text-[13px] font-black text-[#ef7a9a]">{row.femaleNickname}</p>
               </div>
             ))}
           </div>
@@ -1143,6 +1199,76 @@ function PauseRequestsPanel({
                   <button
                     className="mt-2 h-9 rounded-[10px] bg-[#ef4039] px-4 text-[12px] font-black text-white"
                     onClick={() => onResolve(request.id)}
+                    type="button"
+                  >
+                    확인 처리
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportsPanel({
+  onClose,
+  onResolve,
+  reports,
+}: {
+  onClose: () => void;
+  onResolve: (id: string) => void;
+  reports: ParticipantReport[];
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">참가자 신고</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+
+        {reports.length === 0 ? (
+          <p className="mt-6 text-center text-[14px] font-bold text-[#999]">신고가 없습니다</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {reports.map((report) => (
+              <div
+                className={[
+                  'rounded-[14px] border px-4 py-3',
+                  report.status === 'pending' ? 'border-[#ef554a]/40 bg-[#fff1ee]' : 'border-[#f0f0f0] bg-white',
+                ].join(' ')}
+                key={report.id}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[15px] font-black">
+                    {report.reporterNickname} → {report.reportedNickname}
+                  </p>
+                  {report.status === 'pending' ? (
+                    <span className="text-[11px] font-black text-[#ef554a]">미확인</span>
+                  ) : (
+                    <span className="text-[11px] font-black text-[#3f9142]">처리됨</span>
+                  )}
+                </div>
+                <p className="mt-1 text-[13px] font-bold text-[#999]">
+                  {[report.roundNumber ? `${report.roundNumber}라운드` : null, report.tableNumber ? `${report.tableNumber}번 테이블` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p className="mt-1.5 text-[14px] font-bold">{report.reason}</p>
+                <p className="mt-0.5 text-[12px] font-bold text-[#999]">{formatKstTime(report.createdAt)} 접수</p>
+                {report.status === 'pending' ? (
+                  <button
+                    className="mt-2 h-9 rounded-[10px] bg-[#ef4039] px-4 text-[12px] font-black text-white"
+                    onClick={() => onResolve(report.id)}
                     type="button"
                   >
                     확인 처리
@@ -1336,6 +1462,22 @@ function BellIcon() {
         strokeWidth="1.8"
       />
       <path d="M9.5 21a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function ReportIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M12 2 2 20h20L12 2Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path d="M12 9v5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <circle cx="12" cy="16.8" fill="currentColor" r="0.9" />
     </svg>
   );
 }

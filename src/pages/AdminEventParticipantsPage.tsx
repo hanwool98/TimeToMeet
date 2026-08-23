@@ -6,17 +6,22 @@ import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import {
+  approveEmergencyParticipant,
+  createEmergencyParticipantToken,
   createTestEventPreviewLink,
   createTestParticipants,
   deleteEventFromSupabase,
   fetchAdminApplicationFiles,
   fetchAdminEventParticipantMedia,
+  fetchAdminRoundProgress,
   resetTestEventData,
+  setParticipantAttendanceStatus,
+  simulateTestEventFinalSelections,
   updateApplicationReviewInSupabase,
 } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
-import type { StoredApplication } from '../utils/adminApplications';
+import type { ParticipantAttendanceStatus, StoredApplication } from '../utils/adminApplications';
 
 interface ParticipantMediaRow {
   audioUrl: string | null;
@@ -33,7 +38,11 @@ export default function AdminEventParticipantsPage() {
   const [previewFilesError, setPreviewFilesError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [testActionBusy, setTestActionBusy] = useState(false);
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [participantMedia, setParticipantMedia] = useState<Map<string, ParticipantMediaRow>>(new Map());
+  const [eventStarted, setEventStarted] = useState<boolean | null>(null);
+  const [emergencyTokenBusy, setEmergencyTokenBusy] = useState(false);
+  const [emergencyApproveBusyId, setEmergencyApproveBusyId] = useState<string | null>(null);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
 
@@ -52,6 +61,25 @@ export default function AdminEventParticipantsPage() {
     };
   }, [eventId]);
 
+  // events.started_at 자체가 EventData에 아직 노출돼있지 않아, 이미 이
+  // 페이지에서 쓰고 있는 fetchAdminRoundProgress(행사 시작 전이면
+  // event_progress 행이 없어 예외를 던짐)를 그대로 "시작 여부" 판정에
+  // 재사용한다 - 새 RPC/타입 확장 없이 기존 신호만으로 판단.
+  useEffect(() => {
+    if (!eventId) return;
+    let active = true;
+    fetchAdminRoundProgress(eventId)
+      .then(() => {
+        if (active) setEventStarted(true);
+      })
+      .catch(() => {
+        if (active) setEventStarted(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId, applications]);
+
   const participants = applications
     .filter((application) => event && application.status === '참가 확정' && application.eventId === eventId)
     .map((application, index) => applicationToParticipant(application, index, participantMedia));
@@ -62,6 +90,9 @@ export default function AdminEventParticipantsPage() {
   const previewApplication = previewParticipant
     ? applications.find((application) => (application.dbId ?? application.id) === previewParticipant.id) ?? null
     : null;
+  const pendingEmergencyApplications = applications.filter(
+    (application) => application.eventId === eventId && application.isEmergencyWalkin && application.status === '심사 대기',
+  );
 
   const loadPreviewFiles = useCallback(async () => {
     if (!previewApplication) return;
@@ -112,6 +143,89 @@ export default function AdminEventParticipantsPage() {
     setPreviewParticipant(null);
   };
 
+  // 불참/중도이탈/복귀 클릭 시 실제 서버 계산 전에 결과를 미리 보여준다 -
+  // fetchAdminRoundProgress가 event_progress 행이 없으면(행사 시작 전)
+  // 예외를 던지는 기존 동작을 그대로 "행사 시작 여부" 판단에 재사용한다.
+  const handleSetAttendanceStatus = async (status: ParticipantAttendanceStatus) => {
+    if (!previewApplication || !eventId || attendanceBusy) return;
+    const targetId = previewApplication.dbId ?? previewApplication.id;
+    const nickname = previewParticipant?.nickname ?? '해당 참가자';
+    const actionLabel = status === 'no_show' ? '불참' : status === 'left_early' ? '중도이탈' : '복귀';
+    const { male, female } = countActiveByGender(applications, eventId, targetId, status);
+
+    let message = `${nickname}님을 ${actionLabel} 처리하면 남 ${male}명 / 여 ${female}명이 됩니다.`;
+    if (male !== female) {
+      message += ` 이후 라운드에는 ${male > female ? '남성' : '여성'} 참가자가 매 라운드 번갈아 휴식합니다.`;
+    }
+
+    let eventStarted = false;
+    let completedRounds = 0;
+    try {
+      const progress = await fetchAdminRoundProgress(eventId);
+      eventStarted = true;
+      completedRounds = progress.completedRounds;
+    } catch {
+      eventStarted = false;
+    }
+    message += eventStarted && completedRounds > 0
+      ? ` 완료된 ${completedRounds}개 라운드는 그대로 유지하고 ${completedRounds + 1}라운드 이후만 재배정됩니다.`
+      : ' 라운드 배정이 처음부터 다시 계산됩니다.';
+
+    if (!window.confirm(`${message}\n\n계속하시겠습니까?`)) return;
+
+    setAttendanceBusy(true);
+    try {
+      await setParticipantAttendanceStatus(targetId, status);
+      await reload();
+      setPreviewParticipant(null);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '처리에 실패했습니다.');
+    } finally {
+      setAttendanceBusy(false);
+    }
+  };
+
+  // 행사 시작 전에만 가능(서버도 events.started_at is null을 강제) - 노쇼
+  // 등으로 빈 자리가 생겼을 때 일반 모집 절차(심사대기/결제대기/24시간
+  // 결제제한) 없이 즉시 대체 인원을 받기 위한 1회성 링크.
+  const handleCreateEmergencyToken = async () => {
+    if (!eventId || emergencyTokenBusy) return;
+    setEmergencyTokenBusy(true);
+    try {
+      const { token, expiresAt } = await createEmergencyParticipantToken(eventId);
+      const url = `${window.location.origin}/events/${eventId}/emergency-apply?token=${token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // Clipboard access can fail - the link is still shown in the alert below.
+      }
+      window.alert(
+        `긴급 대체 참가 링크가 복사되었습니다 (${new Date(expiresAt).toLocaleString('ko-KR')}까지 유효):\n\n${url}`,
+      );
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '긴급 참가 링크 생성에 실패했습니다.');
+    } finally {
+      setEmergencyTokenBusy(false);
+    }
+  };
+
+  const handleApproveEmergency = async (application: StoredApplication) => {
+    if (emergencyApproveBusyId) return;
+    const targetId = application.dbId ?? application.id;
+    if (!window.confirm(`${application.profile?.nickname ?? '이 참가자'}님을 긴급 대체 참가자로 승인할까요? 승인 즉시 참가 확정 + 체크인 처리되고 전체 라운드가 다시 계산됩니다.`)) {
+      return;
+    }
+    setEmergencyApproveBusyId(targetId);
+    try {
+      await approveEmergencyParticipant(targetId);
+      await reload();
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '긴급 참가자 승인에 실패했습니다.');
+    } finally {
+      setEmergencyApproveBusyId(null);
+    }
+  };
+
   const handleCreatePreviewLink = async () => {
     if (!eventId || testActionBusy) return;
     setTestActionBusy(true);
@@ -160,6 +274,22 @@ export default function AdminEventParticipantsPage() {
     }
   };
 
+  // 테스트 참가자는 phone='' 계정이라 로그인이 불가능해 최종선택을 직접
+  // 제출할 수 없다 - 그래서 콘텐츠 관리 > 최종선택 결과 확인까지 테스트
+  // 행사에서 직접 시뮬레이션하려면 이 버튼으로 대신 제출해줘야 한다.
+  const handleSimulateFinalSelections = async () => {
+    if (!eventId || testActionBusy) return;
+    setTestActionBusy(true);
+    try {
+      const count = await simulateTestEventFinalSelections(eventId);
+      window.alert(`${count}명의 최종선택을 자동 제출했습니다.`);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '최종선택 자동 제출에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
   const handleResetTestData = async () => {
     if (!eventId || testActionBusy) return;
     if (!window.confirm('이 테스트 행사의 신청/참가확정/결제/체크인/태블릿 연결 데이터를 모두 초기화할까요? 행사 자체는 삭제되지 않습니다. 되돌릴 수 없습니다.')) {
@@ -201,6 +331,46 @@ export default function AdminEventParticipantsPage() {
               <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
             )}
           </div>
+
+          {event && eventStarted === false ? (
+            <div className="mt-5 w-full max-w-full min-w-0 rounded-[22px] border border-meet-blue/25 bg-meet-blueSoft/40 p-4">
+              <p className="text-[14px] font-black text-meet-blue">긴급 대체 참가자</p>
+              <p className="mt-1 text-[12px] font-extrabold text-[#8a93a3]">
+                행사 시작 전에만 사용할 수 있어요. 노쇼로 빈 자리가 생기면 일반 신청 절차 없이 1회성 링크로 바로 채울 수 있습니다.
+              </p>
+              <button
+                className="mt-3 h-12 w-full rounded-[14px] bg-meet-blue text-[13px] font-black text-white transition active:scale-[0.99] disabled:opacity-50"
+                disabled={emergencyTokenBusy}
+                onClick={() => void handleCreateEmergencyToken()}
+                type="button"
+              >
+                긴급 대체 참가 링크 발급
+              </button>
+              {pendingEmergencyApplications.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {pendingEmergencyApplications.map((application) => {
+                    const targetId = application.dbId ?? application.id;
+                    return (
+                      <div className="flex items-center justify-between gap-2 rounded-[14px] bg-white px-3 py-2 shadow-sm" key={targetId}>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-black">{application.profile?.nickname ?? application.userId}</p>
+                          <p className="text-[11px] font-bold text-[#8a93a3]">{application.gender} · 승인 대기 중</p>
+                        </div>
+                        <button
+                          className="shrink-0 rounded-[10px] bg-meet-blue px-3 py-2 text-[12px] font-black text-white disabled:opacity-50"
+                          disabled={emergencyApproveBusyId === targetId}
+                          onClick={() => void handleApproveEmergency(application)}
+                          type="button"
+                        >
+                          승인
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3 pt-5">
             <PrimaryButton disabled={!event} onClick={() => navigate(`/admin/events/${eventId}/edit`)}>
@@ -252,6 +422,14 @@ export default function AdminEventParticipantsPage() {
                   행사모드 입장
                 </button>
                 <button
+                  className="col-span-2 h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testActionBusy}
+                  onClick={() => void handleSimulateFinalSelections()}
+                  type="button"
+                >
+                  테스트 최종선택 자동 제출
+                </button>
+                <button
                   className="col-span-2 h-12 rounded-[14px] bg-meet-pinkSoft text-[13px] font-black text-meet-pink transition active:scale-[0.99] disabled:opacity-50"
                   disabled={testActionBusy}
                   onClick={() => void handleResetTestData()}
@@ -284,6 +462,12 @@ export default function AdminEventParticipantsPage() {
                 ×
               </button>
             </div>
+
+            {previewApplication && previewApplication.attendanceStatus && previewApplication.attendanceStatus !== 'active' ? (
+              <p className="mt-3 rounded-[16px] bg-meet-pinkSoft px-4 py-2 text-[13px] font-black text-meet-pink">
+                현재 상태: {previewApplication.attendanceStatus === 'no_show' ? '불참 처리됨' : '중도이탈 처리됨'}
+              </p>
+            ) : null}
 
             {previewParticipant.profile ? (
               <div className="mt-5 space-y-3">
@@ -366,6 +550,38 @@ export default function AdminEventParticipantsPage() {
                 참여 대기 전환
               </button>
             </div>
+
+            {previewApplication && (!previewApplication.attendanceStatus || previewApplication.attendanceStatus === 'active') ? (
+              <div className="mt-3 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
+                <button
+                  className="h-12 rounded-[18px] bg-[#3a3f4b] text-[14px] font-black text-white transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={attendanceBusy}
+                  onClick={() => void handleSetAttendanceStatus('no_show')}
+                  type="button"
+                >
+                  불참 처리
+                </button>
+                <button
+                  className="h-12 rounded-[18px] bg-[#3a3f4b] text-[14px] font-black text-white transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={attendanceBusy}
+                  onClick={() => void handleSetAttendanceStatus('left_early')}
+                  type="button"
+                >
+                  중도이탈 처리
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 w-full max-w-full min-w-0">
+                <button
+                  className="h-12 w-full rounded-[18px] bg-meet-blue text-[14px] font-black text-white transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={attendanceBusy}
+                  onClick={() => void handleSetAttendanceStatus('active')}
+                  type="button"
+                >
+                  복귀 처리
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -380,6 +596,25 @@ function formatShortKoreanDate(dateValue: string) {
   return `${String(year).slice(2)}년 ${month}월 ${day}일 (${dayNames[date.getDay()]})`;
 }
 
+
+function countActiveByGender(
+  applications: StoredApplication[],
+  eventId: string,
+  targetApplicationId: string,
+  targetNewStatus: ParticipantAttendanceStatus,
+) {
+  let male = 0;
+  let female = 0;
+  for (const application of applications) {
+    if (application.eventId !== eventId || application.status !== '참가 확정' || !application.checkedInAt) continue;
+    const id = application.dbId ?? application.id;
+    const effectiveStatus = id === targetApplicationId ? targetNewStatus : application.attendanceStatus ?? 'active';
+    if (effectiveStatus !== 'active') continue;
+    if (application.gender === '남성') male += 1;
+    else female += 1;
+  }
+  return { male, female };
+}
 
 function applicationToParticipant(
   application: StoredApplication,

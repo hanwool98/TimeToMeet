@@ -4,7 +4,8 @@ import { getAdminSession } from './adminAuth';
 import { getAppSession } from './appAuth';
 import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
-import type { StoredApplication } from '../utils/adminApplications';
+import type { StoredApplication, ParticipantAttendanceStatus } from '../utils/adminApplications';
+export type { ParticipantAttendanceStatus } from '../utils/adminApplications';
 import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 interface SubmitApplicationInput {
@@ -87,6 +88,8 @@ interface SupabaseApplicationRow {
   short_name?: string;
   user_display_id?: string;
   account_type?: 'member' | 'guest';
+  attendance_status?: string;
+  is_emergency_walkin?: boolean;
 }
 
 interface PublicEventSummaryRow {
@@ -648,6 +651,23 @@ export async function updateApplicationReviewInSupabase(
   return data as StoredApplication['status'];
 }
 
+// 스케줄이 아직 없으면(행사 시작 전) 처음부터, 이미 라운드가 진행 중이면
+// 현재 라운드 다음부터만 재계산되도록 서버가 알아서 판단한다(과거 라운드는
+// 절대 건드리지 않음).
+export async function setParticipantAttendanceStatus(applicationId: string, status: ParticipantAttendanceStatus) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_participant_attendance_status_for_session', {
+    application_id_value: applicationId,
+    session_token: adminSession.token,
+    status_value: status,
+  });
+
+  if (error) throw error;
+}
+
 export async function cancelMyHeldApplication(applicationId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
@@ -1041,6 +1061,127 @@ export async function createTestEventPreviewLink(eventId: string) {
   return { expiresAt: row.expires_at, token: row.token };
 }
 
+// 행사 시작 전에만 발급 가능(서버가 events.started_at is null을 강제) -
+// create_test_event_preview_token과 동일한 패턴이지만 별도 테이블/RPC로
+// 완전히 분리되어 있다.
+export async function createEmergencyParticipantToken(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_emergency_participant_token', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as { token: string; expires_at: string } | undefined;
+  if (!row) throw new Error('긴급 참가 링크를 생성하지 못했습니다.');
+  return { expiresAt: row.expires_at, token: row.token };
+}
+
+// 심사대기 + is_emergency_walkin인 신청만 대상 - 참가확정 + 체크인 +
+// 행사 시작 전 전체 rotation 재생성을 한 번에 처리한다.
+export async function approveEmergencyParticipant(applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('approve_emergency_participant_for_session', {
+    application_id_value: applicationId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
+export interface EmergencyParticipantTokenEvent {
+  id: string;
+  location: string;
+  shortName: string;
+  startTime: string;
+  title: string;
+}
+
+// 참가자가 긴급 참가 폼을 열 때 어떤 행사인지 보여주기 위한 공개(토큰
+// 필수) 조회 - 토큰이 유효하지 않으면(만료/사용됨/행사 시작됨) null.
+export async function fetchEmergencyParticipantTokenEvent(eventId: string, token: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.rpc('get_emergency_participant_token_event', {
+    event_id_value: eventId,
+    token_value: token,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { id: string; location: string; short_name: string; start_time: string; title: string }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: row.id,
+    location: row.location,
+    shortName: row.short_name,
+    startTime: row.start_time.slice(0, 5),
+    title: row.title,
+  } satisfies EmergencyParticipantTokenEvent;
+}
+
+interface EmergencySubmitInput {
+  birthDate: string;
+  eventId: string;
+  gender: string;
+  job: string;
+  nickname: string;
+  representativeCrop: RepresentativeCrop;
+  representativePhoto: File;
+  token: string;
+  voiceIntro?: Blob;
+  voiceIntroFileName?: string;
+}
+
+export async function submitEmergencyApplication(input: EmergencySubmitInput) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const payload: Record<string, unknown> = {
+    birthDate: input.birthDate,
+    eventId: input.eventId,
+    gender: input.gender,
+    job: input.job,
+    nickname: input.nickname,
+    representativeCrop: input.representativeCrop,
+    representativePhoto: await fileToPayload(input.representativePhoto),
+    token: input.token,
+  };
+  if (input.voiceIntro) {
+    payload.voiceIntro = await blobToPayload(input.voiceIntro, input.voiceIntroFileName ?? 'voice-intro.audio');
+  }
+
+  const { data, error } = await supabase.functions.invoke('submit-emergency-application', { body: payload });
+
+  if (error || data?.ok !== true) {
+    let message = '긴급 참가 신청에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body (infra/gateway page) - keep the generic message.
+      }
+    }
+    throw new Error(message);
+  }
+
+  return {
+    applicationId: data.applicationId as string,
+    expiresAt: data.expiresAt as string,
+    sessionToken: data.sessionToken as string,
+    userId: data.userId as string,
+  };
+}
+
 const testEventPreviewCacheKey = 'time2meet.testEventPreviewTokens';
 
 /**
@@ -1104,6 +1245,23 @@ export async function createTestParticipants(eventId: string, maleCount: number,
     event_id_value: eventId,
     female_count: femaleCount,
     male_count: maleCount,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return data as number;
+}
+
+// 테스트 참가자는 phone='' 계정이라 로그인 자체가 불가능해 최종선택을 직접
+// 제출할 수 없다 - 이 RPC가 실제로 만난 상대 중 호감도 높은 순으로 대신
+// 제출해준다(이미 제출된 참가자는 건드리지 않음).
+export async function simulateTestEventFinalSelections(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('simulate_test_event_final_selections', {
+    event_id_value: eventId,
     session_token: adminSession.token,
   });
 
@@ -1603,6 +1761,7 @@ export interface RoundProgress {
   isBonusRound: boolean;
   matches: RoundTableMatch[];
   pendingPauseCount: number;
+  pendingReportCount: number;
   roundPhase?: 'conversation' | 'transition';
   stage: EventProgressStage;
   timerPositionSeconds: number;
@@ -1628,6 +1787,7 @@ interface RoundProgressJson {
     tableNumber: number;
   }>;
   pendingPauseCount: number;
+  pendingReportCount: number;
   roundPhase: 'conversation' | 'transition' | null;
   serverNow?: string | null;
   stage: EventProgressStage;
@@ -1671,6 +1831,7 @@ function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
       tableNumber: match.tableNumber,
     })),
     pendingPauseCount: row.pendingPauseCount,
+    pendingReportCount: row.pendingReportCount ?? 0,
     roundPhase: row.roundPhase ?? undefined,
     stage: row.stage,
     timerPositionSeconds: row.timerPositionSeconds,
@@ -1749,6 +1910,10 @@ export interface TabletRoundProgress {
   currentRound?: number;
   femaleNickname?: string;
   isBonusRound?: boolean;
+  // 성비 불균형으로 인해 이번 라운드 이 테이블에 실제 pair가 없을 때(휴식
+  // 순환) true - male/femaleNickname이 비어있는 다른 이유(데이터 아직 로딩
+  // 중 등)와 명확히 구분하기 위한 필드.
+  isResting?: boolean;
   maleNickname?: string;
   ok: boolean;
   roundPhase?: 'conversation' | 'transition';
@@ -1769,7 +1934,9 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
   });
 
   if (error) throw error;
-  const row = data as { ok: boolean } & Partial<RoundProgressJson & { maleNickname: string | null; femaleNickname: string | null }>;
+  const row = data as { isResting?: boolean | null; ok: boolean } & Partial<
+    RoundProgressJson & { maleNickname: string | null; femaleNickname: string | null }
+  >;
   if (!row?.ok) return { ok: false } satisfies TabletRoundProgress;
   return {
     bonusRoundCount: row.bonusRoundCount ?? undefined,
@@ -1779,6 +1946,7 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
     currentRound: row.currentRound ?? undefined,
     femaleNickname: row.femaleNickname ?? undefined,
     isBonusRound: row.isBonusRound ?? undefined,
+    isResting: row.isResting ?? undefined,
     maleNickname: row.maleNickname ?? undefined,
     ok: true,
     roundPhase: row.roundPhase ?? undefined,
@@ -1849,6 +2017,17 @@ export interface ParticipantRoundProgress {
   currentRound?: number;
   gender?: '남성' | '여성';
   isBonusRound?: boolean;
+  // 성비 불균형으로 인해 이번 라운드 나에게 실제 상대가 없을 때(휴식 순환)
+  // true.
+  isResting?: boolean;
+  // Only populated during bonus_seat_guide (the merged "호감도 수정 + 다음
+  // 자리 이동" phase) - absent for the last bonus round, since there's no
+  // next match to precompute. partner* above still refers to the partner
+  // just finished (who the rating form on screen is for).
+  nextPartnerAge?: number;
+  nextPartnerJob?: string;
+  nextPartnerNickname?: string;
+  nextTableNumber?: number;
   ok: boolean;
   partnerAge?: number;
   partnerApplicationId?: string;
@@ -1880,6 +2059,11 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     currentRound?: number;
     gender?: '남성' | '여성' | null;
     isBonusRound?: boolean | null;
+    isResting?: boolean | null;
+    nextPartnerAge?: number | null;
+    nextPartnerJob?: string | null;
+    nextPartnerNickname?: string | null;
+    nextTableNumber?: number | null;
     ok: boolean;
     partnerAge?: number | null;
     partnerApplicationId?: string | null;
@@ -1901,6 +2085,11 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     currentRound: row.currentRound ?? undefined,
     gender: row.gender ?? undefined,
     isBonusRound: row.isBonusRound ?? undefined,
+    isResting: row.isResting ?? undefined,
+    nextPartnerAge: row.nextPartnerAge ?? undefined,
+    nextPartnerJob: row.nextPartnerJob ?? undefined,
+    nextPartnerNickname: row.nextPartnerNickname ?? undefined,
+    nextTableNumber: row.nextTableNumber ?? undefined,
     ok: true,
     partnerAge: row.partnerAge ?? undefined,
     partnerApplicationId: row.partnerApplicationId ?? undefined,
@@ -1933,6 +2122,85 @@ export async function createParticipantPauseRequest(
   });
   if (error) throw error;
   return data as string;
+}
+
+// 운영자 호출/일시정지 요청과는 별개 기능 - 실제로 만난 상대만 신고 가능
+// 여부는 서버가 event_table_assignments로 검증한다.
+export async function createParticipantReport(eventId: string, reportedApplicationId: string, reason: string): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_participant_report', {
+    event_id_value: eventId,
+    reason_value: reason,
+    reported_application_id_value: reportedApplicationId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export interface ParticipantReport {
+  createdAt: string;
+  id: string;
+  reason: string;
+  reportedNickname: string;
+  reporterNickname: string;
+  resolvedAt?: string;
+  roundNumber?: number;
+  status: 'pending' | 'resolved';
+  tableNumber?: number;
+}
+
+export async function fetchAdminParticipantReports(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_participant_reports', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+  return (
+    data as Array<{
+      created_at: string;
+      id: string;
+      reason: string;
+      reported_nickname: string;
+      reporter_nickname: string;
+      resolved_at: string | null;
+      round_number: number | null;
+      status: ParticipantReport['status'];
+      table_number: number | null;
+    }>
+  ).map((row) => ({
+    createdAt: row.created_at,
+    id: row.id,
+    reason: row.reason,
+    reportedNickname: row.reported_nickname,
+    reporterNickname: row.reporter_nickname,
+    resolvedAt: row.resolved_at ?? undefined,
+    roundNumber: row.round_number ?? undefined,
+    status: row.status,
+    tableNumber: row.table_number ?? undefined,
+  })) satisfies ParticipantReport[];
+}
+
+export async function updateParticipantReportStatus(reportId: string, status: ParticipantReport['status']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_participant_report_status_for_session', {
+    report_id_value: reportId,
+    session_token: adminSession.token,
+    status_value: status,
+  });
+
+  if (error) throw error;
 }
 
 export interface ParticipantRating {
@@ -2015,6 +2283,7 @@ export async function fetchAdminMutualRatings(eventId: string) {
 }
 
 export interface MyRoundRating {
+  hashtags?: string[];
   memo?: string;
   score?: number;
 }
@@ -2030,18 +2299,25 @@ export async function fetchMyRoundRating(eventId: string, roundNumber: number): 
     session_token: session.token,
   });
   if (error) throw error;
-  const row = data as { ok: boolean; score?: number | null; memo?: string | null };
+  const row = data as { hashtags?: string[] | null; memo?: string | null; ok: boolean; score?: number | null };
   if (!row?.ok) return {};
-  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
+  return { hashtags: row.hashtags ?? undefined, memo: row.memo ?? undefined, score: row.score ?? undefined };
 }
 
-export async function submitRoundRating(eventId: string, roundNumber: number, score: number, memo: string): Promise<void> {
+export async function submitRoundRating(
+  eventId: string,
+  roundNumber: number,
+  score: number,
+  memo: string,
+  hashtags: string[],
+): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('submit_round_rating', {
     event_id_value: eventId,
+    hashtags_value: hashtags.length > 0 ? hashtags : null,
     memo_value: memo.trim() || null,
     round_number_value: roundNumber,
     score_value: score,
@@ -2050,10 +2326,10 @@ export async function submitRoundRating(eventId: string, roundNumber: number, sc
   if (error) throw error;
 }
 
-// 추가시간(bonus_rating) 1분 phase: 새 라운드 rating을 만드는 게 아니라
-// 정규 라운드에서 이미 이 상대에게 매긴 기존 점수를 서버가 찾아 수정한다 -
-// 그래서 round_number를 클라이언트가 넘기지 않는다(서버가 현재 추가시간
-// 상대를 찾아 그 사람과 만난 정규 라운드를 역으로 찾음).
+// 추가시간 통합 2분 phase(bonus_seat_guide): 새 라운드 rating을 만드는 게
+// 아니라 정규 라운드에서 이미 이 상대에게 매긴 기존 점수를 서버가 찾아
+// 수정한다 - 그래서 round_number를 클라이언트가 넘기지 않는다(서버가 현재
+// 추가시간 상대를 찾아 그 사람과 만난 정규 라운드를 역으로 찾음).
 export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
@@ -2064,18 +2340,19 @@ export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating
     session_token: session.token,
   });
   if (error) throw error;
-  const row = data as { ok: boolean; score?: number | null; memo?: string | null };
+  const row = data as { hashtags?: string[] | null; memo?: string | null; ok: boolean; score?: number | null };
   if (!row?.ok) return {};
-  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
+  return { hashtags: row.hashtags ?? undefined, memo: row.memo ?? undefined, score: row.score ?? undefined };
 }
 
-export async function submitMyBonusRating(eventId: string, score: number, memo: string): Promise<void> {
+export async function submitMyBonusRating(eventId: string, score: number, memo: string, hashtags: string[]): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('submit_bonus_round_rating', {
     event_id_value: eventId,
+    hashtags_value: hashtags.length > 0 ? hashtags : null,
     memo_value: memo.trim() || null,
     score_value: score,
     session_token: session.token,
@@ -2088,13 +2365,13 @@ export interface ParticipantPhotoInfo {
   representativeCrop?: RepresentativeCrop;
 }
 
-export async function fetchParticipantPartnerPhoto(eventId: string): Promise<ParticipantPhotoInfo> {
+export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound = false): Promise<ParticipantPhotoInfo> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) return { photoUrl: null };
 
   const { data, error } = await supabase.functions.invoke('participant-partner-photo', {
-    body: { eventId, sessionToken: session.token },
+    body: { eventId, sessionToken: session.token, useNextRound },
   });
   if (error) throw error;
   const row = data as { ok: boolean; photoUrl: string | null; representativeCrop?: RepresentativeCrop | null };
@@ -2104,6 +2381,7 @@ export async function fetchParticipantPartnerPhoto(eventId: string): Promise<Par
 export interface FinalSelectionCandidate {
   age?: number;
   applicationId: string;
+  hashtags?: string[];
   job?: string;
   memo?: string;
   nickname: string;
@@ -2130,7 +2408,15 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
   });
   if (error) throw error;
   const row = data as {
-    candidates?: Array<{ age: number | null; applicationId: string; job: string | null; memo: string | null; nickname: string; score: number | null }>;
+    candidates?: Array<{
+      age: number | null;
+      applicationId: string;
+      hashtags: string[] | null;
+      job: string | null;
+      memo: string | null;
+      nickname: string;
+      score: number | null;
+    }>;
     finalSelectionLimit?: number;
     ok: boolean;
     selectedApplicationIds?: string[];
@@ -2141,6 +2427,7 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
     candidates: (row.candidates ?? []).map((candidate) => ({
       age: candidate.age ?? undefined,
       applicationId: candidate.applicationId,
+      hashtags: candidate.hashtags ?? undefined,
       job: candidate.job ?? undefined,
       memo: candidate.memo ?? undefined,
       nickname: candidate.nickname,
@@ -2335,6 +2622,8 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     appliedAt: formatShortDateTime(row.submitted_at),
     dbId: row.id,
     accountType: row.account_type ?? 'member',
+    attendanceStatus: (row.attendance_status as ParticipantAttendanceStatus | undefined) ?? 'active',
+    isEmergencyWalkin: row.is_emergency_walkin ?? false,
     eventId: row.event_id,
     eventDate: row.event_date ? formatApplicationEventDate(row.event_date) : '행사 날짜 미정',
     eventType: row.short_name ?? '로테이션',

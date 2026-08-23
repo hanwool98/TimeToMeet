@@ -10,9 +10,13 @@ export type ApplicationStatus =
   | '자동 취소'
   | '신청 취소';
 
+export type ParticipantAttendanceStatus = 'active' | 'no_show' | 'left_early';
+
 export interface StoredApplication {
   dbId?: string;
   accountType?: 'member' | 'guest';
+  attendanceStatus?: ParticipantAttendanceStatus;
+  isEmergencyWalkin?: boolean;
   id: string;
   userId: string;
   gender: '남성' | '여성';

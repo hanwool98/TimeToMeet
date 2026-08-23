@@ -133,6 +133,18 @@ export async function loginGuestSession(phoneNormalized: string, pin: string) {
   return writeSession(appSessionKey, response, phoneNormalized);
 }
 
+// submit-emergency-application이 이미 세션을 직접 발급해서 응답에 담아
+// 돌려주므로(별도의 전화번호+PIN 로그인 없이), 그 결과를 다른 로그인
+// RPC들과 동일한 localStorage 세션 형태로 저장하기만 하면 된다.
+export function applyEmergencyGuestSession(response: { expiresAt: string; sessionToken: string; userId: string }) {
+  return writeSession(appSessionKey, {
+    expires_at: response.expiresAt,
+    role: 'guest',
+    session_token: response.sessionToken,
+    user_id: response.userId,
+  });
+}
+
 export async function loginMemberSession(loginId: string, password: string) {
   if (!supabase) throw new Error('Supabase 연결 설정이 필요합니다.');
 
