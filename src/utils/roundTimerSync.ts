@@ -14,11 +14,21 @@ export function computeLiveElapsedSeconds(
   return Math.max(0, snapshot.timerPositionSeconds + elapsedSinceUpdate);
 }
 
+// Default/fallback only - the real regular-round duration is operator-
+// configured per event (events.conversation_duration_seconds, 7/8/10분) and
+// comes down through every progress RPC as conversationDurationSeconds.
 export const CONVERSATION_PHASE_SECONDS = 600;
+export const BONUS_CONVERSATION_PHASE_SECONDS = 420;
 export const TRANSITION_PHASE_SECONDS = 120;
+export const BONUS_RATING_PHASE_SECONDS = 60;
 
-export function phaseDurationSeconds(phase?: 'conversation' | 'transition') {
-  return phase === 'transition' ? TRANSITION_PHASE_SECONDS : CONVERSATION_PHASE_SECONDS;
+export function phaseDurationSeconds(
+  phase?: 'conversation' | 'transition',
+  isBonusRound = false,
+  regularConversationSeconds = CONVERSATION_PHASE_SECONDS,
+) {
+  if (phase === 'transition') return TRANSITION_PHASE_SECONDS;
+  return isBonusRound ? BONUS_CONVERSATION_PHASE_SECONDS : regularConversationSeconds;
 }
 
 export function formatCountdown(totalSeconds: number) {

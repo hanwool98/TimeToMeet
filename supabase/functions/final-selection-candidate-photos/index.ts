@@ -13,11 +13,11 @@ type Payload = {
 
 const signedUrlExpirySeconds = 600;
 
-// Unlike public-participant-media (unauthenticated, whole-event preview
-// list, client-side-blurred), this only ever returns ONE photo: the
-// caller's own current-round match, derived server-side from
-// event_table_assignments rather than trusted from client input - a
-// participant can never request another participant's photo by id.
+// Like participant-partner-photo (session-resolved, never trusts a
+// client-supplied application id) but returns every real (non-bonus) round
+// partner at once, for the 최종 선택 pick screen - the candidate list itself
+// is server-derived from event_table_assignments, so this can never be used
+// to fetch an arbitrary participant's photo.
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ message: 'Method not allowed.' }, 405);
@@ -58,51 +58,43 @@ Deno.serve(async (request) => {
     return json({ message: '참가 확정 상태의 신청 정보를 찾을 수 없습니다.' }, 404);
   }
 
-  const { data: progress, error: progressError } = await supabase
-    .from('event_progress')
-    .select('current_round')
-    .eq('event_id', payload.eventId)
-    .maybeSingle();
-
-  // current_round already points at the correct row in
-  // event_table_assignments no matter the stage - it's bumped to the next
-  // 추가시간 round number as soon as bonus_matching for that round starts,
-  // not deferred until the bonus conversation actually begins.
-  if (progressError || !progress?.current_round) {
-    return json({ ok: true, photoUrl: null });
-  }
-
-  const { data: assignment, error: assignmentError } = await supabase
+  const { data: assignments, error: assignmentsError } = await supabase
     .from('event_table_assignments')
     .select('male_application_id, female_application_id')
     .eq('event_id', payload.eventId)
-    .eq('round_number', progress.current_round)
-    .or(`male_application_id.eq.${myApplication.id},female_application_id.eq.${myApplication.id}`)
-    .maybeSingle();
+    .eq('is_bonus', false)
+    .or(`male_application_id.eq.${myApplication.id},female_application_id.eq.${myApplication.id}`);
 
-  if (assignmentError || !assignment) {
-    return json({ ok: true, photoUrl: null });
-  }
+  if (assignmentsError) return json({ ok: true, photos: [] });
 
-  const partnerApplicationId =
-    assignment.male_application_id === myApplication.id ? assignment.female_application_id : assignment.male_application_id;
+  const partnerIds = Array.from(
+    new Set(
+      (assignments ?? []).map((row) =>
+        row.male_application_id === myApplication.id ? row.female_application_id : row.male_application_id,
+      ),
+    ),
+  ).filter((id): id is string => Boolean(id));
 
-  if (!partnerApplicationId) return json({ ok: true, photoUrl: null });
+  if (partnerIds.length === 0) return json({ ok: true, photos: [] });
 
-  const { data: partner, error: partnerError } = await supabase
+  const { data: partners, error: partnersError } = await supabase
     .from('applications')
-    .select('profile_photo_paths, representative_photo_index')
-    .eq('id', partnerApplicationId)
-    .maybeSingle();
+    .select('id, profile_photo_paths, representative_photo_index')
+    .in('id', partnerIds);
 
-  if (partnerError || !partner) return json({ ok: true, photoUrl: null });
+  if (partnersError) return json({ ok: true, photos: [] });
 
-  const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
-  const representativeIndex = Number(partner.representative_photo_index ?? 0);
-  const photoPath = photoPaths[representativeIndex];
-  const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
+  const photos = await Promise.all(
+    (partners ?? []).map(async (partner) => {
+      const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
+      const representativeIndex = Number(partner.representative_photo_index ?? 0);
+      const photoPath = photoPaths[representativeIndex];
+      const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
+      return { applicationId: partner.id as string, photoUrl };
+    }),
+  );
 
-  return json({ ok: true, photoUrl });
+  return json({ ok: true, photos });
 });
 
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {

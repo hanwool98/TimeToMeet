@@ -29,7 +29,7 @@ import {
 } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
-import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
+import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const pollIntervalMs = 2_000;
 const pauseRequestPollIntervalMs = 5_000;
@@ -614,10 +614,47 @@ function RoundProgressSection({
     );
   }
 
-  const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase);
+  // 매칭 계산은 순간적이라(다음 poll에 바로 상대공개로 넘어감) 타이머 없이
+  // 짧게만 보여준다. matches 그리드는 아직 비어 있으므로 별도 카드로 처리.
+  if (roundProgress.stage === 'bonus_matching') {
+    return (
+      <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
+        <p className="text-[15px] font-black text-[#ef554a]">추가시간 {roundProgress.bonusRoundIndex ?? ''} 매칭 중</p>
+        <p className="mt-2 text-[13px] font-bold text-[#999]">잠시만 기다려주세요</p>
+      </section>
+    );
+  }
+
+  if (roundProgress.stage === 'final_selection') {
+    return (
+      <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
+        <p className="text-[15px] font-black text-[#ef554a]">모든 대화 종료</p>
+        <p className="mt-2 text-[24px] font-black">최종 선택 진행 중</p>
+        <p className="mt-3 text-[13px] font-bold text-[#999]">참가자들이 최종 선택을 진행하고 있어요</p>
+      </section>
+    );
+  }
+
+  // bonus_rating은 round_phase가 방금 끝난 대화의 값을 그대로 들고 있어
+  // (phase 자체가 없음) 별도로 duration/label을 정한다. 그 외에는
+  // roundPhase 기반 - 정규는 이벤트에 설정된 대화시간, 추가시간 대화는
+  // 7분 고정, 자리 안내는 정규/추가시간 모두 2분 고정.
+  const phaseDuration =
+    roundProgress.stage === 'bonus_rating'
+      ? BONUS_RATING_PHASE_SECONDS
+      : phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds);
   const liveElapsed = computeLiveElapsedSeconds(roundProgress, nowTick);
   const remaining = Math.max(0, phaseDuration - liveElapsed);
-  const phaseLabel = roundProgress.roundPhase === 'transition' ? '이동 및 호감도 작성' : '10분 대화';
+  const phaseLabel =
+    roundProgress.stage === 'bonus_rating'
+      ? '호감도 수정'
+      : roundProgress.roundPhase === 'transition'
+        ? roundProgress.isBonusRound
+          ? '자리 안내'
+          : '이동 및 호감도 작성'
+        : `${Math.round(phaseDuration / 60)}분 대화`;
+  const roundHeaderLabel =
+    roundProgress.isBonusRound && roundProgress.bonusRoundIndex ? `추가시간 ${roundProgress.bonusRoundIndex}` : `${roundProgress.currentRound ?? 1}라운드`;
 
   const matchByTable = new Map(roundProgress.matches.map((match) => [match.tableNumber, match]));
   const tableNumbers = Array.from({ length: Math.max(totalTables, roundProgress.matches.length) }, (_, index) => index + 1);
@@ -627,7 +664,7 @@ function RoundProgressSection({
       <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-[14px] font-black leading-tight">{roundProgress.currentRound ?? 1}라운드 진행 중</h2>
+            <h2 className="truncate text-[14px] font-black leading-tight">{roundHeaderLabel} 진행 중</h2>
             <span className="shrink-0 rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
           </div>
           <button
@@ -680,10 +717,12 @@ function RoundProgressSection({
           </div>
         </div>
 
-        <button className="mt-2.5 flex h-8 w-full items-center justify-center gap-1 text-[11px] font-black text-[#999]" onClick={onOpenRoundJump} type="button">
-          <SwapIcon />
-          라운드 이동
-        </button>
+        {!roundProgress.isBonusRound ? (
+          <button className="mt-2.5 flex h-8 w-full items-center justify-center gap-1 text-[11px] font-black text-[#999]" onClick={onOpenRoundJump} type="button">
+            <SwapIcon />
+            라운드 이동
+          </button>
+        ) : null}
       </section>
 
       <section className="mt-4">

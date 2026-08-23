@@ -11,7 +11,7 @@ import {
   type TabletRoundProgress,
 } from '../services/supabaseApplications';
 import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
-import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
+import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const storageKey = 'time2meet.tabletConnection';
 const progressPollIntervalMs = 3_000;
@@ -135,8 +135,15 @@ export default function AdminTabletSeatPage() {
     };
   }, [eventId, tableNumber, progress?.stage]);
 
-  // Round timer/matching only matters once the round stage is reached.
-  const isRoundStage = progress?.stage === 'round_active' || progress?.stage === 'round_complete';
+  // Round timer/matching only matters once the round stage is reached -
+  // this now also covers every 추가시간 sub-stage, which all carry their
+  // own timer snapshot on the same round-progress RPC.
+  const isRoundStage =
+    progress?.stage === 'round_active' ||
+    progress?.stage === 'round_complete' ||
+    progress?.stage === 'bonus_matching' ||
+    progress?.stage === 'bonus_seat_guide' ||
+    progress?.stage === 'bonus_rating';
   useEffect(() => {
     if (!eventId || !Number.isFinite(tableNumber) || !isRoundStage) return undefined;
     let active = true;
@@ -271,20 +278,77 @@ export default function AdminTabletSeatPage() {
     );
   }
 
+  // 추가시간 매칭 계산 중 - 순간적이라 타이머 없이 짧게만 보여진다.
+  if (progress.stage === 'bonus_matching') {
+    return (
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+        <div>
+          <p className="text-[20px] font-black text-[#ff8a80]">추가시간 매칭 중</p>
+          <p className="mt-4 text-[22px] font-black">잠시만 기다려주세요</p>
+        </div>
+      </main>
+    );
+  }
+
+  // 추가시간 상대공개/자리 이동 2분 - 정규 이동 phase와 같은 형태(바 타이머
+  // 하나)지만 이 phase에는 호감도 작성이 없으므로 문구만 다르다.
+  if (progress.stage === 'bonus_seat_guide') {
+    if (!roundProgress) return <DataLoadingState />;
+    const phaseDuration = phaseDurationSeconds('transition');
+    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
+      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
+      timerStatus: roundProgress.timerStatus ?? 'paused',
+      timerUpdatedAt: roundProgress.timerUpdatedAt,
+    }, nowTick));
+    return (
+      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <PetalDecor />
+        <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+        <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
+          2분 안에 자리 이동을 완료해주세요
+        </p>
+      </main>
+    );
+  }
+
+  // 추가시간 대화 종료 후 1분 기존 호감도 수정 phase.
+  if (progress.stage === 'bonus_rating') {
+    if (!roundProgress) return <DataLoadingState />;
+    const phaseDuration = BONUS_RATING_PHASE_SECONDS;
+    const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
+      timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
+      timerStatus: roundProgress.timerStatus ?? 'paused',
+      timerUpdatedAt: roundProgress.timerUpdatedAt,
+    }, nowTick));
+    return (
+      <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
+        <PetalDecor />
+        <RoundTimerRing phaseDuration={phaseDuration} remaining={remaining} ringColor="#dd9686" />
+        <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
+          1분 안에 호감도 수정을 완료해주세요
+        </p>
+      </main>
+    );
+  }
+
   if (progress.stage === 'round_active') {
     if (!roundProgress) return <DataLoadingState />;
-    const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase);
+    const phaseDuration = phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds);
     const remaining = Math.max(0, phaseDuration - computeLiveElapsedSeconds({
       timerPositionSeconds: roundProgress.timerPositionSeconds ?? 0,
       timerStatus: roundProgress.timerStatus ?? 'paused',
       timerUpdatedAt: roundProgress.timerUpdatedAt,
     }, nowTick));
     const currentRound = roundProgress.currentRound ?? progress.currentRound ?? 1;
+    const roundLabel =
+      roundProgress.isBonusRound && roundProgress.bonusRoundIndex ? `추가시간 ${roundProgress.bonusRoundIndex} 진행 중` : `${currentRound}라운드 진행 중`;
 
     if (roundProgress.roundPhase === 'transition') {
       // Deliberately bare compared to the conversation-phase screen (no
       // round label, no partner names, no card deck) - this phase is just
-      // "move + rate on your phone," per the wireframe.
+      // "move + rate on your phone," per the wireframe. Only ever fires for
+      // regular rounds now - the bonus equivalent is the bonus_seat_guide
+      // stage branch above.
       return (
         <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={tabletBackground}>
           <PetalDecor />
@@ -304,10 +368,10 @@ export default function AdminTabletSeatPage() {
         <div className="flex h-full w-full items-center px-[5vw]">
           <div className="flex flex-[68] items-center justify-center">
             <RoundTimerRing
-              phaseLabel="10분 대화"
+              phaseLabel={`${Math.round(phaseDuration / 60)}분 대화`}
               phaseDuration={phaseDuration}
               remaining={remaining}
-              roundLabel={`${currentRound}라운드 진행 중`}
+              roundLabel={roundLabel}
             />
           </div>
           <div className="flex flex-[32] justify-center">
@@ -315,6 +379,17 @@ export default function AdminTabletSeatPage() {
               <ConversationTopicDeck connectionToken={stored.connectionToken} eventId={eventId} tableNumber={tableNumber} />
             ) : null}
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (progress.stage === 'final_selection') {
+    return (
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white">
+        <div>
+          <p className="text-[20px] font-black text-[#ff8a80]">모든 대화 종료</p>
+          <p className="mt-4 text-[28px] font-black">최종 선택 진행 중</p>
         </div>
       </main>
     );

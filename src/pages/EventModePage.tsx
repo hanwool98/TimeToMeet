@@ -1,18 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import HeartRatingInput from '../components/HeartRatingInput';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   createParticipantPauseRequest,
+  fetchFinalSelectionCandidatePhotos,
+  fetchFinalSelectionCandidates,
+  fetchMyBonusRating,
   fetchMyEventTickets,
   fetchMyRoundRating,
   fetchParticipantPartnerPhoto,
   fetchParticipantRoundProgress,
+  submitFinalSelection,
+  submitMyBonusRating,
   submitRoundRating,
+  type FinalSelectionCandidate,
+  type FinalSelectionData,
   type MyEventTicket,
   type ParticipantRoundProgress,
 } from '../services/supabaseApplications';
-import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
+import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
 
@@ -141,7 +148,7 @@ function ParticipantEventScreen({
   }
 
   if (progress.stage === 'bonus_seat_guide') {
-    return <BonusSeatGuideScreen onBack={onBack} progress={progress} />;
+    return <BonusSeatGuideScreen eventId={eventId} onBack={onBack} progress={progress} />;
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'conversation') {
@@ -149,7 +156,20 @@ function ParticipantEventScreen({
   }
 
   if (progress.stage === 'round_active' && progress.roundPhase === 'transition') {
-    return <RatingScreen eventId={eventId} onBack={onBack} progress={progress} />;
+    return <RatingScreen eventId={eventId} mode="regular" onBack={onBack} progress={progress} />;
+  }
+
+  // 추가시간 대화가 끝난 뒤 1분간 기존(정규 라운드) 호감도를 수정하는
+  // phase - 새 화면을 만들지 않고 정규 라운드와 같은 RatingScreen을
+  // mode="bonus"로 재사용한다(폼 UI 동일, fetch/submit 대상만 다름).
+  if (progress.stage === 'bonus_rating') {
+    return <RatingScreen eventId={eventId} mode="bonus" onBack={onBack} progress={progress} />;
+  }
+
+  // 마지막 추가시간까지 끝난 뒤(또는 추가시간 0회 설정 시 정규 라운드
+  // 종료 직후) 도달하는 단계.
+  if (progress.stage === 'final_selection') {
+    return <FinalSelectionScreen eventId={eventId} onBack={onBack} />;
   }
 
   return (
@@ -307,7 +327,7 @@ function ConversationScreen({
     return () => window.clearInterval(intervalId);
   }, []);
 
-  const phaseDuration = phaseDurationSeconds(progress.roundPhase);
+  const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds);
   const remaining = Math.max(
     0,
     phaseDuration -
@@ -483,16 +503,66 @@ function BonusMatchingDots() {
   );
 }
 
-// No wireframe was provided for this step (only the bonus-matching screen
-// was) - kept intentionally minimal and consistent with the existing
-// transition/wait screens rather than inventing a new design.
-function BonusSeatGuideScreen({ onBack, progress }: { onBack: () => void; progress: ParticipantRoundProgress }) {
+// Nickname length has no server-side cap, so font-size is tiered by
+// character count rather than assumed short - short nicknames get the big
+// wireframe-scale font, long ones shrink and are allowed to wrap onto a
+// second line (capped there as a safety net, never overflowing the card).
+function nicknameFontStyle(nickname: string): CSSProperties {
+  const length = nickname.length;
+  const fontSize = length <= 6 ? 'clamp(34px, 11vw, 46px)' : length <= 10 ? 'clamp(26px, 8.5vw, 36px)' : 'clamp(20px, 7vw, 28px)';
+  return {
+    display: '-webkit-box',
+    fontSize,
+    overflow: 'hidden',
+    WebkitBoxOrient: 'vertical',
+    WebkitLineClamp: 2,
+  };
+}
+
+function guidanceFontStyle(text: string): CSSProperties {
+  const length = text.length;
+  const fontSize = length <= 14 ? 'clamp(19px, 5.6vw, 23px)' : length <= 20 ? 'clamp(16px, 4.8vw, 19px)' : 'clamp(14px, 4.2vw, 16px)';
+  return { fontSize };
+}
+
+// 첨부 와이어프레임이 이 화면(자리 이동 2분 phase)의 최종 디자인이므로
+// 카드 구조/색감/배치를 그대로 재현한다. 남/여 안내 문구만 성별에 따라
+// 분기하고, 참가자에게는 숫자 테이블 번호를 절대 노출하지 않는다 -
+// event_table_assignments.table_number는 useHelpRequest로 운영자 호출
+// 컨텍스트에만 조용히 전달된다.
+function BonusSeatGuideScreen({
+  eventId,
+  onBack,
+  progress,
+}: {
+  eventId: string;
+  onBack: () => void;
+  progress: ParticipantRoundProgress;
+}) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  // Keyed on partnerApplicationId so a refresh, or landing on a later
+  // 추가시간 for a different partner, always re-fetches the right photo
+  // rather than keeping a stale one from the previous reveal.
+  useEffect(() => {
+    let active = true;
+    setPhotoUrl(null);
+    void fetchParticipantPartnerPhoto(eventId)
+      .then((url) => {
+        if (active) setPhotoUrl(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [eventId, progress.partnerApplicationId]);
 
   const phaseDuration = phaseDurationSeconds('transition');
   const remaining = Math.max(
@@ -508,21 +578,97 @@ function BonusSeatGuideScreen({ onBack, progress }: { onBack: () => void; progre
       ),
   );
 
+  const isFemale = progress.gender === '여성';
+  const nickname = progress.partnerNickname ?? '상대 확인 중';
+  const moveGuidanceText = `${nickname}님의 테이블로 이동해주세요`;
+
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
-      <ScreenHeader onBack={onBack} title="보너스 매칭" />
-      <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
-        <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
-          <p className="text-[18px] font-black leading-tight">보너스 라운드 자리를 안내하고 있어요</p>
-          <p className="mt-3 text-[14px] font-extrabold text-[#888]">안내에 따라 이동해주세요</p>
-          {progress.timerUpdatedAt ? (
-            <p className="mx-auto mt-5 flex w-fit items-center gap-1.5 rounded-full bg-[#f5f7fa] px-3.5 py-1.5 text-[13px] font-black tabular-nums text-[#666]">
-              <ClockGlyph />
-              {formatCountdown(remaining)}
+      <ScreenHeader onBack={onBack} />
+
+      <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-9 text-center shadow-calendar">
+          <span className="mx-auto flex w-fit items-center rounded-full bg-meet-blueSoft px-4 py-1.5 text-[13px] font-black text-meet-blue">
+            추가시간
+          </span>
+          <h1 className="mt-4 break-keep text-[26px] font-black leading-tight">다시 만나게 된 행운의 상대</h1>
+
+          <div className="mx-auto mt-6 h-[168px] w-[168px] overflow-hidden rounded-full bg-[#f5f7fa] shadow-[0_10px_24px_rgba(30,43,63,0.12)]">
+            {photoUrl ? (
+              <img alt="" className="h-full w-full object-cover" src={photoUrl} />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[#c3cad1]">
+                <PersonPlaceholderGlyph />
+              </div>
+            )}
+          </div>
+
+          <p className="mx-auto mt-5 max-w-full break-words font-black leading-tight" style={nicknameFontStyle(nickname)}>
+            {nickname}
+          </p>
+          <p className="mt-2 text-[15px] font-bold text-[#888]">
+            {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob].filter(Boolean).join(' | ')}
+          </p>
+
+          <p className="mt-5 flex items-center justify-center gap-1.5 text-[16px] font-extrabold text-[#333]">
+            <SmallHeartGlyph />
+            곧 이분과 <span className="font-black text-meet-blue">7분간</span> 다시 대화해요
+          </p>
+
+          <div className="mt-6 flex items-center gap-3 rounded-[18px] bg-meet-blueSoft px-4 py-4 text-left">
+            <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-meet-blue shadow-sm">
+              {isFemale ? <SeatedPersonGlyph /> : <ChairGlyph />}
+              {!isFemale ? (
+                <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-meet-blue text-white">
+                  <ArrowRightGlyph />
+                </span>
+              ) : null}
+            </span>
+            <p
+              className="min-w-0 flex-1 break-keep font-black leading-snug text-[#1c2541]"
+              style={guidanceFontStyle(isFemale ? '자리에서 잠시 기다려주세요' : moveGuidanceText)}
+            >
+              {isFemale ? (
+                '자리에서 잠시 기다려주세요'
+              ) : (
+                <>
+                  <span className="break-words">{nickname}</span>님의 테이블로 이동해주세요
+                </>
+              )}
             </p>
+          </div>
+
+          {progress.timerUpdatedAt ? (
+            <div className="mt-6 flex flex-col items-center gap-1">
+              <p className="flex items-center gap-1.5 text-[13px] font-black text-meet-blue">
+                <ClockGlyph />
+              </p>
+              <p className="text-[40px] font-black tabular-nums leading-none text-meet-blue">{formatCountdown(remaining)}</p>
+              <p className="mt-1 text-[13px] font-bold text-[#888]">
+                {isFemale ? '자리에서 기다리며 다음 대화를 준비해주세요' : '안내에 따라 이동한 뒤 대화를 준비해주세요'}
+              </p>
+            </div>
           ) : null}
         </section>
+
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+          <h2 className="text-[16px] font-black">도움이 필요하신가요?</h2>
+          <div className="mt-4">
+            <button
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-[16px] border border-meet-blue text-[16px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
+              disabled={sendingType === 'call_staff'}
+              onClick={() => void sendRequest('call_staff')}
+              type="button"
+            >
+              <HeadsetGlyph />
+              운영자 호출
+            </button>
+          </div>
+          {errorMessage ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{errorMessage}</p> : null}
+        </section>
       </div>
+
+      <ToastBanner toast={toast} />
     </div>
   );
 }
@@ -576,18 +722,27 @@ function ratingCopy(score: number): { subtitle: string; title: string } {
   return { subtitle: '정말 특별한 느낌이었어요.', title: '내가 찾던 사람이에요!' };
 }
 
-// 2분 이동 및 호감도 작성 phase: the participant rates the partner they were
-// just matched with (progress.roundPhase === 'transition' still resolves to
-// that just-finished round's match, since current_round only advances once
-// this phase itself expires). Editing is allowed for as long as the server
-// still reports this same round as current - submit_round_rating enforces
-// that server-side too, so a stale tab can't sneak in a late edit.
+// 2분 이동 및 호감도 작성 phase(mode="regular"): the participant rates the
+// partner they were just matched with (progress.roundPhase === 'transition'
+// still resolves to that just-finished round's match, since current_round
+// only advances once this phase itself expires). Editing is allowed for as
+// long as the server still reports this same round as current -
+// submit_round_rating enforces that server-side too.
+//
+// 추가시간 1분 호감도 수정 phase(mode="bonus"): 새 rating을 만드는 게
+// 아니라 정규 라운드에서 이미 이 상대에게 남긴 점수를 서버가 찾아 수정하는
+// 구조라, "기존 값이 이미 있음 = 방금 제출 완료"로 취급하면 안 된다(항상
+// 값이 있을 수밖에 없음) - submitted는 이 phase에서 실제로 제출 버튼을
+// 눌렀을 때만 true가 된다. 폼 UI 자체는 정규/추가시간 모두 동일하게
+// 재사용한다.
 function RatingScreen({
   eventId,
+  mode,
   onBack,
   progress,
 }: {
   eventId: string;
+  mode: 'bonus' | 'regular';
   onBack: () => void;
   progress: ParticipantRoundProgress;
 }) {
@@ -607,12 +762,11 @@ function RatingScreen({
     return () => window.clearInterval(intervalId);
   }, []);
 
-  // Reloads on (eventId, roundNumber) change - covers first entry, refresh,
-  // AND the rare case of landing back on this phase for a new round without
-  // a full page reload in between. Whether a rating already exists for this
-  // round is the server-side source of truth for showing the complete
-  // screen vs. the form - never inferred from local state alone, so a
-  // refresh or re-entry lands on the right screen.
+  // Reloads on (eventId, mode, roundNumber) change - covers first entry,
+  // refresh, AND landing back on this phase for a new round/추가시간 without
+  // a full page reload in between (RatingScreen doesn't unmount between a
+  // regular rating and a bonus rating, or between two bonus ratings - same
+  // component type, just re-rendered with new props).
   useEffect(() => {
     let active = true;
     setScore(null);
@@ -624,12 +778,13 @@ function RatingScreen({
         if (active) setPhotoUrl(url);
       })
       .catch(() => undefined);
-    void fetchMyRoundRating(eventId, roundNumber)
+    const fetchExisting = mode === 'bonus' ? fetchMyBonusRating(eventId) : fetchMyRoundRating(eventId, roundNumber);
+    void fetchExisting
       .then((existing) => {
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
         if (existing.memo) setMemo(existing.memo);
-        setSubmitted(existing.score !== undefined);
+        setSubmitted(mode === 'bonus' ? false : existing.score !== undefined);
       })
       .catch(() => {
         if (active) setSubmitted(false);
@@ -637,9 +792,9 @@ function RatingScreen({
     return () => {
       active = false;
     };
-  }, [eventId, roundNumber]);
+  }, [eventId, mode, roundNumber]);
 
-  const phaseDuration = phaseDurationSeconds('transition');
+  const phaseDuration = mode === 'bonus' ? BONUS_RATING_PHASE_SECONDS : phaseDurationSeconds('transition');
   const remaining = Math.max(
     0,
     phaseDuration -
@@ -658,7 +813,11 @@ function RatingScreen({
     setSubmitting(true);
     setSubmitError('');
     try {
-      await submitRoundRating(eventId, roundNumber, score, memo);
+      if (mode === 'bonus') {
+        await submitMyBonusRating(eventId, score, memo);
+      } else {
+        await submitRoundRating(eventId, roundNumber, score, memo);
+      }
       setSubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
@@ -759,7 +918,8 @@ function RatingScreen({
         {progress.timerUpdatedAt ? (
           <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
             <ClockGlyph />
-            다음 라운드 진행까지 <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
+            {mode === 'bonus' ? '다음 단계까지' : '다음 라운드 진행까지'}{' '}
+            <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
           </p>
         ) : null}
       </div>
@@ -791,6 +951,495 @@ function RatingCompleteScreen({ onBack }: { onBack: () => void }) {
         </section>
       </div>
     </div>
+  );
+}
+
+// 최종 선택(5단계: 안내 -> 선택하기 -> 선택 확인 -> 제출 확인 -> 완료).
+// stage는 서버가 'final_selection' 하나만 보고하므로, 5단계 중 어디에 있는지는
+// 이 컴포넌트 안의 로컬 상태로 관리한다 - 단 "이미 제출했는가"만큼은 절대
+// 로컬 상태로 판단하지 않고 매번 서버(get_final_selection_candidates의
+// submitted)를 기준으로 삼는다. 그래야 새로고침/뒤로가기/직접 URL 접근 어떤
+// 경로로 이 화면에 재진입해도 이미 제출한 사람은 항상 곧바로 완료 화면만
+// 보고, 선택을 다시 바꿀 수 없다.
+function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: () => void }) {
+  const navigate = useNavigate();
+  const [data, setData] = useState<FinalSelectionData | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [photoMap, setPhotoMap] = useState<Map<string, string>>(new Map());
+  const [step, setStep] = useState<'announce' | 'pick' | 'review'>('announce');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [justSubmitted, setJustSubmitted] = useState(false);
+  const [toast, setToast] = useState('');
+  const toastTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    void fetchFinalSelectionCandidates(eventId)
+      .then((result) => {
+        if (!active) return;
+        setData(result);
+        setSelectedIds(result.selectedApplicationIds);
+      })
+      .catch((caughtError) => {
+        if (active) setLoadError(caughtError instanceof Error ? caughtError.message : '불러오지 못했습니다.');
+      });
+    void fetchFinalSelectionCandidatePhotos(eventId)
+      .then((map) => {
+        if (active) setPhotoMap(map);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  if (!data) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <p className="text-[16px] font-black text-[#999]">{loadError || '불러오는 중'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.submitted || justSubmitted) {
+    return <FinalSelectionCompleteScreen onGoHome={() => navigate('/my-events')} />;
+  }
+
+  const limit = data.finalSelectionLimit;
+
+  const handleToggle = (applicationId: string) => {
+    setSelectedIds((current) => {
+      if (current.includes(applicationId)) return current.filter((id) => id !== applicationId);
+      if (current.length >= limit) {
+        window.clearTimeout(toastTimerRef.current);
+        setToast(`최대 ${limit}명까지 선택할 수 있어요`);
+        toastTimerRef.current = window.setTimeout(() => setToast(''), toastDisplayMs);
+        return current;
+      }
+      return [...current, applicationId];
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await submitFinalSelection(eventId, selectedIds);
+      setConfirmOpen(false);
+      setJustSubmitted(true);
+    } catch (caughtError) {
+      setSubmitError(caughtError instanceof Error ? caughtError.message : '제출하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (step === 'announce') {
+    return <FinalSelectionAnnounceScreen limit={limit} onBack={onBack} onStart={() => setStep('pick')} />;
+  }
+
+  if (step === 'pick') {
+    return (
+      <>
+        <FinalSelectionPickScreen
+          candidates={data.candidates}
+          limit={limit}
+          onBack={() => setStep('announce')}
+          onNext={() => setStep('review')}
+          onToggle={handleToggle}
+          photoMap={photoMap}
+          selectedIds={selectedIds}
+        />
+        <ToastBanner toast={toast} />
+      </>
+    );
+  }
+
+  const selectedCandidates = data.candidates.filter((candidate) => selectedIds.includes(candidate.applicationId));
+
+  return (
+    <>
+      <FinalSelectionReviewScreen
+        onBack={() => setStep('pick')}
+        onReselect={() => setStep('pick')}
+        onSubmitClick={() => setConfirmOpen(true)}
+        photoMap={photoMap}
+        selectedCandidates={selectedCandidates}
+      />
+      {confirmOpen ? (
+        <FinalSelectionSubmitConfirmModal
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => void handleSubmit()}
+          submitError={submitError}
+          submitting={submitting}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function FinalSelectionAnnounceScreen({ limit, onBack, onStart }: { limit: number; onBack: () => void; onStart: () => void }) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} />
+      <div className="mobile-container mx-auto mt-6 pb-8">
+        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+          <p className="text-[15px] font-black text-meet-blue">이제 마지막 단계예요!</p>
+          <h1 className="mt-3 break-keep text-[26px] font-black leading-tight">
+            마음에 드는 분을
+            <br />
+            최대 {limit}명 선택해주세요
+          </h1>
+
+          <div className="mt-8 space-y-4 border-t border-[#f0f0f0] pt-6 text-left">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fdeef2] text-[#ef4d7a]">
+                <SmallHeartGlyph />
+              </span>
+              <p className="mt-1.5 text-[14px] font-extrabold leading-snug text-[#333]">
+                추가시간까지 함께한 모든 분 중<br />
+                마음에 드는 분을 선택해주세요
+              </p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-meet-blueSoft text-meet-blue">
+                <PencilGlyph />
+              </span>
+              <p className="mt-1.5 text-[14px] font-extrabold leading-snug text-[#333]">
+                최대 {limit}명까지 선택할 수 있어요
+                <br />
+                (선택하지 않아도 괜찮아요)
+              </p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#f5f7fa] text-[#666]">
+                <LockGlyph />
+              </span>
+              <p className="mt-1.5 text-[14px] font-extrabold leading-snug text-[#333]">
+                선택 결과는 매칭이 된 상대에게만
+                <br />
+                공개됩니다.
+              </p>
+            </div>
+          </div>
+
+          <button
+            className="mt-8 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99]"
+            onClick={onStart}
+            type="button"
+          >
+            선택 시작하기
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FinalSelectionPickScreen({
+  candidates,
+  limit,
+  onBack,
+  onNext,
+  onToggle,
+  photoMap,
+  selectedIds,
+}: {
+  candidates: FinalSelectionCandidate[];
+  limit: number;
+  onBack: () => void;
+  onNext: () => void;
+  onToggle: (applicationId: string) => void;
+  photoMap: Map<string, string>;
+  selectedIds: string[];
+}) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} title="최종 선택" />
+
+      <div className="mobile-container mx-auto mt-5 flex flex-col gap-3 pb-32">
+        <p className="text-center text-[14px] font-bold text-[#888]">
+          마음에 드는 분을 선택해주세요
+          <br />
+          <span className="text-[12px] text-[#aaa]">최대 {limit}명 선택 가능</span>
+        </p>
+
+        {candidates.map((candidate) => (
+          <FinalSelectionCandidateCard
+            candidate={candidate}
+            key={candidate.applicationId}
+            onToggle={() => onToggle(candidate.applicationId)}
+            photoUrl={photoMap.get(candidate.applicationId)}
+            selected={selectedIds.includes(candidate.applicationId)}
+          />
+        ))}
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 border-t border-[#f0f0f0] bg-white px-4 pb-[calc(16px+env(safe-area-inset-bottom))] pt-3 min-[380px]:px-5">
+        <div className="mobile-container mx-auto flex items-center gap-3">
+          <p className="shrink-0 text-[14px] font-black text-[#333]">
+            선택 {selectedIds.length} / {limit}명
+          </p>
+          <button
+            className="h-12 flex-1 rounded-[14px] bg-meet-blue text-[15px] font-black text-white transition active:scale-[0.99]"
+            onClick={onNext}
+            type="button"
+          >
+            다음
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinalSelectionCandidateCard({
+  candidate,
+  onToggle,
+  photoUrl,
+  selected,
+}: {
+  candidate: FinalSelectionCandidate;
+  onToggle: () => void;
+  photoUrl?: string;
+  selected: boolean;
+}) {
+  return (
+    <div className="rounded-[20px] border border-[#f0f3f6] bg-white p-3 shadow-calendar">
+      <div className="flex items-start gap-3">
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-[#f5f7fa]">
+          {photoUrl ? (
+            <img alt="" className="h-full w-full object-cover" src={photoUrl} />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-[#c3cad1]">
+              <PersonPlaceholderGlyph />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {candidate.rank ? (
+                  <span className="shrink-0 rounded-full bg-[#fdeef2] px-2 py-0.5 text-[11px] font-black text-[#ef4d7a]">{candidate.rank}위</span>
+                ) : null}
+                <p className="truncate text-[16px] font-black">{candidate.nickname}</p>
+              </div>
+              <p className="mt-0.5 text-[13px] font-bold text-[#999]">
+                {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+
+            <button
+              aria-label={selected ? '선택 해제' : '선택하기'}
+              className={[
+                'grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-95',
+                selected ? 'bg-[#ef4d7a] text-white' : 'bg-[#f5f7fa] text-[#c3cad1]',
+              ].join(' ')}
+              onClick={onToggle}
+              type="button"
+            >
+              <HeartToggleGlyph filled={selected} />
+            </button>
+          </div>
+
+          {candidate.score !== undefined ? (
+            <p className="mt-2 flex items-center gap-1 text-[12px] font-black text-[#ef4d7a]">
+              <SmallHeartGlyph />
+              내 호감도 {candidate.score.toFixed(1)}
+            </p>
+          ) : null}
+
+          {candidate.memo ? <p className="mt-1.5 line-clamp-2 text-[12px] font-bold leading-snug text-[#888]">{candidate.memo}</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 선택 확인 화면(3번) - 문구는 요청대로 최소화: "최종 선택" 타이틀 하나와
+// 선택한 사람 목록뿐, "선택을 완료했어요" 류 설명 문구는 추가하지 않는다.
+function FinalSelectionReviewScreen({
+  onBack,
+  onReselect,
+  onSubmitClick,
+  photoMap,
+  selectedCandidates,
+}: {
+  onBack: () => void;
+  onReselect: () => void;
+  onSubmitClick: () => void;
+  photoMap: Map<string, string>;
+  selectedCandidates: FinalSelectionCandidate[];
+}) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <ScreenHeader onBack={onBack} title="최종 선택" />
+
+      <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
+        {selectedCandidates.length === 0 ? (
+          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-12 text-center shadow-calendar">
+            <p className="text-[15px] font-extrabold text-[#888]">선택한 분이 없어요</p>
+          </section>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {selectedCandidates.map((candidate, index) => (
+              <div className="flex items-center gap-3 rounded-[18px] border border-[#f0f3f6] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#fdeef2] text-[11px] font-black text-[#ef4d7a]">
+                  {index + 1}
+                </span>
+                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-[#f5f7fa]">
+                  {photoMap.get(candidate.applicationId) ? (
+                    <img alt="" className="h-full w-full object-cover" src={photoMap.get(candidate.applicationId)} />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center text-[#c3cad1]">
+                      <PersonPlaceholderGlyph />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-black">{candidate.nickname}</p>
+                  <p className="text-[12px] font-bold text-[#999]">
+                    {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <SmallHeartGlyph />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-2 flex flex-col gap-2">
+          <button
+            className="h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99]"
+            onClick={onSubmitClick}
+            type="button"
+          >
+            제출하기
+          </button>
+          <button
+            className="h-12 w-full rounded-[16px] border border-[#e5e5e5] text-[14px] font-black text-[#555] transition active:scale-[0.99]"
+            onClick={onReselect}
+            type="button"
+          >
+            다시 선택하기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinalSelectionSubmitConfirmModal({
+  onCancel,
+  onConfirm,
+  submitError,
+  submitting,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitError: string;
+  submitting: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onCancel}>
+      <div
+        className="w-full max-w-[520px] rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <h3 className="mt-4 text-center text-[18px] font-black">선택을 제출하시겠어요?</h3>
+        <p className="mt-2 text-center text-[13px] font-bold text-[#999]">제출 후에는 수정할 수 없어요.</p>
+
+        {submitError ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{submitError}</p> : null}
+
+        <div className="mt-5 flex flex-col gap-2">
+          <button
+            className="h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
+            disabled={submitting}
+            onClick={onConfirm}
+            type="button"
+          >
+            {submitting ? '제출하는 중' : '제출하기'}
+          </button>
+          <button
+            className="h-12 w-full rounded-[16px] text-[14px] font-black text-[#999] disabled:opacity-60"
+            disabled={submitting}
+            onClick={onCancel}
+            type="button"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 완료 화면(5번) - 요청대로 문구/버튼 딱 두 개만: 완료 문구 + 메인화면으로
+// 돌아가기. 결과 공개/마이페이지 안내 등은 이번 범위에서 의도적으로 제외.
+function FinalSelectionCompleteScreen({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <div className="mobile-container mx-auto mt-16 pb-8">
+        <img alt="" className="mx-auto h-[180px] w-[180px] object-contain" src="/assets/rating-complete-heart.png" />
+        <p className="mt-8 text-center text-[24px] font-black leading-tight">최종 선택이 완료되었어요!</p>
+        <button
+          className="mt-10 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99]"
+          onClick={onGoHome}
+          type="button"
+        >
+          메인화면으로 돌아가기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PencilGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <path
+        d="m14.5 5.5 4 4L8 20H4v-4L14.5 5.5Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path d="m13 7 4 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function LockGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <rect height="10" rx="2" stroke="currentColor" strokeWidth="1.8" width="14" x="5" y="11" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function HeartToggleGlyph({ filled }: { filled: boolean }) {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path
+        d="M12 20.5s-7.5-4.6-10-9.2C.4 8 2 4.5 5.4 3.8c2-.4 4 .5 5.1 2.3.4.6.9.6 1.3 0 1.1-1.8 3.1-2.7 5.1-2.3C20.3 4.5 21.9 8 20.4 11.3 17.5 15.9 12 20.5 12 20.5Z"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -875,6 +1524,37 @@ function ChairGlyph() {
         strokeWidth="1.8"
       />
       <path d="M6.5 14 6 20M17.5 14l.5 6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function SmallHeartGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-meet-blue" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 20.5s-7.5-4.6-10-9.2C.4 8 2 4.5 5.4 3.8c2-.4 4 .5 5.1 2.3.4.6.9.6 1.3 0 1.1-1.8 3.1-2.7 5.1-2.3C20.3 4.5 21.9 8 20.4 11.3 17.5 15.9 12 20.5 12 20.5Z" />
+    </svg>
+  );
+}
+
+function ArrowRightGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-3 w-3" fill="none" viewBox="0 0 24 24">
+      <path d="M5 12h13M13 6l7 6-7 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+function SeatedPersonGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="6" r="2.6" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M7 18v-3.5a5 5 0 0 1 10 0V18M6 20h12"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }

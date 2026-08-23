@@ -1398,6 +1398,51 @@ export async function disconnectAdminEventTablet(eventId: string, tableNumber: n
   if (error) throw error;
 }
 
+export interface AdminEventSettings {
+  bonusRoundCount: number;
+  conversationDurationSeconds: number;
+  finalSelectionLimit: number;
+  startedAt?: string;
+}
+
+export async function fetchAdminEventSettings(eventId: string): Promise<AdminEventSettings> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_event_settings', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('진행 설정을 불러오지 못했습니다.');
+  return {
+    bonusRoundCount: row.bonus_round_count,
+    conversationDurationSeconds: row.conversation_duration_seconds,
+    finalSelectionLimit: row.final_selection_limit,
+    startedAt: row.started_at ?? undefined,
+  };
+}
+
+export async function updateAdminEventSettings(
+  eventId: string,
+  settings: { bonusRoundCount: number; conversationDurationSeconds: number; finalSelectionLimit: number },
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_admin_event_settings', {
+    bonus_round_count_value: settings.bonusRoundCount,
+    conversation_duration_seconds_value: settings.conversationDurationSeconds,
+    event_id_value: eventId,
+    final_selection_limit_value: settings.finalSelectionLimit,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
 export async function startAdminEvent(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
@@ -1414,8 +1459,10 @@ export async function startAdminEvent(eventId: string) {
 
 export type EventProgressStage =
   | 'bonus_matching'
+  | 'bonus_rating'
   | 'bonus_seat_guide'
   | 'ended'
+  | 'final_selection'
   | 'intro_video'
   | 'round_active'
   | 'round_complete'
@@ -1546,8 +1593,12 @@ export interface RoundTableMatch {
 
 export interface RoundProgress {
   activeTables: number;
+  bonusRoundCount: number;
+  bonusRoundIndex?: number;
   completedRounds: number;
+  conversationDurationSeconds: number;
   currentRound?: number;
+  isBonusRound: boolean;
   matches: RoundTableMatch[];
   pendingPauseCount: number;
   roundPhase?: 'conversation' | 'transition';
@@ -1561,8 +1612,12 @@ export interface RoundProgress {
 
 interface RoundProgressJson {
   activeTables: number;
+  bonusRoundCount: number;
+  bonusRoundIndex: number | null;
   completedRounds: number;
+  conversationDurationSeconds: number;
   currentRound: number | null;
+  isBonusRound: boolean;
   matches: Array<{
     femaleApplicationId: string | null;
     femaleNickname: string | null;
@@ -1583,8 +1638,12 @@ interface RoundProgressJson {
 function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
   return {
     activeTables: row.activeTables,
+    bonusRoundCount: row.bonusRoundCount ?? 0,
+    bonusRoundIndex: row.bonusRoundIndex ?? undefined,
     completedRounds: row.completedRounds,
+    conversationDurationSeconds: row.conversationDurationSeconds ?? 600,
     currentRound: row.currentRound ?? undefined,
+    isBonusRound: row.isBonusRound ?? false,
     matches: (row.matches ?? []).map((match) => ({
       femaleApplicationId: match.femaleApplicationId ?? undefined,
       femaleNickname: match.femaleNickname ?? undefined,
@@ -1648,8 +1707,12 @@ export async function setCurrentRoundForSession(eventId: string, roundNumber: nu
 }
 
 export interface TabletRoundProgress {
+  bonusRoundCount?: number;
+  bonusRoundIndex?: number;
+  conversationDurationSeconds?: number;
   currentRound?: number;
   femaleNickname?: string;
+  isBonusRound?: boolean;
   maleNickname?: string;
   ok: boolean;
   roundPhase?: 'conversation' | 'transition';
@@ -1673,8 +1736,12 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
   const row = data as { ok: boolean } & Partial<RoundProgressJson & { maleNickname: string | null; femaleNickname: string | null }>;
   if (!row?.ok) return { ok: false } satisfies TabletRoundProgress;
   return {
+    bonusRoundCount: row.bonusRoundCount ?? undefined,
+    bonusRoundIndex: row.bonusRoundIndex ?? undefined,
+    conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     femaleNickname: row.femaleNickname ?? undefined,
+    isBonusRound: row.isBonusRound ?? undefined,
     maleNickname: row.maleNickname ?? undefined,
     ok: true,
     roundPhase: row.roundPhase ?? undefined,
@@ -1740,7 +1807,10 @@ export async function updatePauseRequestStatus(requestId: string, status: EventP
 }
 
 export interface ParticipantRoundProgress {
+  conversationDurationSeconds?: number;
   currentRound?: number;
+  gender?: '남성' | '여성';
+  isBonusRound?: boolean;
   ok: boolean;
   partnerAge?: number;
   partnerApplicationId?: string;
@@ -1768,7 +1838,10 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   });
   if (error) throw error;
   const row = data as {
+    conversationDurationSeconds?: number | null;
     currentRound?: number;
+    gender?: '남성' | '여성' | null;
+    isBonusRound?: boolean | null;
     ok: boolean;
     partnerAge?: number | null;
     partnerApplicationId?: string | null;
@@ -1784,7 +1857,10 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   };
   if (!row?.ok) return { ok: false };
   return {
+    conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
+    gender: row.gender ?? undefined,
+    isBonusRound: row.isBonusRound ?? undefined,
     ok: true,
     partnerAge: row.partnerAge ?? undefined,
     partnerApplicationId: row.partnerApplicationId ?? undefined,
@@ -1934,6 +2010,39 @@ export async function submitRoundRating(eventId: string, roundNumber: number, sc
   if (error) throw error;
 }
 
+// 추가시간(bonus_rating) 1분 phase: 새 라운드 rating을 만드는 게 아니라
+// 정규 라운드에서 이미 이 상대에게 매긴 기존 점수를 서버가 찾아 수정한다 -
+// 그래서 round_number를 클라이언트가 넘기지 않는다(서버가 현재 추가시간
+// 상대를 찾아 그 사람과 만난 정규 라운드를 역으로 찾음).
+export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return {};
+
+  const { data, error } = await supabase.rpc('get_my_bonus_rating', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean; score?: number | null; memo?: string | null };
+  if (!row?.ok) return {};
+  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
+}
+
+export async function submitMyBonusRating(eventId: string, score: number, memo: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('submit_bonus_round_rating', {
+    event_id_value: eventId,
+    memo_value: memo.trim() || null,
+    score_value: score,
+    session_token: session.token,
+  });
+  if (error) throw error;
+}
+
 export async function fetchParticipantPartnerPhoto(eventId: string): Promise<string | null> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
@@ -1944,6 +2053,90 @@ export async function fetchParticipantPartnerPhoto(eventId: string): Promise<str
   });
   if (error) throw error;
   return (data as { ok: boolean; photoUrl: string | null })?.photoUrl ?? null;
+}
+
+export interface FinalSelectionCandidate {
+  age?: number;
+  applicationId: string;
+  job?: string;
+  memo?: string;
+  nickname: string;
+  rank?: number;
+  score?: number;
+}
+
+export interface FinalSelectionData {
+  candidates: FinalSelectionCandidate[];
+  finalSelectionLimit: number;
+  ok: boolean;
+  selectedApplicationIds: string[];
+  submitted: boolean;
+}
+
+export async function fetchFinalSelectionCandidates(eventId: string): Promise<FinalSelectionData> {
+  const fallback: FinalSelectionData = { candidates: [], finalSelectionLimit: 3, ok: false, selectedApplicationIds: [], submitted: false };
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return fallback;
+
+  const { data, error } = await supabase.rpc('get_final_selection_candidates', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as {
+    candidates?: Array<{ age: number | null; applicationId: string; job: string | null; memo: string | null; nickname: string; rank: number | null; score: number | null }>;
+    finalSelectionLimit?: number;
+    ok: boolean;
+    selectedApplicationIds?: string[];
+    submitted?: boolean;
+  };
+  if (!row?.ok) return fallback;
+  return {
+    candidates: (row.candidates ?? []).map((candidate) => ({
+      age: candidate.age ?? undefined,
+      applicationId: candidate.applicationId,
+      job: candidate.job ?? undefined,
+      memo: candidate.memo ?? undefined,
+      nickname: candidate.nickname,
+      rank: candidate.rank ?? undefined,
+      score: candidate.score ?? undefined,
+    })),
+    finalSelectionLimit: row.finalSelectionLimit ?? 3,
+    ok: true,
+    selectedApplicationIds: row.selectedApplicationIds ?? [],
+    submitted: row.submitted ?? false,
+  };
+}
+
+export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promise<Map<string, string>> {
+  const photoMap = new Map<string, string>();
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return photoMap;
+
+  const { data, error } = await supabase.functions.invoke('final-selection-candidate-photos', {
+    body: { eventId, sessionToken: session.token },
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean; photos?: Array<{ applicationId: string; photoUrl: string | null }> };
+  for (const photo of row?.photos ?? []) {
+    if (photo.photoUrl) photoMap.set(photo.applicationId, photo.photoUrl);
+  }
+  return photoMap;
+}
+
+export async function submitFinalSelection(eventId: string, selectedApplicationIds: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { error } = await supabase.rpc('submit_final_selection', {
+    event_id_value: eventId,
+    selected_application_ids: selectedApplicationIds,
+    session_token: session.token,
+  });
+  if (error) throw error;
 }
 
 export async function endAdminEvent(eventId: string) {

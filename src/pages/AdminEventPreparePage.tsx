@@ -4,12 +4,23 @@ import { DataErrorState, DataLoadingState } from '../components/DataState';
 import {
   disconnectAdminEventTablet,
   fetchAdminEventModeSummaries,
+  fetchAdminEventSettings,
   fetchAdminEventTabletStatus,
   startAdminEvent,
   subscribeToAdminEventModeChanges,
+  updateAdminEventSettings,
   type AdminEventModeSummary,
+  type AdminEventSettings,
   type AdminEventTabletStatus,
 } from '../services/supabaseApplications';
+
+const conversationDurationOptions = [
+  { label: '7분', value: 420 },
+  { label: '8분', value: 480 },
+  { label: '10분', value: 600 },
+];
+const bonusRoundCountOptions = [0, 1, 2, 3];
+const finalSelectionLimitOptions = [1, 2, 3];
 
 const KOREA_TIME_ZONE = 'Asia/Seoul';
 
@@ -22,6 +33,10 @@ export default function AdminEventPreparePage() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const [tabletPanelOpen, setTabletPanelOpen] = useState(false);
+  const [settings, setSettings] = useState<AdminEventSettings | null>(null);
+  const [settingsError, setSettingsError] = useState('');
+  const [savingSetting, setSavingSetting] = useState(false);
+  const [startConfirmOpen, setStartConfirmOpen] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -56,12 +71,51 @@ export default function AdminEventPreparePage() {
   const operationsActive = Boolean(event) && (event!.isTestEvent || isToday);
   const eventStarted = Boolean(event?.startedAt);
 
-  const handleStart = async () => {
+  const loadSettings = useCallback(async () => {
+    if (!eventId) return;
+    setSettingsError('');
+    try {
+      setSettings(await fetchAdminEventSettings(eventId));
+    } catch (caughtError) {
+      setSettingsError(caughtError instanceof Error ? caughtError.message : '진행 설정을 불러오지 못했습니다.');
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  const handleSettingChange = async (patch: Partial<Pick<AdminEventSettings, 'bonusRoundCount' | 'conversationDurationSeconds' | 'finalSelectionLimit'>>) => {
+    if (!eventId || !settings || savingSetting || eventStarted) return;
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    setSavingSetting(true);
+    setSettingsError('');
+    try {
+      await updateAdminEventSettings(eventId, {
+        bonusRoundCount: next.bonusRoundCount,
+        conversationDurationSeconds: next.conversationDurationSeconds,
+        finalSelectionLimit: next.finalSelectionLimit,
+      });
+    } catch (caughtError) {
+      setSettingsError(caughtError instanceof Error ? caughtError.message : '진행 설정을 저장하지 못했습니다.');
+      await loadSettings();
+    } finally {
+      setSavingSetting(false);
+    }
+  };
+
+  const handleStartClick = () => {
     if (!eventId || starting) return;
     if (eventStarted) {
       navigate(`/admin/events/${eventId}/live`);
       return;
     }
+    setStartConfirmOpen(true);
+  };
+
+  const handleConfirmStart = async () => {
+    if (!eventId || starting) return;
     setStarting(true);
     setStartError('');
     try {
@@ -69,6 +123,7 @@ export default function AdminEventPreparePage() {
       navigate(`/admin/events/${eventId}/live`);
     } catch (caughtError) {
       setStartError(caughtError instanceof Error ? caughtError.message : '행사를 시작하지 못했습니다.');
+      setStartConfirmOpen(false);
     } finally {
       setStarting(false);
     }
@@ -194,6 +249,62 @@ export default function AdminEventPreparePage() {
           </div>
         </section>
 
+        <section className="mt-6 rounded-[20px] border border-[#f0f0f0] bg-white px-5 py-5">
+          <h3 className="text-[17px] font-black">진행 설정</h3>
+
+          {!settings ? (
+            <p className="mt-4 text-[13px] font-bold text-[#999]">{settingsError || '불러오는 중'}</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <SettingRow label="기본 라운드">
+                <select
+                  className="rounded-[10px] border border-[#ddd] bg-white px-3 py-1.5 text-[14px] font-black text-[#1f292d] disabled:cursor-not-allowed disabled:text-[#bbb]"
+                  disabled={eventStarted || savingSetting}
+                  onChange={(changeEvent) => void handleSettingChange({ conversationDurationSeconds: Number(changeEvent.target.value) })}
+                  value={settings.conversationDurationSeconds}
+                >
+                  {conversationDurationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+              <SettingRow label="추가시간">
+                <select
+                  className="rounded-[10px] border border-[#ddd] bg-white px-3 py-1.5 text-[14px] font-black text-[#1f292d] disabled:cursor-not-allowed disabled:text-[#bbb]"
+                  disabled={eventStarted || savingSetting}
+                  onChange={(changeEvent) => void handleSettingChange({ bonusRoundCount: Number(changeEvent.target.value) })}
+                  value={settings.bonusRoundCount}
+                >
+                  {bonusRoundCountOptions.map((count) => (
+                    <option key={count} value={count}>
+                      {count}회
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+              <SettingRow label="최종 선택">
+                <select
+                  className="rounded-[10px] border border-[#ddd] bg-white px-3 py-1.5 text-[14px] font-black text-[#1f292d] disabled:cursor-not-allowed disabled:text-[#bbb]"
+                  disabled={eventStarted || savingSetting}
+                  onChange={(changeEvent) => void handleSettingChange({ finalSelectionLimit: Number(changeEvent.target.value) })}
+                  value={settings.finalSelectionLimit}
+                >
+                  {finalSelectionLimitOptions.map((count) => (
+                    <option key={count} value={count}>
+                      최대 {count}명
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+            </div>
+          )}
+
+          {settingsError && settings ? <p className="mt-3 text-[12px] font-bold text-[#ef554a]">{settingsError}</p> : null}
+          <p className="mt-4 text-[12px] font-bold text-[#aaa]">행사 시작 후에는 진행 설정을 변경할 수 없습니다.</p>
+        </section>
+
         <div className="mt-7">
           {!operationsActive ? (
             <p className="mb-3 text-center text-[13px] font-bold text-[#a35850]">
@@ -211,7 +322,7 @@ export default function AdminEventPreparePage() {
               eventStarted ? 'cursor-default bg-[#8fae7f]' : operationsActive ? 'bg-[#ef4039]' : 'cursor-not-allowed bg-[#e2c3bc]',
             ].join(' ')}
             disabled={!operationsActive || starting}
-            onClick={() => void handleStart()}
+            onClick={handleStartClick}
             type="button"
           >
             {eventStarted ? '행사 진행 중 · 이어서 보기' : starting ? '시작하는 중' : '행사 시작'}
@@ -222,7 +333,79 @@ export default function AdminEventPreparePage() {
       {tabletPanelOpen ? (
         <TabletStatusPanel eventId={event.id} onClose={() => setTabletPanelOpen(false)} requiredTablets={event.requiredTablets} />
       ) : null}
+
+      {startConfirmOpen && settings ? (
+        <StartConfirmPanel
+          onCancel={() => setStartConfirmOpen(false)}
+          onConfirm={() => void handleConfirmStart()}
+          settings={settings}
+          starting={starting}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function SettingRow({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[14px] bg-[#fafafa] px-4 py-3">
+      <span className="shrink-0 whitespace-nowrap text-[14px] font-black text-[#555]">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function StartConfirmPanel({
+  onCancel,
+  onConfirm,
+  settings,
+  starting,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  settings: AdminEventSettings;
+  starting: boolean;
+}) {
+  const conversationLabel = conversationDurationOptions.find((option) => option.value === settings.conversationDurationSeconds)?.label ?? '10분';
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onCancel}>
+      <div
+        className="w-full max-w-[430px] rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <h3 className="mt-4 text-[18px] font-black">이 설정으로 행사를 시작할까요?</h3>
+        <div className="mt-4 space-y-2 rounded-[16px] bg-[#fafafa] px-4 py-3 text-[14px] font-bold text-[#555]">
+          <p>
+            기본 라운드: <span className="font-black text-[#1f292d]">{conversationLabel}</span>
+          </p>
+          <p>
+            추가시간: <span className="font-black text-[#1f292d]">{settings.bonusRoundCount}회</span>
+          </p>
+          <p>
+            최종 선택: <span className="font-black text-[#1f292d]">최대 {settings.finalSelectionLimit}명</span>
+          </p>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2.5">
+          <button
+            className="flex h-12 w-full items-center justify-center rounded-[12px] border border-[#ddd] text-[15px] font-black text-[#555] disabled:opacity-50"
+            disabled={starting}
+            onClick={onCancel}
+            type="button"
+          >
+            취소
+          </button>
+          <button
+            className="flex h-12 w-full items-center justify-center rounded-[12px] bg-[#ef4039] text-[15px] font-black text-white disabled:opacity-60"
+            disabled={starting}
+            onClick={onConfirm}
+            type="button"
+          >
+            {starting ? '시작하는 중' : '행사 시작'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
