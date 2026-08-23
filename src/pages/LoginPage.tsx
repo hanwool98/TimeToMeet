@@ -117,8 +117,9 @@ export default function LoginPage() {
 
           <div className="mt-10 grid grid-cols-2 gap-2 rounded-[18px] bg-meet-blueSoft p-1.5">
             <button
-              className={['h-11 rounded-[15px] text-[14px] font-black', activeLoginTab === 'member' ? 'bg-white text-black shadow-sm' : 'text-[#777]'].join(' ')}
-              onClick={() => setActiveLoginTab('member')}
+              aria-disabled="true"
+              className="h-11 cursor-not-allowed rounded-[15px] text-[14px] font-black text-[#aaa] opacity-60"
+              disabled
               type="button"
             >
               회원 로그인
