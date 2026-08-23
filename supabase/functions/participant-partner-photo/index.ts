@@ -69,7 +69,7 @@ Deno.serve(async (request) => {
   // 추가시간 round number as soon as bonus_matching for that round starts,
   // not deferred until the bonus conversation actually begins.
   if (progressError || !progress?.current_round) {
-    return json({ ok: true, photoUrl: null });
+    return json({ ok: true, photoUrl: null, representativeCrop: null });
   }
 
   const { data: assignment, error: assignmentError } = await supabase
@@ -81,28 +81,28 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (assignmentError || !assignment) {
-    return json({ ok: true, photoUrl: null });
+    return json({ ok: true, photoUrl: null, representativeCrop: null });
   }
 
   const partnerApplicationId =
     assignment.male_application_id === myApplication.id ? assignment.female_application_id : assignment.male_application_id;
 
-  if (!partnerApplicationId) return json({ ok: true, photoUrl: null });
+  if (!partnerApplicationId) return json({ ok: true, photoUrl: null, representativeCrop: null });
 
   const { data: partner, error: partnerError } = await supabase
     .from('applications')
-    .select('profile_photo_paths, representative_photo_index')
+    .select('profile_photo_paths, representative_photo_index, representative_crop')
     .eq('id', partnerApplicationId)
     .maybeSingle();
 
-  if (partnerError || !partner) return json({ ok: true, photoUrl: null });
+  if (partnerError || !partner) return json({ ok: true, photoUrl: null, representativeCrop: null });
 
   const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
   const representativeIndex = Number(partner.representative_photo_index ?? 0);
   const photoPath = photoPaths[representativeIndex];
   const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
 
-  return json({ ok: true, photoUrl });
+  return json({ ok: true, photoUrl, representativeCrop: partner.representative_crop ?? null });
 });
 
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {

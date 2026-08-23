@@ -157,7 +157,7 @@ export default function ParticipantProfilePage() {
                 <p>결혼·교제 여부: {profile.relationshipStatus}</p>
                 <p className="mt-2">프로필 사진: {profile.profilePhotoCount}장</p>
                 <p>대표사진: {profile.representativePhotoIndex + 1}번째 사진</p>
-                <p>5초 자기소개: {profile.hasVoiceIntro ? '저장됨' : '없음'}</p>
+                <p>3초 자기소개: {profile.hasVoiceIntro ? '저장됨' : '없음'}</p>
                 <p>신분증 인증 자료: {profile.hasIdPhoto ? '저장됨' : '없음'}</p>
                 <p>재직 증명: {profile.hasEmploymentProof ? '저장됨' : '없음'}</p>
               </div>

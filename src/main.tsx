@@ -14,6 +14,8 @@ import AdminEventPreparePage from './pages/AdminEventPreparePage';
 import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
+import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
+import AdminFinalSelectionsPage from './pages/AdminFinalSelectionsPage';
 import AdminPage from './pages/AdminPage';
 import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
 import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
@@ -60,6 +62,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/application-errors" element={<AdminApplicationErrorsPage />} />
             <Route path="/admin/content" element={<AdminContentPage />} />
             <Route path="/admin/content/conversation-topics" element={<AdminConversationTopicsPage />} />
+            <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
+            <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/events" element={<AdminEventManagementPage />} />
             <Route path="/admin/events/new" element={<AdminEventCreatePage />} />

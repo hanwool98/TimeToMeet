@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import HeartRatingInput from '../components/HeartRatingInput';
+import ParticipantPhoto from '../components/ParticipantPhoto';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   createParticipantPauseRequest,
@@ -17,6 +18,7 @@ import {
   type FinalSelectionCandidate,
   type FinalSelectionData,
   type MyEventTicket,
+  type ParticipantPhotoInfo,
   type ParticipantRoundProgress,
 } from '../services/supabaseApplications';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
@@ -170,6 +172,25 @@ function ParticipantEventScreen({
   // 종료 직후) 도달하는 단계.
   if (progress.stage === 'final_selection') {
     return <FinalSelectionScreen eventId={eventId} onBack={onBack} />;
+  }
+
+  // 정규 라운드 종료 후 운영자가 재개하기 전까지의 휴식 phase - 화려한
+  // 전용 화면을 새로 만들지 않고 기존 제출 완료 대기 화면과 같은 톤을
+  // 유지하되, "행사가 마무리되었습니다"(진짜 종료 문구)와는 구분한다.
+  // 운영자가 재개하기 전까지는 서버 stage 자체가 바뀌지 않으므로 이
+  // 화면에서 "행운의 상대" 화면으로 넘어갈 방법이 없다.
+  if (progress.stage === 'round_complete') {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+            <p className="text-[18px] font-black leading-tight">잠시 쉬어가는 시간이에요</p>
+            <p className="mt-3 text-[14px] font-extrabold text-[#888]">곧 다음 안내가 시작됩니다</p>
+          </section>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -539,7 +560,7 @@ function BonusSeatGuideScreen({
   onBack: () => void;
   progress: ParticipantRoundProgress;
 }) {
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
 
@@ -553,10 +574,10 @@ function BonusSeatGuideScreen({
   // rather than keeping a stale one from the previous reveal.
   useEffect(() => {
     let active = true;
-    setPhotoUrl(null);
+    setPhoto(null);
     void fetchParticipantPartnerPhoto(eventId)
-      .then((url) => {
-        if (active) setPhotoUrl(url);
+      .then((result) => {
+        if (active) setPhoto(result);
       })
       .catch(() => undefined);
     return () => {
@@ -593,15 +614,13 @@ function BonusSeatGuideScreen({
           </span>
           <h1 className="mt-4 break-keep text-[26px] font-black leading-tight">다시 만나게 된 행운의 상대</h1>
 
-          <div className="mx-auto mt-6 h-[168px] w-[168px] overflow-hidden rounded-full bg-[#f5f7fa] shadow-[0_10px_24px_rgba(30,43,63,0.12)]">
-            {photoUrl ? (
-              <img alt="" className="h-full w-full object-cover" src={photoUrl} />
-            ) : (
-              <div className="grid h-full w-full place-items-center text-[#c3cad1]">
-                <PersonPlaceholderGlyph />
-              </div>
-            )}
-          </div>
+          <ParticipantPhoto
+            className="mx-auto mt-6 rounded-full bg-[#f5f7fa] shadow-[0_10px_24px_rgba(30,43,63,0.12)]"
+            crop={photo?.representativeCrop}
+            fallback={<PersonPlaceholderGlyph />}
+            photoUrl={photo?.photoUrl}
+            sizePx={168}
+          />
 
           <p className="mx-auto mt-5 max-w-full break-words font-black leading-tight" style={nicknameFontStyle(nickname)}>
             {nickname}
@@ -747,7 +766,7 @@ function RatingScreen({
   progress: ParticipantRoundProgress;
 }) {
   const roundNumber = progress.currentRound ?? 1;
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -771,11 +790,11 @@ function RatingScreen({
     let active = true;
     setScore(null);
     setMemo('');
-    setPhotoUrl(null);
+    setPhoto(null);
     setSubmitted(null);
     void fetchParticipantPartnerPhoto(eventId)
-      .then((url) => {
-        if (active) setPhotoUrl(url);
+      .then((result) => {
+        if (active) setPhoto(result);
       })
       .catch(() => undefined);
     const fetchExisting = mode === 'bonus' ? fetchMyBonusRating(eventId) : fetchMyRoundRating(eventId, roundNumber);
@@ -855,15 +874,12 @@ function RatingScreen({
             호감도를 남겨주세요 💗
           </p>
 
-          <div className="mt-4 aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-[#f5f7fa]">
-            {photoUrl ? (
-              <img alt="" className="h-full w-full object-cover" src={photoUrl} />
-            ) : (
-              <div className="grid h-full w-full place-items-center text-[#c3cad1]">
-                <PersonPlaceholderGlyph />
-              </div>
-            )}
-          </div>
+          <ParticipantPhoto
+            className="mt-4 aspect-[4/3] w-full rounded-[20px] bg-[#f5f7fa]"
+            crop={photo?.representativeCrop}
+            fallback={<PersonPlaceholderGlyph />}
+            photoUrl={photo?.photoUrl}
+          />
 
           <p className="mt-3 text-center text-[16px] font-black">
             {[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
@@ -965,7 +981,7 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
   const navigate = useNavigate();
   const [data, setData] = useState<FinalSelectionData | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [photoMap, setPhotoMap] = useState<Map<string, string>>(new Map());
+  const [photoMap, setPhotoMap] = useState<Map<string, ParticipantPhotoInfo>>(new Map());
   const [step, setStep] = useState<'announce' | 'pick' | 'review'>('announce');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -1161,7 +1177,7 @@ function FinalSelectionPickScreen({
   onBack: () => void;
   onNext: () => void;
   onToggle: (applicationId: string) => void;
-  photoMap: Map<string, string>;
+  photoMap: Map<string, ParticipantPhotoInfo>;
   selectedIds: string[];
 }) {
   return (
@@ -1180,7 +1196,7 @@ function FinalSelectionPickScreen({
             candidate={candidate}
             key={candidate.applicationId}
             onToggle={() => onToggle(candidate.applicationId)}
-            photoUrl={photoMap.get(candidate.applicationId)}
+            photo={photoMap.get(candidate.applicationId)}
             selected={selectedIds.includes(candidate.applicationId)}
           />
         ))}
@@ -1207,34 +1223,29 @@ function FinalSelectionPickScreen({
 function FinalSelectionCandidateCard({
   candidate,
   onToggle,
-  photoUrl,
+  photo,
   selected,
 }: {
   candidate: FinalSelectionCandidate;
   onToggle: () => void;
-  photoUrl?: string;
+  photo?: ParticipantPhotoInfo;
   selected: boolean;
 }) {
   return (
     <div className="rounded-[20px] border border-[#f0f3f6] bg-white p-3 shadow-calendar">
       <div className="flex items-start gap-3">
-        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-[#f5f7fa]">
-          {photoUrl ? (
-            <img alt="" className="h-full w-full object-cover" src={photoUrl} />
-          ) : (
-            <div className="grid h-full w-full place-items-center text-[#c3cad1]">
-              <PersonPlaceholderGlyph />
-            </div>
-          )}
-        </div>
+        <ParticipantPhoto
+          className="rounded-full bg-[#f5f7fa]"
+          crop={photo?.representativeCrop}
+          fallback={<PersonPlaceholderGlyph />}
+          photoUrl={photo?.photoUrl}
+          sizePx={64}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                {candidate.rank ? (
-                  <span className="shrink-0 rounded-full bg-[#fdeef2] px-2 py-0.5 text-[11px] font-black text-[#ef4d7a]">{candidate.rank}위</span>
-                ) : null}
                 <p className="truncate text-[16px] font-black">{candidate.nickname}</p>
               </div>
               <p className="mt-0.5 text-[13px] font-bold text-[#999]">
@@ -1281,7 +1292,7 @@ function FinalSelectionReviewScreen({
   onBack: () => void;
   onReselect: () => void;
   onSubmitClick: () => void;
-  photoMap: Map<string, string>;
+  photoMap: Map<string, ParticipantPhotoInfo>;
   selectedCandidates: FinalSelectionCandidate[];
 }) {
   return (
@@ -1295,20 +1306,15 @@ function FinalSelectionReviewScreen({
           </section>
         ) : (
           <div className="flex flex-col gap-2.5">
-            {selectedCandidates.map((candidate, index) => (
+            {selectedCandidates.map((candidate) => (
               <div className="flex items-center gap-3 rounded-[18px] border border-[#f0f3f6] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#fdeef2] text-[11px] font-black text-[#ef4d7a]">
-                  {index + 1}
-                </span>
-                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-[#f5f7fa]">
-                  {photoMap.get(candidate.applicationId) ? (
-                    <img alt="" className="h-full w-full object-cover" src={photoMap.get(candidate.applicationId)} />
-                  ) : (
-                    <div className="grid h-full w-full place-items-center text-[#c3cad1]">
-                      <PersonPlaceholderGlyph />
-                    </div>
-                  )}
-                </div>
+                <ParticipantPhoto
+                  className="rounded-full bg-[#f5f7fa]"
+                  crop={photoMap.get(candidate.applicationId)?.representativeCrop}
+                  fallback={<PersonPlaceholderGlyph />}
+                  photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
+                  sizePx={56}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-black">{candidate.nickname}</p>
                   <p className="text-[12px] font-bold text-[#999]">

@@ -39,7 +39,7 @@ const requiredConsentText = [
     title: '개인정보 제3자 제공 동의 (필수)',
     body: [
       '타임투밋은 행사 진행과 참가자 간 매칭을 위해 개인정보를 다른 참가자에게 제공합니다.',
-      '프로필 정보 제공: 모자이크된 대표사진, 닉네임, 연령대, 직업, 5초 자기소개 음성',
+      '프로필 정보 제공: 모자이크된 대표사진, 닉네임, 연령대, 직업, 3초 자기소개 음성',
       '제공받는 자: 신청자가 참가하는 동일 타임투밋 행사에 최종 선정된 참가자 혹은 참여를 희망하는 자',
       '제공 목적: 행사 참가자 확인, 대화 및 매칭을 위한 프로필 열람',
       '제공 항목: 프로필 사진, 닉네임 또는 이름, 연령대, 직업, 거주지역, 자기소개 및 신청자가 프로필에 직접 입력한 공개 정보',
@@ -125,6 +125,8 @@ function getAudioFileName(mimeType: string) {
   if (mimeType.includes('webm')) return 'voice-intro.webm';
   return 'voice-intro.audio';
 }
+
+const voiceRecordingMaxSeconds = 3;
 
 function BackIcon() {
   return (
@@ -327,7 +329,7 @@ export default function ProfileFormPage() {
   const [audioUrl, setAudioUrl] = useState('');
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saved'>('idle');
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(voiceRecordingMaxSeconds);
   const [micError, setMicError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [height, setHeight] = useState('');
@@ -525,7 +527,7 @@ export default function ProfileFormPage() {
         if (current) URL.revokeObjectURL(current);
         return '';
       });
-      setCountdown(5);
+      setCountdown(voiceRecordingMaxSeconds);
       setRecordingState('recording');
 
       recorder.ondataavailable = (event) => {
@@ -549,7 +551,7 @@ export default function ProfileFormPage() {
       }, 1000);
       stopTimerRef.current = window.setTimeout(() => {
         if (recorder.state !== 'inactive') recorder.stop();
-      }, 5000);
+      }, voiceRecordingMaxSeconds * 1000);
     } catch (error) {
       console.error('Voice recording failed', error);
       setMicError('마이크 권한이 거부되었거나 사용할 수 없습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.');
@@ -1039,14 +1041,14 @@ export default function ProfileFormPage() {
           </Section>
 
           <Section title="12. 너의 목소리가 보여">
-            <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">본인을 간단히 소개해주세요! 최대 5초까지 녹음할 수 있습니다.</p>
+            <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">본인을 간단히 소개해주세요! 최대 3초까지 녹음할 수 있습니다.</p>
             {recordingState === 'recording' ? (
               <PrimaryButton onClick={stopRecording}>녹음 중 {countdown}초</PrimaryButton>
             ) : (
               <PrimaryButton onClick={startRecording}>{audioUrl ? '다시 녹음' : '녹음 시작'}</PrimaryButton>
             )}
             {audioUrl ? <audio className="mt-4 w-full" controls src={audioUrl} /> : null}
-            <ErrorText>{micError || (touched && !audioUrl ? '5초 자기소개 녹음이 필요합니다.' : '')}</ErrorText>
+            <ErrorText>{micError || (touched && !audioUrl ? '3초 자기소개 녹음이 필요합니다.' : '')}</ErrorText>
           </Section>
 
           <Section title="13. 키">

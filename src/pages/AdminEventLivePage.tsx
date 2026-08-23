@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import HeartRating from '../components/HeartRating';
+import ParticipantPhoto from '../components/ParticipantPhoto';
 import useOperationalData from '../hooks/useOperationalData';
 import {
   controlEventIntroVideo,
@@ -10,15 +11,18 @@ import {
   fetchAdminEventModeSummaries,
   fetchAdminEventParticipantMedia,
   fetchAdminEventProgress,
+  fetchAdminFinalSelectionResults,
   fetchAdminMutualRatings,
   fetchAdminParticipantRatings,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
+  resumeAfterRegularRounds,
   setCurrentRoundForSession,
   startFirstRound,
   subscribeToAdminEventModeChanges,
   updatePauseRequestStatus,
   type AdminEventModeSummary,
+  type AdminFinalSelectionResults,
   type EventPauseRequest,
   type EventProgress,
   type IntroVideoAction,
@@ -58,6 +62,7 @@ export default function AdminEventLivePage() {
   const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
   const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
   const [mutualRatingsPanelOpen, setMutualRatingsPanelOpen] = useState(false);
+  const [finalSelectionResults, setFinalSelectionResults] = useState<AdminFinalSelectionResults | null>(null);
 
   const { applications } = useOperationalData({ admin: true, eventId });
   const eventApplications = useMemo(() => applications.filter((item) => item.eventId === eventId), [applications, eventId]);
@@ -118,7 +123,13 @@ export default function AdminEventLivePage() {
     }
   }, [progress]);
 
-  const isRoundStage = progress?.stage === 'round_active' || progress?.stage === 'round_complete';
+  const isRoundStage =
+    progress?.stage === 'round_active' ||
+    progress?.stage === 'round_complete' ||
+    progress?.stage === 'bonus_matching' ||
+    progress?.stage === 'bonus_seat_guide' ||
+    progress?.stage === 'bonus_rating' ||
+    progress?.stage === 'final_selection';
 
   // Round-specific state (timer, current table matches, pending pause
   // requests) only matters once the round stage is reached, so it's polled
@@ -141,6 +152,25 @@ export default function AdminEventLivePage() {
       window.clearInterval(intervalId);
     };
   }, [eventId, isRoundStage]);
+
+  useEffect(() => {
+    if (!eventId || progress?.stage !== 'final_selection') return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await fetchAdminFinalSelectionResults(eventId);
+        if (active) setFinalSelectionResults(next);
+      } catch {
+        // Keep the last known submission count during a transient poll error.
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), pollIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [eventId, progress?.stage]);
 
   // Representative photos rarely change mid-event, so this is fetched once
   // per round stage entry rather than on every 2s poll.
@@ -228,6 +258,19 @@ export default function AdminEventLivePage() {
       setRoundProgress(await fetchAdminRoundProgress(eventId));
     } catch (caughtError) {
       setActionError(caughtError instanceof Error ? caughtError.message : '시간을 건너뛰지 못했습니다.');
+    } finally {
+      setTimerActionPending(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!eventId || timerActionPending) return;
+    setTimerActionPending(true);
+    try {
+      await resumeAfterRegularRounds(eventId);
+      setRoundProgress(await fetchAdminRoundProgress(eventId));
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '재개하지 못했습니다.');
     } finally {
       setTimerActionPending(false);
     }
@@ -324,12 +367,15 @@ export default function AdminEventLivePage() {
           <RoundProgressSection
             isTestEvent={event.isTestEvent}
             onOpenMutualRatings={() => setMutualRatingsPanelOpen(true)}
+            onOpenFinalSelections={() => navigate(`/admin/content/final-selections/${encodeURIComponent(eventId)}?from=live`)}
             onOpenParticipantList={() => setParticipantListPanelOpen(true)}
             onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
             onOpenRoundJump={() => setRoundJumpPanelOpen(true)}
+            onResume={() => void handleResume()}
             onSkipTimer={() => void handleSkipTimer()}
             onToggleTimer={() => void handleToggleRoundTimer()}
             participantMedia={participantMedia}
+            finalSelectionResults={finalSelectionResults}
             roundProgress={roundProgress}
             timerActionPending={timerActionPending}
             totalTables={tabletRequired}
@@ -452,7 +498,12 @@ export default function AdminEventLivePage() {
       ) : null}
 
       {participantListPanelOpen && eventId ? (
-        <ParticipantListPanel applications={eventApplications} eventId={eventId} onClose={() => setParticipantListPanelOpen(false)} />
+        <ParticipantListPanel
+          applications={eventApplications}
+          eventId={eventId}
+          onClose={() => setParticipantListPanelOpen(false)}
+          participantMedia={participantMedia}
+        />
       ) : null}
 
       {roundJumpPanelOpen && roundProgress ? (
@@ -562,11 +613,14 @@ function SkipIcon() {
 }
 
 function RoundProgressSection({
+  finalSelectionResults,
   isTestEvent,
+  onOpenFinalSelections,
   onOpenMutualRatings,
   onOpenParticipantList,
   onOpenPauseRequests,
   onOpenRoundJump,
+  onResume,
   onSkipTimer,
   onToggleTimer,
   participantMedia,
@@ -574,11 +628,14 @@ function RoundProgressSection({
   timerActionPending,
   totalTables,
 }: {
+  finalSelectionResults: AdminFinalSelectionResults | null;
   isTestEvent: boolean;
+  onOpenFinalSelections: () => void;
   onOpenMutualRatings: () => void;
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
   onOpenRoundJump: () => void;
+  onResume: () => void;
   onSkipTimer: () => void;
   onToggleTimer: () => void;
   participantMedia: Map<string, PublicParticipantMediaRow>;
@@ -602,11 +659,27 @@ function RoundProgressSection({
   }
 
   if (roundProgress.stage === 'round_complete') {
+    const hasBonusRounds = roundProgress.bonusRoundCount > 0;
     return (
       <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
-        <p className="text-[15px] font-black text-[#ef554a]">모든 라운드 종료</p>
-        <p className="mt-2 text-[24px] font-black">수고하셨습니다</p>
+        <p className="text-[15px] font-black text-[#ef554a]">정규 라운드 종료</p>
+        <p className="mt-2 text-[24px] font-black">{hasBonusRounds ? '휴식 중' : '수고하셨습니다'}</p>
         <p className="mt-3 text-[13px] font-bold text-[#999]">전체 {roundProgress.totalRounds}라운드가 모두 완료되었습니다</p>
+        {hasBonusRounds ? (
+          <>
+            <p className="mt-6 rounded-[14px] bg-[#fff1ee] px-4 py-3 text-[13px] font-bold text-[#a35850]">
+              추가시간 시작 전 휴식 중이에요. 준비가 되면 재개를 눌러주세요.
+            </p>
+            <button
+              className="mt-4 h-14 w-full rounded-[14px] bg-[#ef4039] text-[16px] font-black text-white disabled:opacity-60"
+              disabled={timerActionPending}
+              onClick={onResume}
+              type="button"
+            >
+              {timerActionPending ? '재개하는 중' : '재개'}
+            </button>
+          </>
+        ) : null}
         <button className="mt-5 text-[13px] font-black text-meet-blue underline" onClick={onOpenRoundJump} type="button">
           라운드 이동
         </button>
@@ -626,11 +699,20 @@ function RoundProgressSection({
   }
 
   if (roundProgress.stage === 'final_selection') {
+    const submitted = finalSelectionResults?.summary.submittedCount ?? 0;
+    const total = finalSelectionResults?.summary.totalParticipants ?? roundProgress.totalParticipants;
     return (
       <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
         <p className="text-[15px] font-black text-[#ef554a]">모든 대화 종료</p>
         <p className="mt-2 text-[24px] font-black">최종 선택 진행 중</p>
-        <p className="mt-3 text-[13px] font-bold text-[#999]">참가자들이 최종 선택을 진행하고 있어요</p>
+        <p className="mt-3 text-[13px] font-bold text-[#999]">제출 완료 {submitted} / {total}명</p>
+        <button
+          className="mt-6 h-12 w-full rounded-[14px] bg-[#ef4039] text-[15px] font-black text-white"
+          onClick={onOpenFinalSelections}
+          type="button"
+        >
+          최종선택 확인
+        </button>
       </section>
     );
   }
@@ -650,11 +732,14 @@ function RoundProgressSection({
       ? '호감도 수정'
       : roundProgress.roundPhase === 'transition'
         ? roundProgress.isBonusRound
-          ? '자리 안내'
+          ? '자리 이동'
           : '이동 및 호감도 작성'
         : `${Math.round(phaseDuration / 60)}분 대화`;
+  const isBonusConversation = roundProgress.isBonusRound && roundProgress.roundPhase === 'conversation' && roundProgress.stage !== 'bonus_rating';
   const roundHeaderLabel =
-    roundProgress.isBonusRound && roundProgress.bonusRoundIndex ? `추가시간 ${roundProgress.bonusRoundIndex}` : `${roundProgress.currentRound ?? 1}라운드`;
+    roundProgress.isBonusRound && roundProgress.bonusRoundIndex
+      ? `추가시간 ${roundProgress.bonusRoundIndex}${isBonusConversation ? ' 진행 중' : ''}`
+      : `${roundProgress.currentRound ?? 1}라운드 진행 중`;
 
   const matchByTable = new Map(roundProgress.matches.map((match) => [match.tableNumber, match]));
   const tableNumbers = Array.from({ length: Math.max(totalTables, roundProgress.matches.length) }, (_, index) => index + 1);
@@ -664,7 +749,7 @@ function RoundProgressSection({
       <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-[14px] font-black leading-tight">{roundHeaderLabel} 진행 중</h2>
+            <h2 className="truncate text-[14px] font-black leading-tight">{roundHeaderLabel}</h2>
             <span className="shrink-0 rounded-[6px] bg-[#fff1ee] px-2 py-0.5 text-[11px] font-black text-[#ef554a]">{phaseLabel}</span>
           </div>
           <button
@@ -782,15 +867,15 @@ function TableMatchCard({
     );
   }
 
-  const malePhoto = (match.maleApplicationId ? participantMedia.get(match.maleApplicationId)?.photoUrl : undefined) ?? undefined;
-  const femalePhoto = (match.femaleApplicationId ? participantMedia.get(match.femaleApplicationId)?.photoUrl : undefined) ?? undefined;
+  const maleMedia = match.maleApplicationId ? participantMedia.get(match.maleApplicationId) : undefined;
+  const femaleMedia = match.femaleApplicationId ? participantMedia.get(match.femaleApplicationId) : undefined;
 
   return (
     <div className="rounded-[12px] border border-[#f0f0f0] bg-white p-2">
       <p className="text-center text-[11px] font-black text-[#999]">{tableNumber}번</p>
       <div className="mt-1 flex items-center justify-center -space-x-1.5">
-        <PhotoAvatar fallbackColor="#5aa7e9" photoUrl={malePhoto} size={30} />
-        <PhotoAvatar fallbackColor="#ef8fa0" photoUrl={femalePhoto} size={30} />
+        <PhotoAvatar fallbackColor="#5aa7e9" media={maleMedia} size={30} />
+        <PhotoAvatar fallbackColor="#ef8fa0" media={femaleMedia} size={30} />
       </div>
       <p className="mt-1 truncate text-center text-[10.5px] font-black">
         {match.maleNickname ?? '대기'} · {match.femaleNickname ?? '대기'}
@@ -799,14 +884,16 @@ function TableMatchCard({
   );
 }
 
-function PhotoAvatar({ fallbackColor, photoUrl, size = 48 }: { fallbackColor: string; photoUrl?: string; size?: number }) {
+function PhotoAvatar({ fallbackColor, media, size = 48 }: { fallbackColor: string; media?: PublicParticipantMediaRow; size?: number }) {
   return (
-    <span
-      className="grid shrink-0 place-items-center overflow-hidden rounded-full border-2 border-white"
-      style={{ backgroundColor: `${fallbackColor}22`, height: size, width: size }}
-    >
-      {photoUrl ? <img alt="" className="h-full w-full object-cover" src={photoUrl} /> : <PersonGlyph color={fallbackColor} />}
-    </span>
+    <ParticipantPhoto
+      className="rounded-full border-2 border-white"
+      crop={media?.representativeCrop}
+      fallback={<PersonGlyph color={fallbackColor} />}
+      photoUrl={media?.photoUrl}
+      sizePx={size}
+      style={{ backgroundColor: `${fallbackColor}22` }}
+    />
   );
 }
 
@@ -1024,10 +1111,12 @@ function ParticipantListPanel({
   applications,
   eventId,
   onClose,
+  participantMedia,
 }: {
   applications: StoredApplication[];
   eventId: string;
   onClose: () => void;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<StoredApplication | null>(null);
@@ -1078,7 +1167,7 @@ function ParticipantListPanel({
               ‹ 목록으로
             </button>
             <div className="mt-3 flex items-center gap-3">
-              <Avatar gender={selected.gender} />
+              <Avatar gender={selected.gender} media={selected.dbId ? participantMedia.get(selected.dbId) : undefined} />
               <div className="min-w-0">
                 <p className="truncate text-[18px] font-black">{selected.profile?.nickname || selected.userId}님</p>
                 <p className="text-[13px] font-bold text-[#999]">{selected.id}</p>
@@ -1132,7 +1221,7 @@ function ParticipantListPanel({
                       onClick={() => void selectParticipant(item)}
                       type="button"
                     >
-                      <Avatar gender={item.gender} />
+                      <Avatar gender={item.gender} media={item.dbId ? participantMedia.get(item.dbId) : undefined} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] font-black">{item.profile?.nickname || item.userId}님</p>
                         <p className="text-[12px] font-bold text-[#999]">{item.id}</p>
@@ -1150,12 +1239,17 @@ function ParticipantListPanel({
   );
 }
 
-function Avatar({ gender }: { gender?: '남성' | '여성' }) {
+function Avatar({ gender, media }: { gender?: '남성' | '여성'; media?: PublicParticipantMediaRow }) {
   const color = gender === '남성' ? '#5aa7e9' : gender === '여성' ? '#ef8fa0' : '#ccc';
   return (
-    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full" style={{ backgroundColor: `${color}22` }}>
-      <PersonGlyph color={color} />
-    </span>
+    <ParticipantPhoto
+      className="rounded-full"
+      crop={media?.representativeCrop}
+      fallback={<PersonGlyph color={color} />}
+      photoUrl={media?.photoUrl}
+      sizePx={44}
+      style={{ backgroundColor: `${color}22` }}
+    />
   );
 }
 

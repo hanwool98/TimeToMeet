@@ -3,15 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import { ReviewProfileModal } from './AdminApplicationsPage';
+import ParticipantPhoto from '../components/ParticipantPhoto';
 import {
   checkInApplicationInSupabase,
   checkInTicketInSupabase,
   fetchAdminEventModeSummaries,
+  fetchAdminEventParticipantMedia,
   fetchAdminTicketPreview,
   subscribeToAdminEventModeChanges,
   type AdminCheckInResult,
   type AdminEventModeSummary,
   type AdminTicketPreview,
+  type PublicParticipantMediaRow,
 } from '../services/supabaseApplications';
 import useOperationalData from '../hooks/useOperationalData';
 import type { StoredApplication } from '../utils/adminApplications';
@@ -67,6 +70,23 @@ export default function AdminCheckInPage() {
   const eventApplications = applications.filter((item) => item.eventId === eventId);
   const isToday = event ? event.date === getKoreaTodayKey() : false;
   const operationsActive = Boolean(event) && (event!.isTestEvent || isToday);
+
+  const [participantMedia, setParticipantMedia] = useState<Map<string, PublicParticipantMediaRow>>(new Map());
+
+  // Representative photos rarely change mid-event, so this is fetched once
+  // rather than re-polled - the same real photo + crop used everywhere else
+  // (테이블 현황, 참가자 리스트 등), replacing the gender-icon placeholder
+  // this screen used to show unconditionally.
+  useEffect(() => {
+    if (!eventId) return undefined;
+    let active = true;
+    void fetchAdminEventParticipantMedia(eventId).then((media) => {
+      if (active) setParticipantMedia(media);
+    });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -461,6 +481,7 @@ export default function AdminCheckInPage() {
             onConfirm={() => void confirmCheckIn()}
             onRescan={resumeScanning}
             onViewProfile={() => previewApplication && setProfileModalApplication(previewApplication)}
+            participantMedia={participantMedia}
             preview={preview}
           />
         ) : null}
@@ -480,7 +501,7 @@ export default function AdminCheckInPage() {
           ) : (
             <div className="mt-3 space-y-3">
               {recentCheckIns.slice(0, 3).map((item) => (
-                <RecentCheckInCard key={item.dbId} application={item} />
+                <RecentCheckInCard application={item} key={item.dbId} participantMedia={participantMedia} />
               ))}
             </div>
           )}
@@ -516,7 +537,7 @@ export default function AdminCheckInPage() {
       ) : null}
 
       {statusPanelOpen ? (
-        <CheckInStatusPanel applications={eventApplications} onClose={() => setStatusPanelOpen(false)} />
+        <CheckInStatusPanel applications={eventApplications} onClose={() => setStatusPanelOpen(false)} participantMedia={participantMedia} />
       ) : null}
 
       {manualPanelOpen ? (
@@ -526,6 +547,7 @@ export default function AdminCheckInPage() {
           onClose={() => setManualPanelOpen(false)}
           onCheckedIn={() => void Promise.all([reloadApplications(), loadSummaries()])}
           onViewProfile={(application) => setProfileModalApplication(application)}
+          participantMedia={participantMedia}
         />
       ) : null}
     </main>
@@ -539,6 +561,7 @@ function ScanResultCard({
   onConfirm,
   onRescan,
   onViewProfile,
+  participantMedia,
   preview,
 }: {
   application: StoredApplication | null;
@@ -547,6 +570,7 @@ function ScanResultCard({
   onConfirm: () => void;
   onRescan: () => void;
   onViewProfile: () => void;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
   preview: AdminTicketPreview;
 }) {
   if (!preview.ok) {
@@ -569,7 +593,7 @@ function ScanResultCard({
   return (
     <section className="mt-5 rounded-[20px] border border-[#f0d9d3] bg-[#fff8f5] px-5 py-5">
       <div className="flex items-center gap-3">
-        <Avatar gender={application?.gender} />
+        <Avatar gender={application?.gender} media={application?.dbId ? participantMedia.get(application.dbId) : undefined} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[18px] font-black">{nickname}님</p>
           <p className="text-[13px] font-bold text-[#999]">{applicationNo}</p>
@@ -621,10 +645,16 @@ function ScanResultCard({
   );
 }
 
-function RecentCheckInCard({ application }: { application: StoredApplication }) {
+function RecentCheckInCard({
+  application,
+  participantMedia,
+}: {
+  application: StoredApplication;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
+}) {
   return (
     <div className="flex items-center gap-3 rounded-[16px] border border-[#f0f0f0] bg-white px-4 py-3">
-      <Avatar gender={application.gender} />
+      <Avatar gender={application.gender} media={application.dbId ? participantMedia.get(application.dbId) : undefined} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-black">{application.profile?.nickname || application.userId}님</p>
         <p className="text-[12px] font-bold text-[#999]">{application.id}</p>
@@ -642,7 +672,15 @@ function RecentCheckInCard({ application }: { application: StoredApplication }) 
   );
 }
 
-function CheckInStatusPanel({ applications, onClose }: { applications: StoredApplication[]; onClose: () => void }) {
+function CheckInStatusPanel({
+  applications,
+  onClose,
+  participantMedia,
+}: {
+  applications: StoredApplication[];
+  onClose: () => void;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
+}) {
   const confirmed = applications
     .filter((item) => item.status === '참가 확정')
     .sort((a, b) => {
@@ -670,7 +708,7 @@ function CheckInStatusPanel({ applications, onClose }: { applications: StoredApp
           <div className="mt-4 space-y-2">
             {confirmed.map((item) => (
               <div key={item.dbId} className="flex items-center gap-3 rounded-[14px] border border-[#f0f0f0] px-3 py-2.5">
-                <Avatar gender={item.gender} />
+                <Avatar gender={item.gender} media={item.dbId ? participantMedia.get(item.dbId) : undefined} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-black">{item.profile?.nickname || item.userId}님</p>
                   <p className="text-[12px] font-bold text-[#999]">{item.id}</p>
@@ -689,12 +727,17 @@ function CheckInStatusPanel({ applications, onClose }: { applications: StoredApp
   );
 }
 
-function Avatar({ gender }: { gender?: '남성' | '여성' }) {
+function Avatar({ gender, media }: { gender?: '남성' | '여성'; media?: PublicParticipantMediaRow }) {
   const color = gender === '남성' ? '#5aa7e9' : gender === '여성' ? '#ef8fa0' : '#ccc';
   return (
-    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full" style={{ backgroundColor: `${color}22` }}>
-      <PersonIcon color={color} />
-    </span>
+    <ParticipantPhoto
+      className="rounded-full"
+      crop={media?.representativeCrop}
+      fallback={<PersonIcon color={color} />}
+      photoUrl={media?.photoUrl}
+      sizePx={44}
+      style={{ backgroundColor: `${color}22` }}
+    />
   );
 }
 
@@ -818,12 +861,14 @@ function ManualCheckInPanel({
   onCheckedIn,
   onClose,
   onViewProfile,
+  participantMedia,
 }: {
   applications: StoredApplication[];
   eventId: string;
   onCheckedIn: () => void;
   onClose: () => void;
   onViewProfile: (application: StoredApplication) => void;
+  participantMedia: Map<string, PublicParticipantMediaRow>;
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<StoredApplication | null>(null);
@@ -892,7 +937,7 @@ function ManualCheckInPanel({
             </button>
             <div className="mt-3 rounded-[20px] border border-[#f0d9d3] bg-[#fff8f5] px-5 py-5">
               <div className="flex items-center gap-3">
-                <Avatar gender={selected.gender} />
+                <Avatar gender={selected.gender} media={selected.dbId ? participantMedia.get(selected.dbId) : undefined} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[18px] font-black">{selected.profile?.nickname || selected.userId}님</p>
                   <p className="text-[13px] font-bold text-[#999]">{selected.id}</p>
@@ -957,7 +1002,7 @@ function ManualCheckInPanel({
                       onClick={() => selectApplicant(item)}
                       type="button"
                     >
-                      <Avatar gender={item.gender} />
+                      <Avatar gender={item.gender} media={item.dbId ? participantMedia.get(item.dbId) : undefined} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] font-black">{item.profile?.nickname || item.userId}님</p>
                         <p className="text-[12px] font-bold text-[#999]">{item.id}</p>

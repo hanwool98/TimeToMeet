@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
 
   const { data: partners, error: partnersError } = await supabase
     .from('applications')
-    .select('id, profile_photo_paths, representative_photo_index')
+    .select('id, profile_photo_paths, representative_photo_index, representative_crop')
     .in('id', partnerIds);
 
   if (partnersError) return json({ ok: true, photos: [] });
@@ -90,7 +90,7 @@ Deno.serve(async (request) => {
       const representativeIndex = Number(partner.representative_photo_index ?? 0);
       const photoPath = photoPaths[representativeIndex];
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
-      return { applicationId: partner.id as string, photoUrl };
+      return { applicationId: partner.id as string, photoUrl, representativeCrop: partner.representative_crop ?? null };
     }),
   );
 

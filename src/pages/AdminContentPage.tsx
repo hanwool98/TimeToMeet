@@ -29,6 +29,11 @@ export default function AdminContentPage() {
             label="대화주제 관리"
             onClick={() => navigate('/admin/content/conversation-topics')}
           />
+          <MenuCard
+            icon={<FinalSelectionIcon />}
+            label="최종선택"
+            onClick={() => navigate('/admin/content/final-selections')}
+          />
         </div>
       </div>
     </main>
@@ -54,6 +59,15 @@ function TopicsIcon() {
     <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
       <rect height="20" rx="3" width="14" x="9" y="6" />
       <path d="M13 12h6M13 17h4" />
+    </svg>
+  );
+}
+
+function FinalSelectionIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <path d="M16 25.5 7.3 17A5.6 5.6 0 0 1 15 8.9l1 1 1-1a5.6 5.6 0 0 1 7.7 8.1L16 25.5Z" />
+      <path d="m12.5 16 2.2 2.2 4.8-5" />
     </svg>
   );
 }

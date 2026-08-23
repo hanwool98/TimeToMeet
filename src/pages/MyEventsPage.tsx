@@ -25,6 +25,7 @@ export default function MyEventsPage() {
   const loadTickets = useCallback(async () => {
     if (!getAppSession()) return;
     setError('');
+    setLoading(true);
     try {
       const nextTickets = await fetchMyEventTickets();
       setTickets(nextTickets);
@@ -38,7 +39,7 @@ export default function MyEventsPage() {
         setReasonModalTicket((current) => current ?? pendingReasonTicket);
       }
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : '내 행사 정보를 불러오지 못했습니다.';
+      const message = extractErrorMessage(caughtError);
       if (message.includes('get_my_event_tickets')) {
         setTickets([]);
         setError('');
@@ -99,7 +100,19 @@ export default function MyEventsPage() {
           <section className="w-full pt-6">
             <h1 className="text-[24px] font-black">내 행사</h1>
             {loading ? <p className="mt-8 text-center text-[16px] font-black text-[#999]">불러오는 중</p> : null}
-            {error ? <p className="mt-8 rounded-[18px] bg-meet-pinkSoft p-4 text-center text-[15px] font-black text-meet-pink">{error}</p> : null}
+            {error ? (
+              <div className="mt-8 rounded-[18px] bg-meet-pinkSoft p-4 text-center">
+                <p className="text-[15px] font-black text-meet-pink">내 행사 정보를 불러오지 못했습니다.</p>
+                <p className="mt-1.5 text-[12px] font-bold text-meet-pink/70">일시적인 네트워크 오류일 수 있어요. ({error})</p>
+                <button
+                  className="mt-3 rounded-[12px] bg-white px-4 py-2 text-[13px] font-black text-meet-pink shadow-sm active:scale-[0.98]"
+                  onClick={() => void loadTickets()}
+                  type="button"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : null}
             {!loading && !error && tickets.length === 0 ? (
               <div className="flex min-h-[calc(100dvh-14rem)] flex-col items-center justify-center">
                 <p className="text-center text-[17px] font-extrabold text-[#999]">참가 예정인 행사가 없습니다</p>
@@ -245,6 +258,23 @@ function ReasonModal({
       </section>
     </div>
   );
+}
+
+// supabase-js only wraps a real PostgREST/Postgres failure in an Error
+// instance. A network-level failure (fetch itself rejects - dropped
+// connection, DNS hiccup, request timeout) resolves `{ error }` as a plain
+// object instead (see PostgrestBuilder's non-throwOnError catch path), so
+// `caughtError instanceof Error` alone misses that case entirely and silently
+// discards its message. Falling back to a truly unknown shape only when
+// there's no usable message keeps this safe while surfacing the real reason
+// (most commonly a transient network blip) instead of a content-free string.
+function extractErrorMessage(caughtError: unknown): string {
+  if (caughtError instanceof Error) return caughtError.message;
+  if (caughtError && typeof caughtError === 'object' && 'message' in caughtError) {
+    const message = (caughtError as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return '알 수 없는 오류';
 }
 
 // Tickets stop appearing in "내 행사" 3 days after their event (kept in sync

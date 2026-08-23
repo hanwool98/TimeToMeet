@@ -881,7 +881,7 @@ function ReviewAudioPlayer({
           {isPlaying ? 'Ⅱ' : '▶'}
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-[16px] font-black">5초 자기소개</p>
+          <p className="text-[16px] font-black">3초 자기소개</p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e9edf2]">
             <div className="h-full rounded-full bg-meet-blue" style={{ width: `${progress}%` }} />
           </div>

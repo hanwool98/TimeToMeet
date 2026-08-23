@@ -5,6 +5,7 @@ import { getAppSession } from './appAuth';
 import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication } from '../utils/adminApplications';
+import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 interface SubmitApplicationInput {
   eventId: string;
@@ -1692,6 +1693,22 @@ export async function controlRoundTimer(eventId: string, action: RoundTimerActio
   if (error) throw error;
 }
 
+// 정규 라운드 종료 후 휴식(round_complete) 상태에서만 호출 가능 - 대화
+// timer의 pause/resume(controlRoundTimer)과는 별개의, "다음 단계 자체를
+// 시작할지" 결정하는 액션이다.
+export async function resumeAfterRegularRounds(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('resume_after_regular_rounds_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw error;
+}
+
 export async function setCurrentRoundForSession(eventId: string, roundNumber: number) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
@@ -2043,16 +2060,22 @@ export async function submitMyBonusRating(eventId: string, score: number, memo: 
   if (error) throw error;
 }
 
-export async function fetchParticipantPartnerPhoto(eventId: string): Promise<string | null> {
+export interface ParticipantPhotoInfo {
+  photoUrl: string | null;
+  representativeCrop?: RepresentativeCrop;
+}
+
+export async function fetchParticipantPartnerPhoto(eventId: string): Promise<ParticipantPhotoInfo> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
-  if (!session?.token) return null;
+  if (!session?.token) return { photoUrl: null };
 
   const { data, error } = await supabase.functions.invoke('participant-partner-photo', {
     body: { eventId, sessionToken: session.token },
   });
   if (error) throw error;
-  return (data as { ok: boolean; photoUrl: string | null })?.photoUrl ?? null;
+  const row = data as { ok: boolean; photoUrl: string | null; representativeCrop?: RepresentativeCrop | null };
+  return { photoUrl: row?.photoUrl ?? null, representativeCrop: row?.representativeCrop ?? undefined };
 }
 
 export interface FinalSelectionCandidate {
@@ -2061,7 +2084,6 @@ export interface FinalSelectionCandidate {
   job?: string;
   memo?: string;
   nickname: string;
-  rank?: number;
   score?: number;
 }
 
@@ -2085,7 +2107,7 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
   });
   if (error) throw error;
   const row = data as {
-    candidates?: Array<{ age: number | null; applicationId: string; job: string | null; memo: string | null; nickname: string; rank: number | null; score: number | null }>;
+    candidates?: Array<{ age: number | null; applicationId: string; job: string | null; memo: string | null; nickname: string; score: number | null }>;
     finalSelectionLimit?: number;
     ok: boolean;
     selectedApplicationIds?: string[];
@@ -2099,7 +2121,6 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
       job: candidate.job ?? undefined,
       memo: candidate.memo ?? undefined,
       nickname: candidate.nickname,
-      rank: candidate.rank ?? undefined,
       score: candidate.score ?? undefined,
     })),
     finalSelectionLimit: row.finalSelectionLimit ?? 3,
@@ -2109,8 +2130,8 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
   };
 }
 
-export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promise<Map<string, string>> {
-  const photoMap = new Map<string, string>();
+export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promise<Map<string, ParticipantPhotoInfo>> {
+  const photoMap = new Map<string, ParticipantPhotoInfo>();
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) return photoMap;
@@ -2119,9 +2140,12 @@ export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promi
     body: { eventId, sessionToken: session.token },
   });
   if (error) throw error;
-  const row = data as { ok: boolean; photos?: Array<{ applicationId: string; photoUrl: string | null }> };
+  const row = data as {
+    ok: boolean;
+    photos?: Array<{ applicationId: string; photoUrl: string | null; representativeCrop?: RepresentativeCrop | null }>;
+  };
   for (const photo of row?.photos ?? []) {
-    if (photo.photoUrl) photoMap.set(photo.applicationId, photo.photoUrl);
+    if (photo.photoUrl) photoMap.set(photo.applicationId, { photoUrl: photo.photoUrl, representativeCrop: photo.representativeCrop ?? undefined });
   }
   return photoMap;
 }
@@ -2137,6 +2161,66 @@ export async function submitFinalSelection(eventId: string, selectedApplicationI
     session_token: session.token,
   });
   if (error) throw error;
+}
+
+export interface AdminFinalSelectionPerson {
+  age: number | null;
+  applicationId: string;
+  nickname: string;
+}
+
+export interface AdminFinalSelectionParticipant extends AdminFinalSelectionPerson {
+  gender: '남성' | '여성';
+  selected: AdminFinalSelectionPerson[];
+  submittedAt: string | null;
+}
+
+export interface AdminFinalSelectionEventSummary {
+  eventDate: string;
+  eventId: string;
+  mutualMatchCount: number;
+  selectionCount: number;
+  submittedCount: number;
+  title: string;
+  totalParticipants: number;
+}
+
+export interface AdminFinalSelectionResults {
+  event: { eventDate: string; id: string; title: string };
+  mutualMatches: Array<{ left: AdminFinalSelectionPerson; right: AdminFinalSelectionPerson }>;
+  participants: AdminFinalSelectionParticipant[];
+  summary: Omit<AdminFinalSelectionEventSummary, 'eventDate' | 'eventId' | 'title'>;
+}
+
+export async function fetchAdminFinalSelectionEvents(): Promise<AdminFinalSelectionEventSummary[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_final_selection_events', {
+    session_token: adminSession.token,
+  });
+  if (error) {
+    // The final-selection history migration may not have reached every
+    // environment yet. Treat only a missing RPC as an empty history; actual
+    // authorization and network failures must remain visible to operators.
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  }
+  return (data ?? []) as AdminFinalSelectionEventSummary[];
+}
+
+export async function fetchAdminFinalSelectionResults(eventId: string): Promise<AdminFinalSelectionResults> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_final_selection_results', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+  return data as AdminFinalSelectionResults;
 }
 
 export async function endAdminEvent(eventId: string) {
