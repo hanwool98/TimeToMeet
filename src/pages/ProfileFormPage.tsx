@@ -1050,11 +1050,7 @@ export default function ProfileFormPage() {
             ) : (
               <PrimaryButton onClick={startRecording}>{audioUrl ? '다시 녹음' : '녹음하기'}</PrimaryButton>
             )}
-            {audioUrl ? (
-              <audio className="mt-4 w-full" controls src={audioUrl} />
-            ) : recordingState !== 'recording' ? (
-              <p className="mt-3 text-center text-[12px] font-extrabold text-[#999]">나중에 할게요 - 지금 등록하지 않아도 신청할 수 있어요.</p>
-            ) : null}
+            {audioUrl ? <audio className="mt-4 w-full" controls src={audioUrl} /> : null}
             <ErrorText>{micError}</ErrorText>
           </Section>
 
