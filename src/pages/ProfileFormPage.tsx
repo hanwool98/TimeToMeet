@@ -297,6 +297,7 @@ export default function ProfileFormPage() {
   const chunksRef = useRef<Blob[]>([]);
   const countdownTimerRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
+  const startingRecordingRef = useRef(false);
   const draftLoadedRef = useRef(false);
 
   const [guideConfirmed, setGuideConfirmed] = useState(false);
@@ -511,6 +512,15 @@ export default function ProfileFormPage() {
   );
 
   const startRecording = async () => {
+    // getUserMedia() 권한 프롬프트를 기다리는 동안(특히 처음 녹음 허용을
+    // 묻는 순간) 버튼이 비활성화되지 않아, 그 사이 사용자가 다시 누르면
+    // setInterval이 두 번 이상 생긴다 - countdownTimerRef는 마지막 것만
+    // 기억하고 나머지는 clearInterval로 잡히지 않은 채 계속 카운트를
+    // 깎아 체감상 훨씬 빠르게 줄어드는 문제가 있었다. recordingState는
+    // await 이후에나 바뀌므로 그것만으로는 막지 못해, 동기적으로 즉시
+    // 세팅되는 ref로 재진입 자체를 막는다.
+    if (recordingState === 'recording' || startingRecordingRef.current) return;
+    startingRecordingRef.current = true;
     setMicError('');
     try {
       if (typeof MediaRecorder === 'undefined') {
@@ -527,6 +537,10 @@ export default function ProfileFormPage() {
         if (current) URL.revokeObjectURL(current);
         return '';
       });
+      // 이전 녹음에서 남아있을 수 있는 타이머를 새로 시작하기 전에 확실히
+      // 정리한다(재진입 가드로 이미 대부분 막히지만 방어적으로 유지).
+      if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
       setCountdown(voiceRecordingMaxSeconds);
       setRecordingState('recording');
 
@@ -556,6 +570,8 @@ export default function ProfileFormPage() {
       console.error('Voice recording failed', error);
       setMicError('마이크 권한이 거부되었거나 사용할 수 없습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.');
       setRecordingState('idle');
+    } finally {
+      startingRecordingRef.current = false;
     }
   };
 
@@ -693,9 +709,11 @@ export default function ProfileFormPage() {
           return;
         }
 
-        const notCompletedMessage = '신청이 완료되지 않았습니다. 다시 시도해주세요.';
-        setSubmitError(notCompletedMessage);
-        window.alert(notCompletedMessage);
+        // 관리자 신청 오류 로그에 남는 것과 동일한 rawMessage를 그대로
+        // 보여준다 - 예전에는 여기서 원인과 무관하게 뭉뚱그린 안내만
+        // 보여줘서, 참가자는 정작 무엇이 문제였는지 알 수 없었다.
+        setSubmitError(rawMessage);
+        window.alert(rawMessage);
         return;
       }
 

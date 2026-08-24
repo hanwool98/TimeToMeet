@@ -58,8 +58,15 @@ Deno.serve(async (request) => {
 
   const payload = await request.json().catch(() => null) as SubmitPayload | null;
   if (!payload?.sessionToken || !payload.eventId) return json({ message: '로그인 또는 비회원 세션이 필요합니다.', stage: 'submit_request' }, 401);
-  if (!payload.idPhoto || !payload.employmentProof || !Array.isArray(payload.profilePhotos) || payload.profilePhotos.length === 0) {
-    return json({ message: '필수 첨부 파일을 확인해주세요.', stage: 'file_validation' }, 400);
+  // 어떤 파일이 빠졌는지 구체적으로 알려준다 - "필수 첨부 파일을
+  // 확인해주세요"만으로는 참가자도 관리자도 신분증/재직증명/프로필사진
+  // 중 무엇이 문제였는지 알 수 없어 원인 파악이 어려웠다.
+  const missingFileLabels: string[] = [];
+  if (!payload.idPhoto) missingFileLabels.push('신분증 사진');
+  if (!payload.employmentProof) missingFileLabels.push('재직 증명 사진');
+  if (!Array.isArray(payload.profilePhotos) || payload.profilePhotos.length === 0) missingFileLabels.push('프로필 사진');
+  if (missingFileLabels.length > 0) {
+    return json({ message: `${missingFileLabels.join(', ')}을(를) 첨부해주세요.`, stage: 'file_validation' }, 400);
   }
   if (payload.profilePhotos.length > 3) return json({ message: '프로필 사진은 최대 3장까지 첨부할 수 있습니다.', stage: 'file_validation' }, 400);
 

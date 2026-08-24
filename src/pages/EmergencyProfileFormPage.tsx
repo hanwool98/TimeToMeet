@@ -42,6 +42,7 @@ export default function EmergencyProfileFormPage() {
   const chunksRef = useRef<Blob[]>([]);
   const countdownTimerRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
+  const startingRecordingRef = useRef(false);
 
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -87,6 +88,11 @@ export default function EmergencyProfileFormPage() {
   }, []);
 
   const startRecording = async () => {
+    // getUserMedia() 권한 프롬프트를 기다리는 동안 재진입하면 setInterval이
+    // 중복 생성돼 카운트다운이 실제보다 빠르게 줄어드는 문제가 있어
+    // 동기적으로 즉시 세팅되는 ref로 막는다(ProfileFormPage.tsx와 동일).
+    if (recordingState === 'recording' || startingRecordingRef.current) return;
+    startingRecordingRef.current = true;
     setMicError('');
     try {
       if (typeof MediaRecorder === 'undefined') {
@@ -103,6 +109,8 @@ export default function EmergencyProfileFormPage() {
         if (current) URL.revokeObjectURL(current);
         return '';
       });
+      if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
       setCountdown(voiceRecordingMaxSeconds);
       setRecordingState('recording');
 
@@ -131,6 +139,8 @@ export default function EmergencyProfileFormPage() {
     } catch {
       setMicError('마이크 권한이 거부되었거나 사용할 수 없습니다.');
       setRecordingState('idle');
+    } finally {
+      startingRecordingRef.current = false;
     }
   };
 

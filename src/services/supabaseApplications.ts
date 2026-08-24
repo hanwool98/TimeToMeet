@@ -116,6 +116,7 @@ interface PublicEventSummaryRow {
   early_bird_discount_male: number | null;
   early_bird_discount_female: number | null;
   is_test_event?: boolean;
+  ended_at?: string | null;
 }
 
 interface AdminEventDetailsRow {
@@ -788,6 +789,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     earlyBirdDeadline: event.early_bird_deadline ?? undefined,
     earlyBirdDiscountMale: event.early_bird_discount_male ?? 0,
     earlyBirdDiscountFemale: event.early_bird_discount_female ?? 0,
+    endedAt: event.ended_at ?? undefined,
     endTime: event.end_time.slice(0, 5),
     id: event.id,
     isTestEvent: event.is_test_event ?? false,

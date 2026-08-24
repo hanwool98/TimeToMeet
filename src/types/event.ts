@@ -23,4 +23,5 @@ export interface EventData {
   maleConfirmed?: number;
   femaleConfirmed?: number;
   isTestEvent?: boolean;
+  endedAt?: string;
 }

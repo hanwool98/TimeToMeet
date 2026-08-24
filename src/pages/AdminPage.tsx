@@ -9,8 +9,12 @@ import type { StoredApplication } from '../utils/adminApplications';
 export default function AdminPage() {
   const navigate = useNavigate();
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true });
+  // events.ended_at은 운영자가 "행사 종료"를 눌러야만 세팅되는, 실제
+  // 종료를 의미하는 유일한 필드다 - 날짜만으로 판단하면 당일 행사를
+  // 종료 처리해도 그날 안에는 계속 노출되는 문제가 있었다.
   const upcomingEvents = events
     .filter((event) => {
+      if (event.endedAt) return false;
       const daysUntil = getDaysUntilEvent(event.date);
       return daysUntil >= 0 && daysUntil <= 14;
     })
