@@ -348,12 +348,13 @@ export default function ProfileFormPage() {
   const isMemberSession = getAppSession()?.role === 'member';
   const isGuestSession = getAppSession()?.role === 'guest';
   const selectedEvent = events.find((event) => event.id === eventId);
-  const isApplicationClosed = Boolean(
-    !selectedEvent?.isTestEvent && selectedEvent?.applicationDeadline && new Date(selectedEvent.applicationDeadline).getTime() <= Date.now(),
-  );
+  // 참가 신청 마감 기능은 더 이상 신청을 막지 않는다(요청에 따라 제거) -
+  // applicationDeadline 필드/관리자 UI 자체는 그대로 남아있지만 더 이상
+  // 참조하지 않는다.
+  const isApplicationClosed = false;
 
   const age = useMemo(() => getAgeOnEventDate(birthDate, selectedEvent?.date), [birthDate, selectedEvent?.date]);
-  const ageError = birthDate && (age === null || age < 23 || age > 35) ? '행사일 기준 만 23~35세만 신청할 수 있습니다.' : '';
+  const ageError = birthDate && (age === null || age < 24 || age > 33) ? '행사일 기준 만 24~33세만 신청할 수 있습니다.' : '';
   const idPreview = useObjectUrl(idPhoto);
   const employmentPreview = useObjectUrl(employmentProof);
   const photoPreviews = useObjectUrls(profilePhotos);
@@ -498,7 +499,6 @@ export default function ProfileFormPage() {
       nickname.trim() &&
       profilePhotos.length > 0 &&
       profilePhotos.length <= 3 &&
-      audioUrl &&
       height.trim() &&
       job.trim() &&
       employmentProof &&
@@ -579,9 +579,9 @@ export default function ProfileFormPage() {
       setSubmitError('이 행사의 신청 접수가 마감되었습니다.');
       return;
     }
-    if (!isRequiredComplete || !idPhoto || !employmentProof || !audioBlob) return;
+    if (!isRequiredComplete || !idPhoto || !employmentProof) return;
 
-    const fileCount = 2 + profilePhotos.length + 1; // idPhoto + employmentProof + profile photos + voice
+    const fileCount = 2 + profilePhotos.length + (audioBlob ? 1 : 0); // idPhoto + employmentProof + profile photos + optional voice
     const reportError = (stage: Parameters<typeof logApplicationError>[0]['stage'], message: string, totalBytes?: number) => {
       void logApplicationError({ eventId, fileCount, message, stage, totalBytes });
     };
@@ -628,7 +628,10 @@ export default function ProfileFormPage() {
       // spending a network round-trip on a submission that would fail
       // anyway.
       const totalUploadBytes =
-        compressedIdPhoto.size + compressedEmploymentProof.size + compressedProfilePhotos.reduce((sum, file) => sum + file.size, 0) + audioBlob.size;
+        compressedIdPhoto.size +
+        compressedEmploymentProof.size +
+        compressedProfilePhotos.reduce((sum, file) => sum + file.size, 0) +
+        (audioBlob?.size ?? 0);
       if (totalUploadBytes > maxTotalUploadBytes) {
         const message = `첨부한 사진·음성 용량이 너무 큽니다(${(totalUploadBytes / 1024 / 1024).toFixed(1)}MB). 사진을 더 작은 것으로 바꾸거나 장수를 줄여주세요.`;
         reportError('file_validation', message, totalUploadBytes);
@@ -665,8 +668,8 @@ export default function ProfileFormPage() {
           residence: location,
           returning: false,
           saveAsDefaultProfile: isMemberSession && saveAsDefaultProfile,
-          voiceIntro: audioBlob,
-          voiceIntroFileName: getAudioFileName(audioBlob.type),
+          voiceIntro: audioBlob ?? undefined,
+          voiceIntroFileName: audioBlob ? getAudioFileName(audioBlob.type) : undefined,
         });
       } catch (error) {
         // The request/response can fail (network drop, gateway timeout,
@@ -1040,15 +1043,19 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && profilePhotos.length === 0 ? '프로필 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="12. 너의 목소리가 보여">
-            <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">본인을 간단히 소개해주세요! 최대 3초까지 녹음할 수 있습니다.</p>
+          <Section title="12. 목소리로 첫인상을 남겨보세요 (선택)">
+            <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">3초면 충분해요. 짧은 인사 한마디를 남겨보세요.</p>
             {recordingState === 'recording' ? (
               <PrimaryButton onClick={stopRecording}>녹음 중 {countdown}초</PrimaryButton>
             ) : (
-              <PrimaryButton onClick={startRecording}>{audioUrl ? '다시 녹음' : '녹음 시작'}</PrimaryButton>
+              <PrimaryButton onClick={startRecording}>{audioUrl ? '다시 녹음' : '녹음하기'}</PrimaryButton>
             )}
-            {audioUrl ? <audio className="mt-4 w-full" controls src={audioUrl} /> : null}
-            <ErrorText>{micError || (touched && !audioUrl ? '3초 자기소개 녹음이 필요합니다.' : '')}</ErrorText>
+            {audioUrl ? (
+              <audio className="mt-4 w-full" controls src={audioUrl} />
+            ) : recordingState !== 'recording' ? (
+              <p className="mt-3 text-center text-[12px] font-extrabold text-[#999]">나중에 할게요 - 지금 등록하지 않아도 신청할 수 있어요.</p>
+            ) : null}
+            <ErrorText>{micError}</ErrorText>
           </Section>
 
           <Section title="13. 키">

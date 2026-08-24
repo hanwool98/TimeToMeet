@@ -111,8 +111,8 @@ export default function ParticipantList({ title, participants, capacity, onProfi
                 </span>
               </button>
               <button
-                aria-label={`${participant.nickname} 자기소개 ${isPlaying ? '정지' : '재생'}`}
-                className="grid h-7 w-[22px] place-items-center rounded-full bg-meet-pinkSoft text-meet-pink transition hover:bg-[#ffdce8] disabled:opacity-40"
+                aria-label={participant.audioIntroUrl ? `${participant.nickname} 자기소개 ${isPlaying ? '정지' : '재생'}` : `${participant.nickname} 음성 없음`}
+                className="grid h-7 w-[22px] place-items-center rounded-full bg-meet-pinkSoft text-meet-pink transition hover:bg-[#ffdce8] disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={!participant.audioIntroUrl}
                 onClick={() => {
                   if (participant.audioIntroUrl) toggleParticipantAudio(participant.id, participant.audioIntroUrl);

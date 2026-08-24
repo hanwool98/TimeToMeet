@@ -120,9 +120,10 @@ export default function EventInfoPage() {
     : events
       .filter((item) => getDaysUntilEvent(item.date) >= 0)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-  const isApplicationClosed = Boolean(
-    !event?.isTestEvent && event?.applicationDeadline && new Date(event.applicationDeadline).getTime() <= Date.now(),
-  );
+  // 참가 신청 마감 기능은 더 이상 신청을 막지 않는다(요청에 따라 제거) -
+  // applicationDeadline 필드/관리자 UI 자체는 그대로 남아있지만 더 이상
+  // 참조하지 않는다.
+  const isApplicationClosed = false;
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
   const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
   const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;

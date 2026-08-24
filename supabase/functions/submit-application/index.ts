@@ -39,7 +39,7 @@ type SubmitPayload = {
   saveAsDefaultProfile?: boolean;
   sessionToken: string;
   userId?: string;
-  voiceIntro: UploadedFile;
+  voiceIntro?: UploadedFile;
 };
 
 const maxImageBytes = 8 * 1024 * 1024;
@@ -58,7 +58,7 @@ Deno.serve(async (request) => {
 
   const payload = await request.json().catch(() => null) as SubmitPayload | null;
   if (!payload?.sessionToken || !payload.eventId) return json({ message: '로그인 또는 비회원 세션이 필요합니다.', stage: 'submit_request' }, 401);
-  if (!payload.idPhoto || !payload.employmentProof || !payload.voiceIntro || !Array.isArray(payload.profilePhotos) || payload.profilePhotos.length === 0) {
+  if (!payload.idPhoto || !payload.employmentProof || !Array.isArray(payload.profilePhotos) || payload.profilePhotos.length === 0) {
     return json({ message: '필수 첨부 파일을 확인해주세요.', stage: 'file_validation' }, 400);
   }
   if (payload.profilePhotos.length > 3) return json({ message: '프로필 사진은 최대 3장까지 첨부할 수 있습니다.', stage: 'file_validation' }, 400);
@@ -103,10 +103,6 @@ Deno.serve(async (request) => {
     if (tokenError || !tokenValid) {
       return json({ message: '테스트 행사 접근 권한이 없습니다. 유효한 테스트 링크로 다시 접속해주세요.', stage: 'response' }, 403);
     }
-  }
-
-  if (!event.is_test_event && event.application_deadline && new Date(event.application_deadline).getTime() <= Date.now()) {
-    return json({ message: '이 행사의 신청이 마감되었습니다.', stage: 'response' }, 409);
   }
 
   const fieldValidationError = validateSubmissionFields(payload, String(event.event_date));
@@ -161,7 +157,7 @@ Deno.serve(async (request) => {
 
   let idPhotoPath = '';
   let employmentProofPath = '';
-  let voiceIntroPath = '';
+  let voiceIntroPath: string | null = null;
   let profilePhotoPaths: string[] = [];
   let uploadedPaths: string[] = [];
   {
@@ -169,7 +165,12 @@ Deno.serve(async (request) => {
     const uploadTasks = [
       { key: 'idPhoto' as const, file: payload.idPhoto, path: `${basePath}/id-${sanitizeFileName(payload.idPhoto.fileName)}` },
       { key: 'employmentProof' as const, file: payload.employmentProof, path: `${basePath}/employment-${sanitizeFileName(payload.employmentProof.fileName)}` },
-      { key: 'voiceIntro' as const, file: payload.voiceIntro, path: `${basePath}/voice-${sanitizeFileName(payload.voiceIntro.fileName)}` },
+      // 음성 소개는 선택이라 첨부됐을 때만 업로드 목록에 넣는다 - 아래
+      // paths 추출은 이 목록의 순서(신분증, 재직증명, [음성], 프로필사진들)를
+      // 그대로 따라가는 커서 방식이라 인덱스가 밀려도 안전하다.
+      ...(payload.voiceIntro
+        ? [{ key: 'voiceIntro' as const, file: payload.voiceIntro, path: `${basePath}/voice-${sanitizeFileName(payload.voiceIntro.fileName)}` }]
+        : []),
       ...payload.profilePhotos.map((file, index) => ({
         key: 'profilePhoto' as const,
         file,
@@ -201,8 +202,12 @@ Deno.serve(async (request) => {
     const paths = uploadResults.map((result) => (result as PromiseFulfilledResult<string>).value);
     idPhotoPath = paths[0];
     employmentProofPath = paths[1];
-    voiceIntroPath = paths[2];
-    profilePhotoPaths = paths.slice(3);
+    let cursor = 2;
+    if (payload.voiceIntro) {
+      voiceIntroPath = paths[cursor];
+      cursor += 1;
+    }
+    profilePhotoPaths = paths.slice(cursor);
     uploadedPaths = succeededPaths;
   }
 
@@ -311,7 +316,7 @@ function validateSubmissionFields(payload: SubmitPayload, eventDate: string) {
   if (!isValidRepresentativeCrop(payload.representativeCrop)) return '대표사진 위치 정보를 확인해주세요.';
 
   const age = getAgeOnDate(payload.birthDate, eventDate);
-  if (age === null || age < 23 || age > 35) return '행사일 기준 만 23~35세만 신청할 수 있습니다.';
+  if (age === null || age < 24 || age > 33) return '행사일 기준 만 24~33세만 신청할 수 있습니다.';
 
   return '';
 }
@@ -332,6 +337,9 @@ function validateSubmissionFiles(payload: SubmitPayload) {
     if (error) return error;
   }
 
+  // 음성 소개는 선택 항목 - 첨부하지 않았으면 검사 자체를 건너뛴다. 첨부한
+  // 경우에는 여전히 형식/서명 검증을 통과해야 한다.
+  if (!payload.voiceIntro) return '';
   return validateFile(payload.voiceIntro, audioTypes, maxAudioBytes, '자기소개 음성');
 }
 

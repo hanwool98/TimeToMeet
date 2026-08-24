@@ -28,8 +28,8 @@ interface SubmitApplicationInput {
     offsetY: number;
   };
   saveAsDefaultProfile?: boolean;
-  voiceIntro: Blob;
-  voiceIntroFileName: string;
+  voiceIntro?: Blob;
+  voiceIntroFileName?: string;
   height: string;
   job: string;
   employmentProof: File;
@@ -403,8 +403,10 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
       saveAsDefaultProfile: Boolean(input.saveAsDefaultProfile),
       sessionToken: session.token,
       userId: user.id,
-      voiceIntro: await blobToPayload(input.voiceIntro, input.voiceIntroFileName),
     };
+    if (input.voiceIntro) {
+      payload.voiceIntro = await blobToPayload(input.voiceIntro, input.voiceIntroFileName ?? 'voice-intro.audio');
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '첨부파일을 처리하지 못했습니다.';
     throw new ApplicationSubmitError(message, 'file_encoding');
