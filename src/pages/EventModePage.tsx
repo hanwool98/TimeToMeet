@@ -1,29 +1,35 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
-import HashtagPicker from '../components/HashtagPicker';
 import HeartRatingInput from '../components/HeartRatingInput';
 import ParticipantPhoto from '../components/ParticipantPhoto';
 import PrimaryButton from '../components/PrimaryButton';
+import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
+import { profileKeywordLabel } from '../constants/profileKeywords';
 import {
   createParticipantPauseRequest,
   createParticipantReport,
   fetchFinalSelectionCandidatePhotos,
   fetchFinalSelectionCandidates,
   fetchMyBonusRating,
+  fetchMyEventProfileCard,
   fetchMyEventTickets,
   fetchMyRoundRating,
   fetchParticipantPartnerPhoto,
   fetchParticipantRoundProgress,
+  saveEventProfileCard,
   submitFinalSelection,
   submitMyBonusRating,
   submitRoundRating,
   type FinalSelectionCandidate,
   type FinalSelectionData,
+  type MyEventProfileCard,
   type MyEventTicket,
   type ParticipantPhotoInfo,
   type ParticipantRoundProgress,
+  type PartnerEventProfileCard,
 } from '../services/supabaseApplications';
+import type { RepresentativeCrop } from '../utils/representativeCrop';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard } from '../utils/requestGuard';
 import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
@@ -167,12 +173,14 @@ function ParticipantEventScreen({
   }
 
   // No event_progress row yet (행사 시작 전), or the operator has started
-  // the event but is still on 자리유도/소개영상/라운드 대기 - the participant
-  // has nothing device-specific to do in any of these until the first round
-  // actually goes active, so they all share the same wait screen rather than
-  // flashing through separate "지금은 이 단계입니다" screens.
+  // the event but is still on 자리유도/소개영상/라운드 대기 - this entire
+  // span now renders ONE component (EventProfileCardScreen) instead of a
+  // plain wait screen, so the participant can write today's profile card
+  // while waiting. Because it's the same mounted component across all three
+  // stages (no remount when intro_video → round_waiting), whatever they've
+  // typed survives the phase change without needing a separate autosave.
   if (!progress.stage || progress.stage === 'seat_guide' || progress.stage === 'intro_video' || progress.stage === 'round_waiting') {
-    return <WaitingScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
+    return <EventProfileCardScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
   }
 
   // bonus_matching은 더 이상 살아있는 stage가 아니다(대화 종료 시 매칭을
@@ -318,63 +326,299 @@ function ToastBanner({ toast }: { toast: string }) {
   );
 }
 
-function WaitingScreen({ eventId, eventTitle, onBack }: { eventId: string; eventTitle: string; onBack: () => void }) {
-  const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, undefined);
+// 체크인 이후 라운드가 시작되기 전까지(자리유도/소개영상/라운드 대기 전
+// 구간 전체) 대기 화면 대신 이 컴포넌트 하나가 계속 렌더된다 - stage가
+// 바뀌어도 리마운트되지 않으므로 여기서 쓴 값은 phase 전환으로 초기화되지
+// 않는다. 제출은 서버(save_event_profile_card_for_session)에 남고,
+// 새로고침/재접속 후에도 fetchMyEventProfileCard로 그대로 복원된다.
+function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: string; eventTitle: string; onBack: () => void }) {
+  const { errorMessage: helpErrorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, undefined);
+  const [loading, setLoading] = useState(true);
+  const [nickname, setNickname] = useState('');
+  const [age, setAge] = useState<number | null>(null);
+  const [job, setJob] = useState('');
+  const [defaultPhotoPath, setDefaultPhotoPath] = useState<string | null>(null);
+  const [defaultPhotoCrop, setDefaultPhotoCrop] = useState<RepresentativeCrop | undefined>(undefined);
+  const [ownPhotos, setOwnPhotos] = useState<Array<{ path: string; signedUrl: string | null }>>([]);
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [photoCrop, setPhotoCrop] = useState<RepresentativeCrop | undefined>(undefined);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [hobby, setHobby] = useState('');
+  const [mbti, setMbti] = useState('');
+  const [idealType, setIdealType] = useState('');
+  const [contactStyle, setContactStyle] = useState('');
+  const [dateStyle, setDateStyle] = useState('');
+  const [smoking, setSmoking] = useState('');
+  const [drinking, setDrinking] = useState('');
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [submittedAt, setSubmittedAt] = useState<string | undefined>(undefined);
+  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    void fetchMyEventProfileCard(eventId)
+      .then((result) => {
+        if (!active || !result) return;
+        setNickname(result.nickname);
+        setAge(result.age);
+        setJob(result.job);
+        setDefaultPhotoPath(result.defaultPhotoPath);
+        setDefaultPhotoCrop(result.defaultPhotoCrop);
+        setOwnPhotos(result.ownPhotos);
+        setPhotoPath(result.photoPath);
+        setPhotoCrop(result.photoCrop);
+        setPhotoUrl(result.photoUrl);
+        setHobby(result.hobby);
+        setMbti(result.mbti);
+        setIdealType(result.idealType);
+        setContactStyle(result.contactStyle);
+        setDateStyle(result.dateStyle);
+        setSmoking(result.smoking);
+        setDrinking(result.drinking);
+        setKeywords(result.keywords);
+        setSubmittedAt(result.submittedAt);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  // 기존에 쓰던 대표사진을 그대로 고르면 원래 crop을 재사용하고, 다른
+  // 사진으로 바꾸면 중앙/확대없음 기본값에서 다시 시작한다(전체 크롭
+  // 편집기를 이 화면에 새로 만들지 않기 위한 의도적인 단순화).
+  const selectPhoto = (path: string | null) => {
+    setPhotoPath(path);
+    const effectivePath = path ?? defaultPhotoPath;
+    setPhotoCrop(path === null ? defaultPhotoCrop : path === defaultPhotoPath ? defaultPhotoCrop : { offsetX: 0, offsetY: 0, scale: 1 });
+    setPhotoUrl(ownPhotos.find((photo) => photo.path === effectivePath)?.signedUrl ?? null);
+    setPhotoPickerOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const result = await saveEventProfileCard(
+        eventId,
+        { contactStyle, dateStyle, drinking, hobby, idealType, keywords, mbti, photoCrop, photoPath, smoking },
+        true,
+      );
+      setSubmittedAt(result.submittedAt);
+    } catch (caughtError) {
+      setSaveError(caughtError instanceof Error ? caughtError.message : '프로필 카드 저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <p className="text-[16px] font-black text-[#999]">불러오는 중</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
-      <ScreenHeader onBack={onBack} />
+      <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
-          <img alt="time2meet" className="mx-auto h-[110px] w-[110px] rounded-full object-cover" src="/assets/time2meet-app-logo.png" />
-          <h1 className="mt-5 text-[24px] font-black leading-tight">잠시만 기다려주세요</h1>
-          <p className="mt-1.5 text-[15px] font-bold text-[#888]">행사가 곧 시작됩니다</p>
+          <div className="relative mx-auto w-fit">
+            <ParticipantPhoto
+              className="rounded-full bg-[#f5f7fa]"
+              crop={photoCrop}
+              fallback={<PersonPlaceholderGlyph />}
+              photoUrl={photoUrl}
+              sizePx={120}
+            />
+            <button
+              aria-label="대표사진 변경"
+              className="absolute bottom-0 right-0 grid h-9 w-9 place-items-center rounded-full bg-meet-blue text-white shadow-md"
+              onClick={() => setPhotoPickerOpen(true)}
+              type="button"
+            >
+              <CameraGlyph />
+            </button>
+          </div>
+          <p className="text-fluid-safe mt-4 break-keep text-[26px] font-black leading-tight">{nickname}</p>
+          <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job].filter(Boolean).join(' · ')}</p>
 
-          <p className="mx-auto mt-4 flex w-fit items-center gap-2 rounded-full bg-meet-blueSoft px-4 py-2 text-[13px] font-black text-meet-blue">
+          <div className="mt-6 grid grid-cols-2 gap-3 text-left">
+            <CardField label="취미" onChange={setHobby} placeholder="예) 영화 감상, 요가" value={hobby} />
+            <CardField label="MBTI" onChange={setMbti} placeholder="예) ENFP" value={mbti} />
+            <CardField label="이상형" onChange={setIdealType} placeholder="예) 따뜻하고 유머있는 사람" value={idealType} />
+            <CardField label="연락스타일" onChange={setContactStyle} placeholder="예) 바쁘면 가끔, 연락은 자주" value={contactStyle} />
+            <CardField label="원하는 데이트 스타일" onChange={setDateStyle} placeholder="예) 맛집 탐방, 영화 데이트" value={dateStyle} />
+            <div className="rounded-[16px] bg-meet-blueSoft/60 p-3">
+              <p className="text-[12px] font-black text-[#666]">흡연 및 주량</p>
+              <input
+                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+                onChange={(event) => setSmoking(event.target.value)}
+                placeholder="예) 비흡연"
+                value={smoking}
+              />
+              <input
+                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+                onChange={(event) => setDrinking(event.target.value)}
+                placeholder="예) 주량 2잔"
+                value={drinking}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 text-left">
+            <h2 className="text-[15px] font-black">나를 표현하는 키워드를 선택해주세요</h2>
+            <div className="mt-3">
+              <ProfileKeywordPicker onChange={setKeywords} selected={keywords} />
+            </div>
+          </div>
+
+          {submittedAt ? (
+            <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
+              제출 완료 · 라운드 시작 전까지 언제든 다시 수정할 수 있어요
+            </p>
+          ) : null}
+          {saveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
+
+          <button
+            className="mt-5 h-14 w-full rounded-[18px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
+            disabled={saving}
+            onClick={() => void handleSubmit()}
+            type="button"
+          >
+            {saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
+          </button>
+        </section>
+
+        <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-4 shadow-calendar">
+          <p className="mb-2 flex items-center gap-2 text-[12px] font-bold text-[#999]">
             <CalendarGlyph />
             {eventTitle}
           </p>
-
-          <div className="mt-5 flex items-center gap-3 border-t border-[#f0f0f0] pt-5 text-left">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-meet-blueSoft text-meet-blue">
-              <ChairGlyph />
-            </span>
-            <p className="text-[14px] font-extrabold leading-snug text-[#333]">
-              안내에 따라 착석 후
-              <br />
-              테이블 화면을 확인해주세요
-            </p>
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
-          <h2 className="text-[16px] font-black">도움이 필요할 때</h2>
-
-          <div className="mt-4 space-y-1.5">
-            <button
-              className="flex h-14 w-full items-center justify-center gap-2 rounded-[16px] border border-meet-blue text-[16px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
-              disabled={sendingType === 'call_staff'}
-              onClick={() => void sendRequest('call_staff')}
-              type="button"
-            >
-              <HeadsetGlyph />
-              운영자 호출
-            </button>
-            <p className="text-center text-[12px] font-bold text-[#999]">운영자가 직접 테이블로 와서 도와드립니다</p>
-          </div>
-
-          {errorMessage ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{errorMessage}</p> : null}
-
-          <div className="mt-4 flex items-center gap-2 rounded-[16px] bg-[#f5f7fa] px-4 py-3 text-[12px] font-bold text-[#888]">
-            <InfoGlyph />
-            행사 시작 전까지 이 화면에서 대기해주세요
-          </div>
+          <button
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-meet-blue text-[14px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
+            disabled={sendingType === 'call_staff'}
+            onClick={() => void sendRequest('call_staff')}
+            type="button"
+          >
+            <HeadsetGlyph />
+            운영자 호출
+          </button>
+          {helpErrorMessage ? <p className="mt-2 text-center text-[12px] font-bold text-[#ef554a]">{helpErrorMessage}</p> : null}
         </section>
       </div>
 
+      {photoPickerOpen ? (
+        <PhotoPickerSheet
+          defaultPhotoPath={defaultPhotoPath}
+          onClose={() => setPhotoPickerOpen(false)}
+          onSelect={selectPhoto}
+          ownPhotos={ownPhotos}
+          selectedPath={photoPath ?? defaultPhotoPath}
+        />
+      ) : null}
+
       <ToastBanner toast={toast} />
     </div>
+  );
+}
+
+function CardField({
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[16px] bg-meet-blueSoft/60 p-3">
+      <p className="text-[12px] font-black text-[#666]">{label}</p>
+      <input
+        className="mt-1.5 h-9 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        value={value}
+      />
+    </div>
+  );
+}
+
+function PhotoPickerSheet({
+  defaultPhotoPath,
+  onClose,
+  onSelect,
+  ownPhotos,
+  selectedPath,
+}: {
+  defaultPhotoPath: string | null;
+  onClose: () => void;
+  onSelect: (path: string | null) => void;
+  ownPhotos: Array<{ path: string; signedUrl: string | null }>;
+  selectedPath: string | null;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[70vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">대표사진 변경</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] font-bold text-[#999]">이번 행사에서 상대에게 보여줄 사진을 골라주세요</p>
+        <div className="mt-4 grid grid-cols-3 gap-2 pb-4">
+          {ownPhotos.map((photo) => (
+            <button
+              className={[
+                'relative aspect-square overflow-hidden rounded-[14px] border-2',
+                selectedPath === photo.path ? 'border-meet-blue' : 'border-transparent',
+              ].join(' ')}
+              key={photo.path}
+              onClick={() => onSelect(photo.path)}
+              type="button"
+            >
+              {photo.signedUrl ? <img alt="" className="h-full w-full object-cover" src={photo.signedUrl} /> : <div className="h-full w-full bg-[#f5f7fa]" />}
+              {photo.path === defaultPhotoPath ? (
+                <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-black text-white">기본</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CameraGlyph() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="13" r="3.4" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
   );
 }
 
@@ -389,7 +633,9 @@ function ConversationScreen({
 }) {
   const { errorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
+  // 상대가 바뀔 때마다(라운드 변경) null로 리셋한 뒤 새로 불러오므로, 이전
+  // 상대의 카드/키워드 하이라이트가 남아있는 일이 없다.
+  const [card, setCard] = useState<PartnerEventProfileCard | null>(null);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
@@ -398,10 +644,10 @@ function ConversationScreen({
 
   useEffect(() => {
     let active = true;
-    setPhoto(null);
+    setCard(null);
     void fetchParticipantPartnerPhoto(eventId)
       .then((result) => {
-        if (active) setPhoto(result);
+        if (active) setCard(result);
       })
       .catch(() => undefined);
     return () => {
@@ -432,9 +678,9 @@ function ConversationScreen({
           <p className="text-[15px] font-black text-meet-blue">현재 대화 중</p>
           <ParticipantPhoto
             className="mx-auto mt-4 rounded-full bg-[#f5f7fa]"
-            crop={photo?.representativeCrop}
+            crop={card?.representativeCrop}
             fallback={<PersonPlaceholderGlyph />}
-            photoUrl={photo?.photoUrl}
+            photoUrl={card?.photoUrl}
             sizePx={136}
           />
           <p className="text-fluid-safe mt-4 break-keep text-[clamp(30px,8vw,40px)] font-black leading-none">
@@ -451,6 +697,8 @@ function ConversationScreen({
               남은 시간 {formatCountdown(remaining)}
             </p>
           ) : null}
+
+          {card ? <PartnerProfileCardDetails card={card} /> : null}
         </section>
 
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
@@ -494,6 +742,61 @@ function ConversationScreen({
       </div>
 
       <ToastBanner toast={toast} />
+    </div>
+  );
+}
+
+const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: string }> = [
+  { key: 'hobby', label: '취미' },
+  { key: 'mbti', label: 'MBTI' },
+  { key: 'idealType', label: '이상형' },
+  { key: 'contactStyle', label: '연락스타일' },
+  { key: 'dateStyle', label: '원하는 데이트 스타일' },
+  { key: 'smoking', label: '흡연' },
+  { key: 'drinking', label: '주량' },
+];
+
+// 상대가 프로필 카드를 작성했으면 읽기 전용으로 보여준다 - 아직 작성 전인
+// 필드는 빈 값이라 자연히 표시되지 않고, 전체 카드를 아예 안 만들었어도
+// (fetchParticipantPartnerPhoto가 항상 빈 문자열/빈 배열을 내려주므로)
+// undefined 값이나 오류 없이 조용히 빈 섹션이 된다.
+function PartnerProfileCardDetails({ card }: { card: PartnerEventProfileCard }) {
+  const filledFields = partnerCardFields.filter((field) => card[field.key]);
+  const myKeywordSet = new Set(card.myKeywords);
+
+  if (filledFields.length === 0 && card.keywords.length === 0) return null;
+
+  return (
+    <div className="mt-6 border-t border-[#f0f0f0] pt-5 text-left">
+      {filledFields.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          {filledFields.map((field) => (
+            <div className="rounded-[14px] bg-[#f5f7fa] p-3" key={field.key}>
+              <p className="text-[11px] font-black text-[#999]">{field.label}</p>
+              <p className="mt-1 text-[13px] font-bold text-[#333]">{card[field.key] as string}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {card.keywords.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {card.keywords.map((keyword) => {
+            const isCommon = myKeywordSet.has(keyword);
+            return (
+              <span
+                className={[
+                  'rounded-full border px-2.5 py-1 text-[12px] font-bold',
+                  isCommon ? 'border-meet-pink bg-meet-pinkSoft text-meet-pink' : 'border-[#eee] bg-white text-[#777]',
+                ].join(' ')}
+                key={keyword}
+              >
+                {profileKeywordLabel(keyword)}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -642,7 +945,6 @@ function BonusSeatGuideScreen({
   const [nextPhoto, setNextPhoto] = useState<ParticipantPhotoInfo | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [memo, setMemo] = useState('');
-  const [hashtags, setHashtags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [autoSubmitted, setAutoSubmitted] = useState(false);
@@ -663,7 +965,6 @@ function BonusSeatGuideScreen({
     setPhoto(null);
     setScore(null);
     setMemo('');
-    setHashtags([]);
     setAutoSubmitted(false);
     setReportModalOpen(false);
     void fetchParticipantPartnerPhoto(eventId)
@@ -676,7 +977,6 @@ function BonusSeatGuideScreen({
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
         if (existing.memo) setMemo(existing.memo);
-        if (existing.hashtags) setHashtags(existing.hashtags);
       })
       .catch(() => undefined);
     return () => {
@@ -717,7 +1017,7 @@ function BonusSeatGuideScreen({
     setSubmitting(true);
     setSubmitError('');
     try {
-      await submitMyBonusRating(eventId, score, memo, hashtags);
+      await submitMyBonusRating(eventId, score, memo);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
     } finally {
@@ -731,8 +1031,8 @@ function BonusSeatGuideScreen({
   useEffect(() => {
     if (remaining > 0 || autoSubmitted || score === null || submitting) return;
     setAutoSubmitted(true);
-    void submitMyBonusRating(eventId, score, memo, hashtags).catch(() => undefined);
-  }, [autoSubmitted, eventId, hashtags, memo, remaining, score, submitting]);
+    void submitMyBonusRating(eventId, score, memo).catch(() => undefined);
+  }, [autoSubmitted, eventId, memo, remaining, score, submitting]);
 
   const isFemale = progress.gender === '여성';
   const nextNickname = progress.nextPartnerNickname;
@@ -744,9 +1044,7 @@ function BonusSeatGuideScreen({
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
         <RatingForm
-          hashtags={hashtags}
           memo={memo}
-          onHashtagsChange={setHashtags}
           onMemoChange={setMemo}
           onScoreChange={setScore}
           onSubmit={() => void handleSubmit()}
@@ -909,13 +1207,13 @@ function ratingCopy(score: number): { subtitle: string; title: string } {
 }
 
 // Shared by RatingScreen(정규) and BonusSeatGuideScreen(추가시간 통합
-// phase) - photo/score/memo/hashtags/report all render and behave
-// identically in both, only the surrounding chrome (timer, "다음 상대"
-// banner, submit-then-lock vs always-editable) differs per caller.
+// phase) - photo/score/memo/report all render and behave identically in
+// both, only the surrounding chrome (timer, "다음 상대" banner, submit-
+// then-lock vs always-editable) differs per caller. 상대 평가용 hashtag
+// UI("어떤 점이 좋았나요?")는 완전히 제거됐다 - 상대를 표현하는 키워드는
+// 이제 EventProfileCardScreen에서 본인이 직접 작성하는 개념으로 대체.
 function RatingForm({
-  hashtags,
   memo,
-  onHashtagsChange,
   onMemoChange,
   onScoreChange,
   onSubmit,
@@ -927,9 +1225,7 @@ function RatingForm({
   submitting,
   title,
 }: {
-  hashtags: string[];
   memo: string;
-  onHashtagsChange: (next: string[]) => void;
   onMemoChange: (value: string) => void;
   onScoreChange: (value: number) => void;
   onSubmit: () => void;
@@ -971,13 +1267,6 @@ function RatingForm({
           <p className="mt-1 text-[12px] font-bold text-[#c77b93]">{copy.subtitle}</p>
         </div>
       ) : null}
-
-      <div className="mt-5">
-        <label className="text-[13px] font-black text-[#555]">어떤 점이 좋았나요? (선택)</label>
-        <div className="mt-1.5">
-          <HashtagPicker onChange={onHashtagsChange} selected={hashtags} />
-        </div>
-      </div>
 
       <div className="mt-5">
         <label className="text-[13px] font-black text-[#555]" htmlFor="rating-memo">
@@ -1129,7 +1418,6 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
   const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [memo, setMemo] = useState('');
-  const [hashtags, setHashtags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -1150,7 +1438,6 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
     let active = true;
     setScore(null);
     setMemo('');
-    setHashtags([]);
     setPhoto(null);
     setSubmitted(null);
     setReportModalOpen(false);
@@ -1164,7 +1451,6 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
         if (existing.memo) setMemo(existing.memo);
-        if (existing.hashtags) setHashtags(existing.hashtags);
         setSubmitted(existing.score !== undefined);
       })
       .catch(() => {
@@ -1194,7 +1480,7 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
     setSubmitting(true);
     setSubmitError('');
     try {
-      await submitRoundRating(eventId, roundNumber, score, memo, hashtags);
+      await submitRoundRating(eventId, roundNumber, score, memo);
       setSubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
@@ -1237,9 +1523,7 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
         <RatingForm
-          hashtags={hashtags}
           memo={memo}
-          onHashtagsChange={setHashtags}
           onMemoChange={setMemo}
           onScoreChange={setScore}
           onSubmit={() => void handleSubmit()}
@@ -1614,21 +1898,6 @@ function FinalSelectionCandidateCard({
               <SmallHeartGlyph />
               내 호감도 {candidate.score.toFixed(1)}
             </p>
-          ) : null}
-
-          {candidate.hashtags && candidate.hashtags.length > 0 ? (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {candidate.hashtags.slice(0, 4).map((tag) => (
-                <span className="rounded-full bg-meet-pinkSoft px-2 py-0.5 text-[11px] font-bold text-meet-pink" key={tag}>
-                  {tag}
-                </span>
-              ))}
-              {candidate.hashtags.length > 4 ? (
-                <span className="rounded-full bg-[#f5f7fa] px-2 py-0.5 text-[11px] font-bold text-[#999]">
-                  +{candidate.hashtags.length - 4}
-                </span>
-              ) : null}
-            </div>
           ) : null}
 
           {candidate.memo ? <p className="mt-1.5 line-clamp-2 text-[12px] font-bold leading-snug text-[#888]">{candidate.memo}</p> : null}

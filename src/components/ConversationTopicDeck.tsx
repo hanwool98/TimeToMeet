@@ -2,12 +2,60 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchConversationTopicsForTablet, type TabletConversationTopic } from '../services/supabaseApplications';
 
 const topicsRefreshIntervalMs = 90_000;
-const swipeLeftThresholdPx = 40;
-const tapMovePx = 10;
+const flipTransitionMs = 520;
+const rotateDelayMs = 60;
+const rotateDurationMs = 460;
+
+function shuffle<T>(items: T[]): T[] {
+  const arr = items.slice();
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+  }
+  return arr;
+}
+
+// offsetTop/offsetLeft/offsetParent are pure layout-box values that ignore
+// any `transform` on an element or its ancestors - summing them for two
+// elements that share an ancestor gives the correct on-screen delta between
+// those elements no matter how that ancestor is being visually rotated
+// (the tablet's landscape-rotate-via-CSS fallback for physically-portrait
+// devices included), unlike getBoundingClientRect() which reports the
+// already-rotated box.
+function cumulativeOffset(el: HTMLElement | null) {
+  let top = 0;
+  let left = 0;
+  let node: HTMLElement | null = el;
+  let guard = 0;
+  while (node && guard < 50) {
+    top += node.offsetTop;
+    left += node.offsetLeft;
+    node = node.offsetParent as HTMLElement | null;
+    guard += 1;
+  }
+  return { left, top };
+}
+
+const supports3D = typeof document !== 'undefined' && 'webkitPerspective' in document.body.style;
+
+interface FlipState {
+  finalHeight: number;
+  finalLeft: number;
+  finalTop: number;
+  finalWidth: number;
+  initialDx: number;
+  initialDy: number;
+  initialScaleX: number;
+  initialScaleY: number;
+  phase: 'closing' | 'opening' | 'open';
+  topic: TabletConversationTopic;
+}
 
 // Topics are fetched once (and refreshed on a slow interval so admin edits
 // eventually show up) rather than round-tripping to the server on every
-// card draw - the random pick and "don't repeat the last one" logic all
+// card draw - the shuffle-bag draw order and the fly-to-center reveal all
 // happen locally, per-tablet, so different tables can be on different
 // questions without any cross-table sync.
 export default function ConversationTopicDeck({
@@ -20,10 +68,12 @@ export default function ConversationTopicDeck({
   tableNumber: number;
 }) {
   const [topics, setTopics] = useState<TabletConversationTopic[]>([]);
-  const [currentTopic, setCurrentTopic] = useState<TabletConversationTopic | null>(null);
-  const [revealKey, setRevealKey] = useState(0);
+  const [flip, setFlip] = useState<FlipState | null>(null);
+  const deckRef = useRef<TabletConversationTopic[]>([]);
   const lastTopicIdRef = useRef<string | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const stackCardRef = useRef<HTMLDivElement | null>(null);
+  const overlayAnchorRef = useRef<HTMLDivElement | null>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -43,85 +93,233 @@ export default function ConversationTopicDeck({
     };
   }, [connectionToken, eventId, tableNumber]);
 
-  const drawTopic = () => {
-    if (topics.length === 0) return;
-    const pool = topics.length > 1 ? topics.filter((topic) => topic.id !== lastTopicIdRef.current) : topics;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+  // Admin may have edited the topic pool - the in-flight shuffle bag could
+  // reference topics that no longer exist (or miss brand-new ones), so
+  // start a fresh bag rather than trying to patch it in place.
+  useEffect(() => {
+    deckRef.current = [];
+  }, [topics]);
+
+  useEffect(
+    () => () => {
+      if (closeTimeoutRef.current) window.clearTimeout(closeTimeoutRef.current);
+    },
+    [],
+  );
+
+  // Full-cycle shuffle bag: every topic is drawn exactly once before any
+  // repeat, refilled (and reshuffled) once the bag empties.
+  const drawNextTopic = (): TabletConversationTopic | null => {
+    if (topics.length === 0) return null;
+    if (deckRef.current.length === 0) {
+      const bag = shuffle(topics);
+      if (bag.length > 1 && bag[0].id === lastTopicIdRef.current) {
+        const temp = bag[0];
+        bag[0] = bag[1];
+        bag[1] = temp;
+      }
+      deckRef.current = bag;
+    }
+    const pick = deckRef.current.shift();
+    if (!pick) return null;
     lastTopicIdRef.current = pick.id;
-    setCurrentTopic(pick);
-    setRevealKey((key) => key + 1);
+    return pick;
   };
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    dragStartRef.current = { x: event.clientX, y: event.clientY };
-    event.currentTarget.setPointerCapture(event.pointerId);
+  const openDeck = () => {
+    if (flip) return;
+    const topic = drawNextTopic();
+    const source = stackCardRef.current;
+    const anchor = overlayAnchorRef.current;
+    if (!topic || !source || !anchor) return;
+
+    const anchorWidth = anchor.offsetWidth;
+    const anchorHeight = anchor.offsetHeight;
+    const finalHeight = Math.max(300, Math.min(560, anchorHeight * 0.62));
+    const finalWidth = finalHeight * (320 / 440);
+    const finalLeft = (anchorWidth - finalWidth) / 2;
+    const finalTop = (anchorHeight - finalHeight) / 2;
+
+    const sourceOffset = cumulativeOffset(source);
+    const anchorOffset = cumulativeOffset(anchor);
+    const fromLeft = sourceOffset.left - anchorOffset.left;
+    const fromTop = sourceOffset.top - anchorOffset.top;
+
+    setFlip({
+      finalHeight,
+      finalLeft,
+      finalTop,
+      finalWidth,
+      initialDx: fromLeft - finalLeft,
+      initialDy: fromTop - finalTop,
+      initialScaleX: source.offsetWidth / finalWidth,
+      initialScaleY: source.offsetHeight / finalHeight,
+      phase: 'opening',
+      topic,
+    });
+
+    // Two rAFs: the first commits the "still at the stack" starting
+    // transform, the second (next paint) flips to the centered end state
+    // so the browser actually animates the transition instead of jumping.
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setFlip((current) => (current ? { ...current, phase: 'open' } : current));
+      });
+    });
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    const start = dragStartRef.current;
-    dragStartRef.current = null;
-    if (!start) return;
-    const deltaX = event.clientX - start.x;
-    const deltaY = event.clientY - start.y;
-    const isTap = Math.abs(deltaX) < tapMovePx && Math.abs(deltaY) < tapMovePx;
-    const isSwipeLeft = deltaX <= -swipeLeftThresholdPx && Math.abs(deltaX) > Math.abs(deltaY);
-    if (isTap || isSwipeLeft) drawTopic();
+  const closeDeck = () => {
+    setFlip((current) => (current ? { ...current, phase: 'closing' } : current));
+    closeTimeoutRef.current = window.setTimeout(() => setFlip(null), flipTransitionMs);
   };
+
+  const isFlying = Boolean(flip);
 
   return (
-    <div className="flex w-full flex-col items-center" style={{ touchAction: 'none' }}>
-      {!currentTopic ? (
-        <div className="mb-1 flex flex-col items-center">
-          <p
-            className="text-center leading-snug"
-            style={{ color: '#c1897c', fontSize: 'clamp(12px,1.35vh,15px)', fontWeight: 600 }}
-          >
-            대화가 막혔다면
-            <br />
-            새로운 대화주제를 뽑아보세요!
-          </p>
-          <ArrowGlyph />
-        </div>
-      ) : null}
+    <div className="flex w-full flex-col items-center">
+      <div className="mb-1 flex flex-col items-center">
+        <p className="text-center leading-snug" style={{ color: '#c07f87', fontSize: 'clamp(12px,1.35vh,15px)', fontWeight: 600 }}>
+          대화가 막혔다면
+          <br />
+          새로운 대화주제를 뽑아보세요!
+        </p>
+        <ArrowGlyph />
+      </div>
 
-      <div
-        className="relative grid w-full place-items-center"
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        style={{ height: 'clamp(230px, 30vh, 340px)' }}
-      >
-        <div className="relative" style={{ height: 'clamp(180px, 23vh, 260px)', width: 'clamp(128px, 16vh, 185px)' }}>
+      <div className="relative grid w-full place-items-center" style={{ height: 'clamp(230px, 30vh, 340px)' }}>
+        <div
+          className="relative"
+          onClick={openDeck}
+          role="button"
+          style={{ height: 'clamp(180px, 23vh, 260px)', width: 'clamp(128px, 16vh, 185px)' }}
+        >
           <DeckCard rotate={7} translate="42% 6%" tone="back" />
           <DeckCard rotate={-5} translate="-38% -4%" tone="middle" />
-          <div className="absolute inset-0" key={revealKey} style={{ animation: 'topic-card-in 280ms cubic-bezier(0.22,1,0.36,1)' }}>
+          <div ref={stackCardRef} style={{ visibility: isFlying ? 'hidden' : 'visible' }}>
             <DeckCard rotate={0} tone="front">
-              {currentTopic ? (
-                <div className="flex h-full w-full flex-col items-center justify-center px-[10%] text-center">
-                  <p
-                    className="text-fluid-safe break-keep leading-snug"
-                    style={{ color: '#8a5145', fontSize: 'clamp(13px,1.7vh,17px)', fontWeight: 600 }}
-                  >
-                    {currentTopic.content}
-                  </p>
-                  <span className="mt-3 h-[3px] w-6 rounded-full" style={{ background: '#f5709a' }} />
-                  <p className="mt-2" style={{ color: '#cba79d', fontSize: 'clamp(9px,1vh,11px)', fontWeight: 600 }}>
-                    눌러서 다음 주제 보기
-                  </p>
-                </div>
-              ) : (
-                <CardsGlyph />
-              )}
+              <CardsGlyph />
             </DeckCard>
           </div>
         </div>
       </div>
 
-      <style>{`
-        @keyframes topic-card-in {
-          from { opacity: 0; transform: translateX(10px) scale(0.95); }
-          to { opacity: 1; transform: translateX(0) scale(1); }
-        }
-      `}</style>
+      {/* position:absolute here escapes this narrow column entirely and
+          resolves against the nearest positioned ancestor (the tablet's
+          fixed-inset-0 <main>), so the flying card centers on the whole
+          screen rather than this 32%-wide slice of it. */}
+      <div className="absolute inset-0" ref={overlayAnchorRef} style={{ pointerEvents: isFlying ? 'auto' : 'none', zIndex: 40 }}>
+        <div
+          onClick={closeDeck}
+          style={{
+            background: 'rgba(253,244,246,0.62)',
+            inset: 0,
+            opacity: flip && flip.phase !== 'opening' ? 1 : 0,
+            position: 'absolute',
+            transition: `opacity ${flipTransitionMs}ms ease`,
+          }}
+        />
+        {flip ? (
+          <div
+            onClick={closeDeck}
+            style={{
+              height: flip.finalHeight,
+              left: flip.finalLeft,
+              perspective: 1600,
+              position: 'absolute',
+              top: flip.finalTop,
+              transform:
+                flip.phase === 'open'
+                  ? 'translate(0px, 0px) scale(1, 1)'
+                  : `translate(${flip.initialDx}px, ${flip.initialDy}px) scale(${flip.initialScaleX}, ${flip.initialScaleY})`,
+              transformOrigin: 'top left',
+              transition: `transform ${flipTransitionMs}ms cubic-bezier(0.22,1,0.36,1)`,
+              width: flip.finalWidth,
+              WebkitPerspective: 1600,
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                position: 'relative',
+                transform: supports3D ? (flip.phase === 'open' ? 'rotateY(180deg)' : 'rotateY(0deg)') : undefined,
+                transformStyle: supports3D ? 'preserve-3d' : undefined,
+                transition: supports3D
+                  ? `transform ${rotateDurationMs}ms cubic-bezier(0.4,0.15,0.2,1) ${rotateDelayMs}ms`
+                  : undefined,
+                width: '100%',
+                WebkitTransformStyle: supports3D ? 'preserve-3d' : undefined,
+              }}
+            >
+              <div
+                style={{
+                  backfaceVisibility: 'hidden',
+                  height: '100%',
+                  opacity: supports3D ? 1 : flip.phase === 'open' ? 0 : 1,
+                  position: 'absolute',
+                  transition: supports3D ? undefined : 'opacity 260ms ease',
+                  width: '100%',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <UnrevealedFace />
+              </div>
+              <div
+                style={{
+                  backfaceVisibility: 'hidden',
+                  height: '100%',
+                  opacity: supports3D ? 1 : flip.phase === 'open' ? 1 : 0,
+                  position: 'absolute',
+                  transform: supports3D ? 'rotateY(180deg)' : undefined,
+                  transition: supports3D ? undefined : 'opacity 260ms ease',
+                  width: '100%',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <QuestionFace topic={flip.topic} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function UnrevealedFace() {
+  return (
+    <div
+      className="grid h-full w-full place-items-center rounded-[20px] border"
+      style={{
+        background: 'linear-gradient(160deg, #fffdfb 0%, #f7e0d8 100%)',
+        borderColor: 'rgba(255,255,255,0.9)',
+        boxShadow: '0 10px 26px rgba(196,122,104,0.22)',
+      }}
+    >
+      <CardsGlyph />
+    </div>
+  );
+}
+
+function QuestionFace({ topic }: { topic: TabletConversationTopic }) {
+  return (
+    <div
+      className="flex h-full w-full flex-col items-center justify-center rounded-[20px] border px-[9%] py-[8%] text-center"
+      style={{
+        background: 'linear-gradient(165deg, #fff9f5 0%, #fdf0f0 100%)',
+        borderColor: 'rgba(255,255,255,0.9)',
+        boxShadow: '0 14px 34px rgba(181,100,109,0.24)',
+      }}
+    >
+      <p style={{ color: '#d7a3aa', fontSize: 'clamp(10px,1.1vh,12px)', fontWeight: 700, letterSpacing: '0.22em' }}>대화 주제</p>
+      <p
+        className="mt-3 break-keep"
+        style={{ color: '#b5646d', fontSize: 'clamp(17px,2.6vh,25px)', fontWeight: 600, lineHeight: 1.65 }}
+      >
+        {topic.content}
+      </p>
+      <p className="mt-4" style={{ color: '#cba79d', fontSize: 'clamp(10px,1.15vh,13px)', fontWeight: 600 }}>
+        카드를 누르면 돌아갑니다
+      </p>
     </div>
   );
 }
@@ -140,7 +338,7 @@ function DeckCard({
   const [tx, ty] = translate.split(' ');
   const background =
     tone === 'front'
-      ? 'linear-gradient(160deg, #ffffff 0%, #fff3ee 100%)'
+      ? 'linear-gradient(160deg, #fffdfb 0%, #f7e0d8 100%)'
       : tone === 'middle'
         ? 'linear-gradient(160deg, #ffe7dd 0%, #ffd6c6 100%)'
         : 'linear-gradient(160deg, #ffdccf 0%, #ffc7b3 100%)';
@@ -151,7 +349,7 @@ function DeckCard({
 
   return (
     <div
-      className="absolute inset-0 grid place-items-center rounded-[20px] border"
+      className="absolute inset-0 grid place-items-center rounded-[9px] border"
       style={{
         background,
         borderColor: 'rgba(255,255,255,0.9)',
@@ -176,7 +374,7 @@ function CardsGlyph() {
 
 function ArrowGlyph() {
   return (
-    <svg aria-hidden="true" className="mt-1 h-8 w-10" fill="none" style={{ color: '#e0a99d' }} viewBox="0 0 40 32">
+    <svg aria-hidden="true" className="mt-1 h-8 w-10" fill="none" style={{ color: '#c07f87' }} viewBox="0 0 40 32">
       <path d="M4 4c2 10 8 18 18 22" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
       <path d="M15 24 22 26.5 20 19" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
     </svg>

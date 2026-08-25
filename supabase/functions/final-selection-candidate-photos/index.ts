@@ -84,13 +84,26 @@ Deno.serve(async (request) => {
 
   if (partnersError) return json({ ok: true, photos: [] });
 
+  // 후보 전원의 이번 행사 전용 프로필 카드 사진을 한 번에 조회해, 카드에
+  // 사진이 지정된 사람은 그 사진을, 없는 사람은 기존 기본 대표사진을
+  // 쓰도록 우선순위만 바꾼다(다른 필드는 최종선택 화면에서 쓰지 않음).
+  const { data: cards } = await supabase
+    .from('event_profile_cards')
+    .select('application_id, photo_path, photo_crop')
+    .eq('event_id', payload.eventId)
+    .in('application_id', partnerIds);
+  const cardByApplicationId = new Map((cards ?? []).map((card) => [card.application_id as string, card]));
+
   const photos = await Promise.all(
     (partners ?? []).map(async (partner) => {
       const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
       const representativeIndex = Number(partner.representative_photo_index ?? 0);
-      const photoPath = photoPaths[representativeIndex];
+      const fallbackPhotoPath = photoPaths[representativeIndex];
+      const card = cardByApplicationId.get(partner.id as string);
+      const photoPath = card?.photo_path ?? fallbackPhotoPath;
+      const representativeCrop = card?.photo_path ? card.photo_crop : partner.representative_crop;
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
-      return { applicationId: partner.id as string, photoUrl, representativeCrop: partner.representative_crop ?? null };
+      return { applicationId: partner.id as string, photoUrl, representativeCrop: representativeCrop ?? null };
     }),
   );
 

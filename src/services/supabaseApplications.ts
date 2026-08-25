@@ -1766,6 +1766,8 @@ export interface RoundProgress {
   matches: RoundTableMatch[];
   pendingPauseCount: number;
   pendingReportCount: number;
+  profileCardsSubmitted: number;
+  profileCardsTotal: number;
   roundPhase?: 'conversation' | 'transition';
   stage: EventProgressStage;
   timerPositionSeconds: number;
@@ -1792,6 +1794,8 @@ interface RoundProgressJson {
   }>;
   pendingPauseCount: number;
   pendingReportCount: number;
+  profileCardsSubmitted?: number;
+  profileCardsTotal?: number;
   roundPhase: 'conversation' | 'transition' | null;
   serverNow?: string | null;
   stage: EventProgressStage;
@@ -1836,6 +1840,8 @@ function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
     })),
     pendingPauseCount: row.pendingPauseCount,
     pendingReportCount: row.pendingReportCount ?? 0,
+    profileCardsSubmitted: row.profileCardsSubmitted ?? 0,
+    profileCardsTotal: row.profileCardsTotal ?? 0,
     roundPhase: row.roundPhase ?? undefined,
     stage: row.stage,
     timerPositionSeconds: row.timerPositionSeconds,
@@ -2287,7 +2293,6 @@ export async function fetchAdminMutualRatings(eventId: string) {
 }
 
 export interface MyRoundRating {
-  hashtags?: string[];
   memo?: string;
   score?: number;
 }
@@ -2303,25 +2308,21 @@ export async function fetchMyRoundRating(eventId: string, roundNumber: number): 
     session_token: session.token,
   });
   if (error) throw error;
-  const row = data as { hashtags?: string[] | null; memo?: string | null; ok: boolean; score?: number | null };
+  const row = data as { memo?: string | null; ok: boolean; score?: number | null };
   if (!row?.ok) return {};
-  return { hashtags: row.hashtags ?? undefined, memo: row.memo ?? undefined, score: row.score ?? undefined };
+  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
 }
 
-export async function submitRoundRating(
-  eventId: string,
-  roundNumber: number,
-  score: number,
-  memo: string,
-  hashtags: string[],
-): Promise<void> {
+// 상대 평가용 hashtag(어떤 점이 좋았나요) 기능은 화면에서 완전히 제거됐다 -
+// submit_round_rating RPC의 hashtags_value 파라미터는 그대로 두되(default
+// null, 기존 데이터도 보존) 더 이상 값을 채워 보내지 않는다.
+export async function submitRoundRating(eventId: string, roundNumber: number, score: number, memo: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('submit_round_rating', {
     event_id_value: eventId,
-    hashtags_value: hashtags.length > 0 ? hashtags : null,
     memo_value: memo.trim() || null,
     round_number_value: roundNumber,
     score_value: score,
@@ -2344,19 +2345,18 @@ export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating
     session_token: session.token,
   });
   if (error) throw error;
-  const row = data as { hashtags?: string[] | null; memo?: string | null; ok: boolean; score?: number | null };
+  const row = data as { memo?: string | null; ok: boolean; score?: number | null };
   if (!row?.ok) return {};
-  return { hashtags: row.hashtags ?? undefined, memo: row.memo ?? undefined, score: row.score ?? undefined };
+  return { memo: row.memo ?? undefined, score: row.score ?? undefined };
 }
 
-export async function submitMyBonusRating(eventId: string, score: number, memo: string, hashtags: string[]): Promise<void> {
+export async function submitMyBonusRating(eventId: string, score: number, memo: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('submit_bonus_round_rating', {
     event_id_value: eventId,
-    hashtags_value: hashtags.length > 0 ? hashtags : null,
     memo_value: memo.trim() || null,
     score_value: score,
     session_token: session.token,
@@ -2369,23 +2369,198 @@ export interface ParticipantPhotoInfo {
   representativeCrop?: RepresentativeCrop;
 }
 
-export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound = false): Promise<ParticipantPhotoInfo> {
+// 상대의 행사 전용 프로필 카드 - 사진은 항상 있고(카드에 없으면 기본
+// 대표사진으로 fallback), 나머지 필드는 상대가 아직 카드를 작성하지
+// 않았으면 전부 빈 값/빈 배열로 내려온다(오류로 취급하지 않는다).
+export interface PartnerEventProfileCard extends ParticipantPhotoInfo {
+  contactStyle: string;
+  dateStyle: string;
+  drinking: string;
+  hobby: string;
+  idealType: string;
+  keywords: string[];
+  mbti: string;
+  myKeywords: string[];
+  smoking: string;
+}
+
+export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound = false): Promise<PartnerEventProfileCard> {
+  const empty: PartnerEventProfileCard = {
+    contactStyle: '',
+    dateStyle: '',
+    drinking: '',
+    hobby: '',
+    idealType: '',
+    keywords: [],
+    mbti: '',
+    myKeywords: [],
+    photoUrl: null,
+    smoking: '',
+  };
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
-  if (!session?.token) return { photoUrl: null };
+  if (!session?.token) return empty;
 
   const { data, error } = await supabase.functions.invoke('participant-partner-photo', {
     body: { eventId, sessionToken: session.token, useNextRound },
   });
   if (error) throw error;
-  const row = data as { ok: boolean; photoUrl: string | null; representativeCrop?: RepresentativeCrop | null };
-  return { photoUrl: row?.photoUrl ?? null, representativeCrop: row?.representativeCrop ?? undefined };
+  const row = data as {
+    contactStyle?: string | null;
+    dateStyle?: string | null;
+    drinking?: string | null;
+    hobby?: string | null;
+    idealType?: string | null;
+    keywords?: string[] | null;
+    mbti?: string | null;
+    myKeywords?: string[] | null;
+    ok: boolean;
+    photoUrl: string | null;
+    representativeCrop?: RepresentativeCrop | null;
+    smoking?: string | null;
+  };
+  if (!row?.ok) return empty;
+  return {
+    contactStyle: row.contactStyle ?? '',
+    dateStyle: row.dateStyle ?? '',
+    drinking: row.drinking ?? '',
+    hobby: row.hobby ?? '',
+    idealType: row.idealType ?? '',
+    keywords: row.keywords ?? [],
+    mbti: row.mbti ?? '',
+    myKeywords: row.myKeywords ?? [],
+    photoUrl: row.photoUrl ?? null,
+    representativeCrop: row.representativeCrop ?? undefined,
+    smoking: row.smoking ?? '',
+  };
+}
+
+export interface MyEventProfileCard {
+  age: number | null;
+  contactStyle: string;
+  dateStyle: string;
+  defaultPhotoCrop?: RepresentativeCrop;
+  defaultPhotoPath: string | null;
+  drinking: string;
+  hobby: string;
+  idealType: string;
+  job: string;
+  keywords: string[];
+  mbti: string;
+  nickname: string;
+  ownPhotos: Array<{ path: string; signedUrl: string | null }>;
+  photoCrop?: RepresentativeCrop;
+  photoPath: string | null;
+  photoUrl: string | null;
+  smoking: string;
+  submittedAt?: string;
+}
+
+// Storage 서명이 필요해(본인 업로드 사진 목록 전부를 미리보기로 보여줘야
+// 함) RPC가 아니라 get-my-event-profile-card Edge Function을 호출한다.
+export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventProfileCard | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return null;
+
+  const { data, error } = await supabase.functions.invoke('get-my-event-profile-card', {
+    body: { eventId, sessionToken: session.token },
+  });
+  if (error || data?.ok !== true) return null;
+
+  const card = data.card as {
+    contactStyle: string;
+    dateStyle: string;
+    drinking: string;
+    hobby: string;
+    idealType: string;
+    keywords: string[];
+    mbti: string;
+    photoCrop?: RepresentativeCrop | null;
+    photoPath: string | null;
+    photoUrl: string | null;
+    smoking: string;
+    submittedAt?: string | null;
+  };
+
+  return {
+    age: data.age ?? null,
+    contactStyle: card.contactStyle,
+    dateStyle: card.dateStyle,
+    defaultPhotoCrop: data.defaultPhotoCrop ?? undefined,
+    defaultPhotoPath: data.defaultPhotoPath ?? null,
+    drinking: card.drinking,
+    hobby: card.hobby,
+    idealType: card.idealType,
+    job: data.job ?? '',
+    keywords: card.keywords ?? [],
+    mbti: card.mbti,
+    nickname: data.nickname ?? '',
+    ownPhotos: data.ownPhotos ?? [],
+    photoCrop: card.photoCrop ?? undefined,
+    photoPath: card.photoPath,
+    photoUrl: card.photoUrl,
+    smoking: card.smoking,
+    submittedAt: card.submittedAt ?? undefined,
+  };
+}
+
+export interface EventProfileCardInput {
+  contactStyle: string;
+  dateStyle: string;
+  drinking: string;
+  hobby: string;
+  idealType: string;
+  keywords: string[];
+  mbti: string;
+  photoCrop?: RepresentativeCrop;
+  photoPath?: string | null;
+  smoking: string;
+}
+
+export async function saveEventProfileCard(eventId: string, input: EventProfileCardInput, submit: boolean): Promise<{ submittedAt?: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('save_event_profile_card_for_session', {
+    contact_style_value: input.contactStyle,
+    date_style_value: input.dateStyle,
+    drinking_value: input.drinking,
+    event_id_value: eventId,
+    hobby_value: input.hobby,
+    ideal_type_value: input.idealType,
+    keywords_value: input.keywords,
+    mbti_value: input.mbti,
+    photo_crop_value: input.photoCrop ?? null,
+    photo_path_value: input.photoPath ?? null,
+    session_token: session.token,
+    smoking_value: input.smoking,
+    submit_value: submit,
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean; submittedAt?: string | null };
+  return { submittedAt: row?.submittedAt ?? undefined };
+}
+
+// 테스트 참가자는 로그인할 수 없어 프로필 카드를 직접 제출할 수 없으므로
+// simulateTestEventFinalSelections와 동일하게 관리자가 대신 채워 제출한다.
+export async function simulateTestEventProfileCards(eventId: string): Promise<number> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('simulate_test_event_profile_cards', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
 }
 
 export interface FinalSelectionCandidate {
   age?: number;
   applicationId: string;
-  hashtags?: string[];
   job?: string;
   memo?: string;
   nickname: string;
@@ -2415,7 +2590,6 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
     candidates?: Array<{
       age: number | null;
       applicationId: string;
-      hashtags: string[] | null;
       job: string | null;
       memo: string | null;
       nickname: string;
@@ -2431,7 +2605,6 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
     candidates: (row.candidates ?? []).map((candidate) => ({
       age: candidate.age ?? undefined,
       applicationId: candidate.applicationId,
-      hashtags: candidate.hashtags ?? undefined,
       job: candidate.job ?? undefined,
       memo: candidate.memo ?? undefined,
       nickname: candidate.nickname,

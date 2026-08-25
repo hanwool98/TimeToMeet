@@ -164,6 +164,12 @@ export default function AdminEventLivePage() {
     progress?.stage === 'bonus_rating' ||
     progress?.stage === 'final_selection';
 
+  // 서버(start_first_round_for_session)도 동일한 조건으로 이중 검증한다 -
+  // 여기 클라이언트 쪽은 그 전에 버튼을 미리 비활성화해 보여주기 위한
+  // 것일 뿐, 실제 차단은 서버가 한다.
+  const isRoundStartReady =
+    progress?.stage === 'round_waiting' && Boolean(roundProgress) && (roundProgress?.profileCardsSubmitted ?? 0) >= (roundProgress?.profileCardsTotal ?? 0);
+
   // applyRoundProgress + roundProgressGuardRef are shared with the manual
   // timer/resume/round-jump/pause-request handlers below, so a slow poll
   // response landing just after a fresher manual-action response never
@@ -176,9 +182,12 @@ export default function AdminEventLivePage() {
 
   // Round-specific state (timer, current table matches, pending pause
   // requests) only matters once the round stage is reached, so it's polled
-  // separately from the general intro-video progress above.
+  // separately from the general intro-video progress above - but also
+  // during round_waiting, since that's the only source for the "프로필
+  // 카드 제출 N/M명" count the 라운드 시작 button needs.
+  const shouldPollRoundProgress = isRoundStage || progress?.stage === 'round_waiting';
   useEffect(() => {
-    if (!eventId || !isRoundStage) return undefined;
+    if (!eventId || !shouldPollRoundProgress) return undefined;
     let active = true;
     const poll = async () => {
       try {
@@ -202,7 +211,7 @@ export default function AdminEventLivePage() {
       window.removeEventListener('focus', handleReconnectSignal);
       document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
-  }, [eventId, isRoundStage, applyRoundProgress]);
+  }, [eventId, shouldPollRoundProgress, applyRoundProgress]);
 
   useEffect(() => {
     if (!eventId || progress?.stage !== 'final_selection') return undefined;
@@ -552,13 +561,17 @@ export default function AdminEventLivePage() {
             <div className="mt-6">
               {progress.stage === 'intro_video' ? (
                 <p className="mb-2 text-center text-[13px] font-bold text-[#999]">영상 종료 후 활성화</p>
+              ) : progress.stage === 'round_waiting' && roundProgress ? (
+                <p className="mb-2 text-center text-[13px] font-bold text-[#999]">
+                  프로필 카드 제출 {roundProgress.profileCardsSubmitted}/{roundProgress.profileCardsTotal}명
+                </p>
               ) : null}
               <button
                 className={[
                   'flex h-16 w-full items-center justify-center gap-2 rounded-[14px] text-[20px] font-black text-white transition active:scale-[0.99]',
-                  progress.stage === 'round_waiting' ? 'bg-[#ef4039]' : 'cursor-not-allowed bg-[#e2c3bc]',
+                  isRoundStartReady ? 'bg-[#ef4039]' : 'cursor-not-allowed bg-[#e2c3bc]',
                 ].join(' ')}
-                disabled={progress.stage !== 'round_waiting' || actionPending}
+                disabled={!isRoundStartReady || actionPending}
                 onClick={() => void handleStartRound()}
                 type="button"
               >

@@ -105,12 +105,46 @@ Deno.serve(async (request) => {
 
   if (partnerError || !partner) return json({ ok: true, photoUrl: null, representativeCrop: null });
 
+  // 이번 행사 전용 프로필 카드에 사진을 따로 골랐다면 그 사진+crop을
+  // 우선 쓰고, 없으면(카드 자체가 없거나 photo_path가 null이면) 기존
+  // 기본 프로필 대표사진으로 fallback한다.
+  const { data: partnerCard } = await supabase
+    .from('event_profile_cards')
+    .select('photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking, keywords')
+    .eq('event_id', payload.eventId)
+    .eq('application_id', partnerApplicationId)
+    .maybeSingle();
+
   const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
   const representativeIndex = Number(partner.representative_photo_index ?? 0);
-  const photoPath = photoPaths[representativeIndex];
+  const fallbackPhotoPath = photoPaths[representativeIndex];
+  const photoPath = partnerCard?.photo_path ?? fallbackPhotoPath;
+  const representativeCrop = partnerCard?.photo_path ? partnerCard.photo_crop : partner.representative_crop;
   const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
 
-  return json({ ok: true, photoUrl, representativeCrop: partner.representative_crop ?? null });
+  // 공통 키워드 강조를 클라이언트에서 계산할 수 있도록 호출자 본인의
+  // 키워드도 같이 내려준다 - 별도 왕복 요청이 필요 없게.
+  const { data: myCard } = await supabase
+    .from('event_profile_cards')
+    .select('keywords')
+    .eq('event_id', payload.eventId)
+    .eq('application_id', myApplication.id)
+    .maybeSingle();
+
+  return json({
+    ok: true,
+    photoUrl,
+    representativeCrop: representativeCrop ?? null,
+    hobby: partnerCard?.hobby ?? '',
+    mbti: partnerCard?.mbti ?? '',
+    idealType: partnerCard?.ideal_type ?? '',
+    contactStyle: partnerCard?.contact_style ?? '',
+    dateStyle: partnerCard?.date_style ?? '',
+    smoking: partnerCard?.smoking ?? '',
+    drinking: partnerCard?.drinking ?? '',
+    keywords: Array.isArray(partnerCard?.keywords) ? partnerCard.keywords : [],
+    myKeywords: Array.isArray(myCard?.keywords) ? myCard.keywords : [],
+  });
 });
 
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {

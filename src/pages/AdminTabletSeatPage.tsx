@@ -510,8 +510,8 @@ export default function AdminTabletSeatPage() {
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
-        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
-        <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
+        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
+        <p className="px-6 text-center" style={{ color: '#c07f87', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
           {isLastBonusRound ? '곧 최종 선택으로 넘어갑니다' : '2분 안에 자리 이동을 완료해주세요'}
         </p>
       </main>
@@ -527,8 +527,8 @@ export default function AdminTabletSeatPage() {
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
-        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
-        <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
+        <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
+        <p className="px-6 text-center" style={{ color: '#c07f87', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
           1분 안에 호감도 수정을 완료해주세요
         </p>
       </main>
@@ -553,8 +553,8 @@ export default function AdminTabletSeatPage() {
           <ReconnectedToast visible={showRecoveredToast} />
           <TimerAlertToast toast={timerAlertToast} />
           <PetalDecor />
-          <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} ringColor="#dd9686" />
-          <p className="px-6 text-center" style={{ color: '#c1897c', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
+          <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
+          <p className="px-6 text-center" style={{ color: '#c07f87', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
             2분 안에 자리 이동 및 호감도 작성을 완료해주세요
           </p>
         </main>
@@ -592,7 +592,7 @@ export default function AdminTabletSeatPage() {
             <p className="max-w-[70vw] truncate text-[15px] font-black tracking-wide" style={{ color: '#a35850' }}>
               {partnerNames}
             </p>
-            <p className="text-[12px] font-bold tracking-[0.2em]" style={{ color: '#c1897c' }}>
+            <p className="text-[12px] font-bold tracking-[0.2em]" style={{ color: '#c07f87' }}>
               TABLE {tableNumber}
             </p>
           </div>
@@ -660,56 +660,77 @@ export default function AdminTabletSeatPage() {
   );
 }
 
+// Elegant thin-serif countdown ring - track/arc/dot colors and the
+// warming-up-as-time-runs-out digit color are all fixed to the cherry
+// blossom palette (not caller-configurable) so every stage that shows a
+// timer reads as the same screen.
+const ringTrackColor = '#f6dee1';
+const ringArcColor = '#e0a0a9';
+const ringDotColor = '#e5949f';
+const digitColorNormal = { b: 0x6d, g: 0x64, r: 0xb5 };
+const digitColorUrgent = { b: 0x5a, g: 0x4f, r: 0xa8 };
+
+function mixDigitColor(t: number) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const r = Math.round(digitColorNormal.r + (digitColorUrgent.r - digitColorNormal.r) * clamped);
+  const g = Math.round(digitColorNormal.g + (digitColorUrgent.g - digitColorNormal.g) * clamped);
+  const b = Math.round(digitColorNormal.b + (digitColorUrgent.b - digitColorNormal.b) * clamped);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function RoundTimerRing({
   phaseDuration,
   offline = false,
   phaseLabel,
   remaining,
-  ringColor = '#d98a76',
   roundLabel,
 }: {
   offline?: boolean;
   phaseDuration: number;
   phaseLabel?: string;
   remaining: number;
-  ringColor?: string;
   roundLabel?: string;
 }) {
   const elapsedFraction = phaseDuration > 0 ? Math.min(1, Math.max(0, 1 - remaining / phaseDuration)) : 0;
   const size = 100;
-  const strokeWidth = 0.6;
-  const radius = (size - strokeWidth) / 2;
+  const trackStrokeWidth = 0.45;
+  const arcStrokeWidth = 0.56;
+  const radius = (size - arcStrokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - elapsedFraction);
   const angleRad = ((-90 + 360 * elapsedFraction) * Math.PI) / 180;
   const dotX = size / 2 + radius * Math.cos(angleRad);
   const dotY = size / 2 + radius * Math.sin(angleRad);
 
+  const timeText = formatCountdown(remaining);
+  const minuteChars = timeText.slice(0, 2).split('');
+  const secondChars = timeText.slice(3, 5).split('');
+  const digitColor = mixDigitColor(remaining <= 60 ? (60 - remaining) / 60 : 0);
+
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ height: 'clamp(420px, 72vh, 760px)', width: 'clamp(420px, 72vh, 760px)' }}>
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} fill="none" opacity={0.55} r={radius} stroke="#f2ddd6" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke={ringTrackColor} strokeWidth={trackStrokeWidth} />
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle
             cx={size / 2}
             cy={size / 2}
             fill="none"
             r={radius}
-            stroke={ringColor}
+            stroke={ringArcColor}
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
-            strokeWidth={strokeWidth}
+            strokeWidth={arcStrokeWidth}
             style={{ transition: 'stroke-dashoffset 1s linear' }}
           />
         </g>
       </svg>
       {elapsedFraction > 0 ? (
         <span
-          className="absolute h-[1.5%] w-[1.5%] rounded-full"
+          className="absolute h-[1.4%] w-[1.4%] rounded-full"
           style={{
-            backgroundColor: ringColor,
-            boxShadow: `0 0 0 5px ${ringColor}20`,
+            backgroundColor: ringDotColor,
             left: `${dotX}%`,
             top: `${dotY}%`,
             transform: 'translate(-50%, -50%)',
@@ -718,7 +739,7 @@ function RoundTimerRing({
       ) : null}
       <div className="px-[12%] text-center">
         {roundLabel ? (
-          <p style={{ color: '#c1897c', fontSize: 'clamp(14px,1.7vh,19px)', fontWeight: 600, letterSpacing: '0.01em' }}>{roundLabel}</p>
+          <p style={{ color: '#c07f87', fontSize: 'clamp(14px,1.7vh,19px)', fontWeight: 600, letterSpacing: '0.01em' }}>{roundLabel}</p>
         ) : null}
         {phaseLabel ? (
           <p className="mt-1" style={{ color: '#d6ab9f', fontSize: 'clamp(11px,1.25vh,14px)', fontWeight: 500 }}>
@@ -740,21 +761,35 @@ function RoundTimerRing({
           </p>
         ) : (
           <p
+            className="flex items-baseline justify-center"
             style={{
-              backgroundClip: 'text',
-              backgroundImage: 'linear-gradient(180deg, #d99284 0%, #a24c3e 100%)',
-              color: 'transparent',
+              color: digitColor,
+              fontFamily: "'Noto Serif KR', 'Nanum Myeongjo', Georgia, 'Times New Roman', serif",
               fontSize: 'clamp(84px,14.5vh,180px)',
               fontVariantNumeric: 'tabular-nums',
               fontWeight: 300,
               letterSpacing: '0.01em',
               lineHeight: 1,
               marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              transition: 'color 1s linear',
             }}
           >
-            {formatCountdown(remaining)}
+            {minuteChars.map((char, index) => (
+              <span className="inline-block text-center" key={`m${index}`} style={{ minWidth: '0.66em' }}>
+                {char}
+              </span>
+            ))}
+            <span
+              className="inline-block"
+              style={{ color: '#cf8b93', fontSize: '0.55em', margin: '0 0.02em', transform: 'translateY(-0.28em)' }}
+            >
+              :
+            </span>
+            {secondChars.map((char, index) => (
+              <span className="inline-block text-center" key={`s${index}`} style={{ minWidth: '0.66em' }}>
+                {char}
+              </span>
+            ))}
           </p>
         )}
       </div>
@@ -775,30 +810,74 @@ function ReconnectedToast({ visible }: { visible: boolean }) {
   );
 }
 
-// Sparse, low-opacity SVG petals/leaves in the corners, matching the
-// reference's soft botanical touch - pure CSS/SVG, no image assets.
+// Sparse, low-opacity SVG petals/leaves in the corners (a static branch),
+// plus a handful of petals that drift down the whole screen. Only
+// transform/opacity are animated (GPU-cheap) and there are at most 5
+// falling petals at once, matching the tablet-friendly performance budget
+// used everywhere else in this file.
 function PetalDecor() {
+  const fallingPetals = [
+    { delay: 0, duration: 19, left: 12, size: 13 },
+    { delay: 4.5, duration: 22, left: 34, size: 10 },
+    { delay: 9, duration: 20, left: 58, size: 14 },
+    { delay: 13.5, duration: 24, left: 76, size: 11 },
+    { delay: 18, duration: 21, left: 92, size: 12 },
+  ];
+
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-      <svg className="absolute -left-6 -top-6 h-[230px] w-[230px]" fill="none" style={{ opacity: 0.22 }} viewBox="0 0 200 200">
-        <path d="M14 8 C40 28, 55 46, 62 78" stroke="#e7a79c" strokeLinecap="round" strokeWidth="1.4" />
-        <ellipse cx="34" cy="22" fill="#efb2ab" rx="15" ry="8" transform="rotate(-28 34 22)" />
-        <ellipse cx="52" cy="44" fill="#eeb9ac" rx="13" ry="7" transform="rotate(-10 52 44)" />
-        <ellipse cx="30" cy="56" fill="#f0c2b6" rx="12" ry="6.5" transform="rotate(24 30 56)" />
-        <ellipse cx="66" cy="30" fill="#e9ada4" rx="10" ry="5.5" transform="rotate(8 66 30)" />
-      </svg>
-      <svg className="absolute right-10 top-8 h-9 w-9" fill="none" style={{ opacity: 0.26 }} viewBox="0 0 36 36">
-        <ellipse cx="18" cy="15" fill="#eba89f" rx="11" ry="6" transform="rotate(38 18 15)" />
+      <svg className="absolute -left-6 -top-6 h-[230px] w-[230px]" fill="none" style={{ opacity: 0.24 }} viewBox="0 0 200 200">
+        <path d="M14 8 C40 28, 55 46, 62 78" stroke="#e9b7bf" strokeLinecap="round" strokeWidth="1.4" />
+        <path d="M20 12 C34 20, 44 30, 50 46" stroke="#e9b7bf" strokeLinecap="round" strokeWidth="1.1" />
+        <path d="M10 20 C26 26, 38 36, 44 52" stroke="#e9b7bf" strokeLinecap="round" strokeWidth="1" />
+        <ellipse cx="34" cy="22" fill="#f5c3cb" rx="9" ry="6" transform="rotate(-28 34 22)" />
+        <ellipse cx="46" cy="16" fill="#f5c3cb" rx="8" ry="5.4" transform="rotate(4 46 16)" />
+        <ellipse cx="52" cy="44" fill="#f5c3cb" rx="8.5" ry="5.6" transform="rotate(-10 52 44)" />
+        <ellipse cx="30" cy="56" fill="#f5c3cb" rx="8" ry="5.2" transform="rotate(24 30 56)" />
+        <ellipse cx="66" cy="30" fill="#f5c3cb" rx="7" ry="4.6" transform="rotate(8 66 30)" />
+        <ellipse cx="22" cy="38" fill="#f5c3cb" rx="7.5" ry="5" transform="rotate(-42 22 38)" />
+        <ellipse cx="40" cy="8" fill="#f5c3cb" rx="6.5" ry="4.4" transform="rotate(18 40 8)" />
+        <ellipse cx="58" cy="58" fill="#f5c3cb" rx="6" ry="4" transform="rotate(-16 58 58)" />
+        <ellipse cx="14" cy="26" fill="#f5c3cb" rx="6.5" ry="4.3" transform="rotate(30 14 26)" />
+        <ellipse cx="60" cy="12" fill="#f5c3cb" rx="6" ry="4" transform="rotate(-6 60 12)" />
       </svg>
       <svg className="absolute right-24 top-28 h-5 w-5" fill="none" style={{ opacity: 0.2 }} viewBox="0 0 20 20">
-        <ellipse cx="10" cy="8" fill="#eeb2a9" rx="6" ry="3.4" transform="rotate(-24 10 8)" />
+        <ellipse cx="10" cy="8" fill="#f5c3cb" rx="6" ry="3.4" transform="rotate(-24 10 8)" />
       </svg>
       <svg className="absolute bottom-10 left-16 h-5 w-5" fill="none" style={{ opacity: 0.18 }} viewBox="0 0 20 20">
-        <ellipse cx="10" cy="8" fill="#f0b6ae" rx="6" ry="3.4" transform="rotate(52 10 8)" />
+        <ellipse cx="10" cy="8" fill="#f5c3cb" rx="6" ry="3.4" transform="rotate(52 10 8)" />
       </svg>
-      <svg className="absolute bottom-14 right-14 h-7 w-7" fill="none" style={{ opacity: 0.2 }} viewBox="0 0 28 28">
-        <ellipse cx="14" cy="12" fill="#e8a89f" rx="8" ry="4.4" transform="rotate(-38 14 12)" />
-      </svg>
+
+      {fallingPetals.map((petal, index) => (
+        <span
+          className="tt-falling-petal absolute top-[-6%]"
+          key={index}
+          style={{
+            animationDelay: `${petal.delay}s`,
+            animationDuration: `${petal.duration}s`,
+            background: 'linear-gradient(160deg, #f8d3d9 0%, #eeb2ab 100%)',
+            borderRadius: '0 100% 0 100%',
+            height: petal.size,
+            left: `${petal.left}%`,
+            width: petal.size,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes tt-petal-fall {
+          0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+          8% { opacity: 0.65; }
+          50% { opacity: 0.5; }
+          92% { opacity: 0.6; }
+          100% { transform: translateY(112vh) rotate(320deg); opacity: 0; }
+        }
+        .tt-falling-petal {
+          animation-name: tt-petal-fall;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          will-change: transform, opacity;
+        }
+      `}</style>
     </div>
   );
 }

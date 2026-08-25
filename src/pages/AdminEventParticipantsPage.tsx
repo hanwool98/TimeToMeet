@@ -17,6 +17,7 @@ import {
   resetTestEventData,
   setParticipantAttendanceStatus,
   simulateTestEventFinalSelections,
+  simulateTestEventProfileCards,
   updateApplicationReviewInSupabase,
 } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
@@ -274,6 +275,23 @@ export default function AdminEventParticipantsPage() {
     }
   };
 
+  // 테스트 참가자는 phone='' 계정이라 로그인이 불가능해 프로필 카드를
+  // 직접 제출할 수 없다 - 라운드 시작은 active 참가자 전원 제출을
+  // 요구하므로, 테스트 행사에서 라운드를 시작하려면 이 버튼으로 대신
+  // 채워 제출해줘야 한다(최종선택 자동 제출과 동일한 이유/패턴).
+  const handleSimulateProfileCards = async () => {
+    if (!eventId || testActionBusy) return;
+    setTestActionBusy(true);
+    try {
+      const count = await simulateTestEventProfileCards(eventId);
+      window.alert(`${count}명의 프로필 카드를 자동 제출했습니다.`);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '프로필 카드 자동 제출에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
   // 테스트 참가자는 phone='' 계정이라 로그인이 불가능해 최종선택을 직접
   // 제출할 수 없다 - 그래서 콘텐츠 관리 > 최종선택 결과 확인까지 테스트
   // 행사에서 직접 시뮬레이션하려면 이 버튼으로 대신 제출해줘야 한다.
@@ -420,6 +438,14 @@ export default function AdminEventParticipantsPage() {
                   type="button"
                 >
                   행사모드 입장
+                </button>
+                <button
+                  className="col-span-2 h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testActionBusy}
+                  onClick={() => void handleSimulateProfileCards()}
+                  type="button"
+                >
+                  테스트 프로필카드 자동 제출
                 </button>
                 <button
                   className="col-span-2 h-12 rounded-[14px] bg-white text-[13px] font-black text-meet-blue shadow-sm transition active:scale-[0.99] disabled:opacity-50"
