@@ -69,6 +69,13 @@ export default function AdminTabletSeatPage() {
 
   const [progress, setProgress] = useState<EventProgress | null>(null);
   const [seatGuide, setSeatGuide] = useState<EventTableSeatGuide | null>(null);
+  // Distinguishes "haven't heard back yet" from "asked and there's really
+  // nothing there" - without this, a genuinely missing assignment renders
+  // identically to the brief moment before the first poll resolves, which is
+  // exactly the "looks normal but isn't" failure mode this screen must not
+  // have.
+  const [seatGuideAttempted, setSeatGuideAttempted] = useState(false);
+  const [seatGuideRetryTick, setSeatGuideRetryTick] = useState(0);
   const [roundProgress, setRoundProgress] = useState<TabletRoundProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [videoMuted, setVideoMuted] = useState(false);
@@ -233,15 +240,26 @@ export default function AdminTabletSeatPage() {
         await seatGuideGuardRef.current.run(
           () => fetchEventTableSeatGuide(eventId, tableNumber, stored.connectionToken),
           (result) => {
-            if (active && result.ok) {
-              setSeatGuide(result);
-              setLastSuccessAt(Date.now());
+            if (!active) return;
+            if (result.ok) setLastSuccessAt(Date.now());
+            if (!result.ok || !result.maleNickname || !result.femaleNickname) {
+              console.error('[tablet-seat-guide] assignment missing or fetch not ok', {
+                eventId,
+                result,
+                tableNumber,
+              });
             }
+            setSeatGuide(result);
+            setSeatGuideAttempted(true);
           },
           { skipIfInFlight: true },
         );
-      } catch {
-        // Connectivity failures are already handled by the progress poll above.
+      } catch (caughtError) {
+        // Connectivity failures are already surfaced by the progress poll
+        // above via the "연결 확인 중" banner - this only needs to unblock
+        // the loading -> error decision below.
+        console.error('[tablet-seat-guide] fetch threw', { eventId, error: caughtError, tableNumber });
+        if (active) setSeatGuideAttempted(true);
       }
     };
 
@@ -258,7 +276,7 @@ export default function AdminTabletSeatPage() {
       window.removeEventListener('focus', handleReconnectSignal);
       document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
-  }, [eventId, tableNumber, progress?.stage]);
+  }, [eventId, tableNumber, progress?.stage, seatGuideRetryTick]);
 
   // Round timer/matching only matters once the round stage is reached -
   // this now also covers every 추가시간 sub-stage, which all carry their
@@ -292,6 +310,15 @@ export default function AdminTabletSeatPage() {
       }
     };
 
+    // progress?.currentRound is in the dependency array below purely to
+    // force an immediate poll (not to reset anything) the moment the
+    // OTHER, independently-scheduled progress poll notices the round
+    // advanced - without it, the last round's roundProgress snapshot (and
+    // its partner names) can keep showing on-screen for up to
+    // roundPollIntervalMs after the round actually changed. roundProgress
+    // itself is deliberately never cleared here - swapping to a loading
+    // state for that gap would trade stale-but-plausible data for a worse
+    // "정상 상태처럼 안 보이는" flicker.
     void poll();
     const intervalId = window.setInterval(() => void poll(), roundPollIntervalMs);
     const handleReconnectSignal = () => void poll();
@@ -305,7 +332,7 @@ export default function AdminTabletSeatPage() {
       window.removeEventListener('focus', handleReconnectSignal);
       document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
-  }, [eventId, tableNumber, isRoundStage]);
+  }, [eventId, tableNumber, isRoundStage, progress?.currentRound]);
 
   useEffect(() => {
     if (!isRoundStage) return undefined;
@@ -636,6 +663,41 @@ export default function AdminTabletSeatPage() {
         <div>
           <p className="text-[22px] font-black">오늘의 모든 일정이 종료되었습니다</p>
           <p className="mt-4 text-[18px] font-black text-white/80">수고하셨습니다</p>
+        </div>
+      </main>
+    );
+  }
+
+  const seatGuideNamesReady = Boolean(seatGuide?.maleNickname && seatGuide?.femaleNickname);
+
+  // Genuinely nothing has come back yet (first poll still in flight) - the
+  // only state where a plain loading indicator is honest.
+  if (!seatGuideAttempted) return <DataLoadingState />;
+
+  // A real fetch attempt happened and there's still no pairing - this event
+  // always assigns every table at once, at event start, so this can only
+  // mean the assignment step failed or hasn't been reached (event not
+  // started yet) - never a normal "please wait" moment, so it must not look
+  // like one.
+  if (!seatGuideNamesReady) {
+    return (
+      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
+        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+        <ReconnectedToast visible={showRecoveredToast} />
+        <div>
+          <p className="text-[20px] font-black text-[#ff8a80]">자리 배정을 불러오지 못했습니다</p>
+          <p className="mt-4 text-[15px] font-bold text-white/70">
+            테이블 {Number.isFinite(tableNumber) ? tableNumber : '-'}번의 배정 정보가 없습니다.
+            <br />
+            행사가 아직 시작되지 않았거나 배정에 실패했을 수 있어요.
+          </p>
+          <button
+            className="mt-6 rounded-full bg-white px-6 py-3 text-[14px] font-black text-[#1f292d]"
+            onClick={() => setSeatGuideRetryTick((tick) => tick + 1)}
+            type="button"
+          >
+            다시 시도
+          </button>
         </div>
       </main>
     );

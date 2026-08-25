@@ -94,7 +94,14 @@ begin
     raise exception '라운드가 시작된 이후에는 프로필 카드를 수정할 수 없습니다.';
   end if;
 
-  if photo_path_value is not null and not (photo_path_value = any(coalesce(target_application.profile_photo_paths, '{}'))) then
+  -- 기존 등록 사진(profile_photo_paths)을 재사용하거나, 이 화면에서 새로
+  -- 촬영/업로드한 사진(upload-event-profile-card-photo가 본인 user_id로
+  -- 시작하는 경로로만 저장함)일 때만 허용한다 - 둘 다 아니면 남의 경로를
+  -- 그대로 넣어보려는 시도로 본다.
+  if photo_path_value is not null
+    and not (photo_path_value = any(coalesce(target_application.profile_photo_paths, '{}')))
+    and photo_path_value not like (session_user_id::text || '/%')
+  then
     raise exception '본인이 등록한 사진만 사용할 수 있습니다.';
   end if;
 

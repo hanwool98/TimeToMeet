@@ -21,6 +21,7 @@ import {
   submitFinalSelection,
   submitMyBonusRating,
   submitRoundRating,
+  uploadEventProfileCardPhoto,
   type FinalSelectionCandidate,
   type FinalSelectionData,
   type MyEventProfileCard,
@@ -334,6 +335,8 @@ function ToastBanner({ toast }: { toast: string }) {
 function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: string; eventTitle: string; onBack: () => void }) {
   const { errorMessage: helpErrorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, undefined);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadRetryTick, setLoadRetryTick] = useState(0);
   const [nickname, setNickname] = useState('');
   const [age, setAge] = useState<number | null>(null);
   const [job, setJob] = useState('');
@@ -355,10 +358,19 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  // 촬영/앨범으로 새 사진을 고른 직후 ~ 업로드가 끝나기 전까지만 쓰는
+  // 로컬 blob 미리보기. photoUrl(서버가 확정한 값)과 분리해 둬야 업로드
+  // 실패 시 "방금 고른 사진이 반영된 것처럼 보이는데 실제로는 저장 안 됨"
+  // 상태 없이 바로 마지막 정상 사진으로 되돌릴 수 있다.
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState('');
 
   useEffect(() => {
     let active = true;
-    void fetchMyEventProfileCard(eventId)
+    setLoading(true);
+    setLoadError('');
+    fetchMyEventProfileCard(eventId)
       .then((result) => {
         if (!active || !result) return;
         setNickname(result.nickname);
@@ -380,18 +392,23 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         setKeywords(result.keywords);
         setSubmittedAt(result.submittedAt);
       })
+      .catch((caughtError) => {
+        if (!active) return;
+        setLoadError(caughtError instanceof Error ? caughtError.message : '프로필 카드 정보를 불러오지 못했습니다.');
+      })
       .finally(() => {
         if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [eventId]);
+  }, [eventId, loadRetryTick]);
 
   // 기존에 쓰던 대표사진을 그대로 고르면 원래 crop을 재사용하고, 다른
   // 사진으로 바꾸면 중앙/확대없음 기본값에서 다시 시작한다(전체 크롭
   // 편집기를 이 화면에 새로 만들지 않기 위한 의도적인 단순화).
   const selectPhoto = (path: string | null) => {
+    setPhotoUploadError('');
     setPhotoPath(path);
     const effectivePath = path ?? defaultPhotoPath;
     setPhotoCrop(path === null ? defaultPhotoCrop : path === defaultPhotoPath ? defaultPhotoCrop : { offsetX: 0, offsetY: 0, scale: 1 });
@@ -399,8 +416,32 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     setPhotoPickerOpen(false);
   };
 
+  // 촬영/앨범에서 새로 고른 파일 업로드. 성공 전까지는 photoPath(=실제
+  // 제출될 값)를 건드리지 않고 pendingPreviewUrl로만 미리보기를 바꾼다.
+  const handlePhotoFileChosen = async (file: File) => {
+    setPhotoPickerOpen(false);
+    setPhotoUploadError('');
+    const localUrl = URL.createObjectURL(file);
+    setPendingPreviewUrl(localUrl);
+    setPhotoUploading(true);
+    try {
+      const result = await uploadEventProfileCardPhoto(eventId, file);
+      setPhotoPath(result.photoPath);
+      setPhotoCrop({ offsetX: 0, offsetY: 0, scale: 1 });
+      setPhotoUrl(result.photoUrl ?? localUrl);
+    } catch (caughtError) {
+      setPhotoUploadError(caughtError instanceof Error ? caughtError.message : '사진 업로드에 실패했습니다.');
+    } finally {
+      setPhotoUploading(false);
+      setPendingPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+    }
+  };
+
   const handleSubmit = async () => {
-    if (saving) return;
+    if (saving || photoUploading) return;
     setSaving(true);
     setSaveError('');
     try {
@@ -411,6 +452,8 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       );
       setSubmittedAt(result.submittedAt);
     } catch (caughtError) {
+      // 실패해도 hobby/mbti 등 로컬 state는 그대로 남아있다 - 여기서
+      // 아무것도 초기화하지 않으므로 작성 중이던 내용은 사라지지 않는다.
       setSaveError(caughtError instanceof Error ? caughtError.message : '프로필 카드 저장에 실패했습니다.');
     } finally {
       setSaving(false);
@@ -428,6 +471,26 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center px-4 text-center">
+          <div>
+            <p className="text-[16px] font-black text-meet-pink">{loadError}</p>
+            <button
+              className="mt-4 rounded-full bg-meet-blue px-6 py-3 text-[14px] font-black text-white"
+              onClick={() => setLoadRetryTick((tick) => tick + 1)}
+              type="button"
+            >
+              다시 시도
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
@@ -437,20 +500,27 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           <div className="relative mx-auto w-fit">
             <ParticipantPhoto
               className="rounded-full bg-[#f5f7fa]"
-              crop={photoCrop}
+              crop={pendingPreviewUrl ? { offsetX: 0, offsetY: 0, scale: 1 } : photoCrop}
               fallback={<PersonPlaceholderGlyph />}
-              photoUrl={photoUrl}
+              photoUrl={pendingPreviewUrl ?? photoUrl}
               sizePx={120}
             />
+            {photoUploading ? (
+              <div className="absolute inset-0 grid place-items-center rounded-full bg-black/35">
+                <span className="text-[11px] font-black text-white">업로드 중</span>
+              </div>
+            ) : null}
             <button
               aria-label="대표사진 변경"
-              className="absolute bottom-0 right-0 grid h-9 w-9 place-items-center rounded-full bg-meet-blue text-white shadow-md"
+              className="absolute bottom-0 right-0 grid h-9 w-9 place-items-center rounded-full bg-meet-blue text-white shadow-md disabled:opacity-60"
+              disabled={photoUploading}
               onClick={() => setPhotoPickerOpen(true)}
               type="button"
             >
               <CameraGlyph />
             </button>
           </div>
+          {photoUploadError ? <p className="mt-2 text-[12px] font-bold text-meet-pink">{photoUploadError}</p> : null}
           <p className="text-fluid-safe mt-4 break-keep text-[26px] font-black leading-tight">{nickname}</p>
           <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job].filter(Boolean).join(' · ')}</p>
 
@@ -493,11 +563,11 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
 
           <button
             className="mt-5 h-14 w-full rounded-[18px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
-            disabled={saving}
+            disabled={saving || photoUploading}
             onClick={() => void handleSubmit()}
             type="button"
           >
-            {saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
+            {photoUploading ? '사진 업로드 중' : saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
           </button>
         </section>
 
@@ -523,6 +593,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         <PhotoPickerSheet
           defaultPhotoPath={defaultPhotoPath}
           onClose={() => setPhotoPickerOpen(false)}
+          onFileChosen={(file) => void handlePhotoFileChosen(file)}
           onSelect={selectPhoto}
           ownPhotos={ownPhotos}
           selectedPath={photoPath ?? defaultPhotoPath}
@@ -561,20 +632,31 @@ function CardField({
 function PhotoPickerSheet({
   defaultPhotoPath,
   onClose,
+  onFileChosen,
   onSelect,
   ownPhotos,
   selectedPath,
 }: {
   defaultPhotoPath: string | null;
   onClose: () => void;
+  onFileChosen: (file: File) => void;
   onSelect: (path: string | null) => void;
   ownPhotos: Array<{ path: string; signedUrl: string | null }>;
   selectedPath: string | null;
 }) {
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const albumInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) onFileChosen(file);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
       <div
-        className="max-h-[70vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
@@ -585,24 +667,55 @@ function PhotoPickerSheet({
           </button>
         </div>
         <p className="mt-1 text-[12px] font-bold text-[#999]">이번 행사에서 상대에게 보여줄 사진을 골라주세요</p>
-        <div className="mt-4 grid grid-cols-3 gap-2 pb-4">
-          {ownPhotos.map((photo) => (
-            <button
-              className={[
-                'relative aspect-square overflow-hidden rounded-[14px] border-2',
-                selectedPath === photo.path ? 'border-meet-blue' : 'border-transparent',
-              ].join(' ')}
-              key={photo.path}
-              onClick={() => onSelect(photo.path)}
-              type="button"
-            >
-              {photo.signedUrl ? <img alt="" className="h-full w-full object-cover" src={photo.signedUrl} /> : <div className="h-full w-full bg-[#f5f7fa]" />}
-              {photo.path === defaultPhotoPath ? (
-                <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-black text-white">기본</span>
-              ) : null}
-            </button>
-          ))}
+
+        {ownPhotos.length > 0 ? (
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {ownPhotos.map((photo) => (
+              <button
+                className={[
+                  'relative aspect-square overflow-hidden rounded-[14px] border-2',
+                  selectedPath === photo.path ? 'border-meet-blue' : 'border-transparent',
+                ].join(' ')}
+                key={photo.path}
+                onClick={() => onSelect(photo.path)}
+                type="button"
+              >
+                {photo.signedUrl ? <img alt="" className="h-full w-full object-cover" src={photo.signedUrl} /> : <div className="h-full w-full bg-[#f5f7fa]" />}
+                {photo.path === defaultPhotoPath ? (
+                  <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-black text-white">기본</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-col gap-2 pb-4">
+          <button
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-meet-blueSoft text-[14px] font-black text-meet-blue"
+            onClick={() => cameraInputRef.current?.click()}
+            type="button"
+          >
+            <CameraGlyph />
+            사진 촬영
+          </button>
+          <button
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-[#f2f4f7] text-[14px] font-black text-[#333]"
+            onClick={() => albumInputRef.current?.click()}
+            type="button"
+          >
+            앨범에서 선택
+          </button>
+          <button className="h-12 w-full text-[14px] font-bold text-[#999]" onClick={onClose} type="button">
+            취소
+          </button>
         </div>
+
+        {/* capture="environment"가 있으면 모바일 브라우저가 곧장 후면 카메라
+            앱을 열고, 없는 두 번째 입력은 갤러리/파일 선택기를 연다 - 둘 다
+            평범한 <input type=file>이라 네이티브 WebView 래퍼 코드가 전혀
+            필요 없다(이 프로젝트는 순수 웹앱이라 그런 래퍼 자체가 없다). */}
+        <input accept="image/*" capture="environment" className="hidden" onChange={handleFileInputChange} ref={cameraInputRef} type="file" />
+        <input accept="image/*" className="hidden" onChange={handleFileInputChange} ref={albumInputRef} type="file" />
       </div>
     </div>
   );

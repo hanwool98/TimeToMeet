@@ -2466,7 +2466,25 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
   const { data, error } = await supabase.functions.invoke('get-my-event-profile-card', {
     body: { eventId, sessionToken: session.token },
   });
-  if (error || data?.ok !== true) return null;
+  if (error || data?.ok !== true) {
+    // Distinguishes "there's really no card yet" (a normal, expected
+    // ok:true response with empty fields, handled below) from an actual
+    // fetch failure - the caller must be able to tell those apart to show
+    // "불러오지 못했습니다" instead of quietly rendering a blank form.
+    let message = '프로필 카드 정보를 불러오지 못했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body (infra/gateway page) - keep the generic message.
+      }
+    }
+    console.error('[event-profile-card] fetch failed', { error, eventId, message });
+    throw new Error(message);
+  }
 
   const card = data.card as {
     contactStyle: string;
@@ -2538,9 +2556,87 @@ export async function saveEventProfileCard(eventId: string, input: EventProfileC
     smoking_value: input.smoking,
     submit_value: submit,
   });
-  if (error) throw error;
+  if (error) {
+    // A raw PostgrestError's .message is often just "function ... does not
+    // exist" or a bare constraint name - details/hint frequently carry the
+    // actually-useful part (e.g. the raised exception text), so surface all
+    // three rather than whichever one happens to be non-empty.
+    console.error('[event-profile-card] save failed', { error, eventId, input, submit });
+    const combined = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+    throw new Error(combined || '프로필 카드 저장에 실패했습니다.');
+  }
   const row = data as { ok: boolean; submittedAt?: string | null };
   return { submittedAt: row?.submittedAt ?? undefined };
+}
+
+// 리사이즈 실패(예: 지원하지 않는 이미지 형식)는 원본 그대로 업로드를
+// 시도하도록 조용히 폴백한다 - 리사이즈는 최적화일 뿐 업로드 자체를 막을
+// 이유가 아니다.
+async function resizeImageForUpload(file: File, maxDimension = 1440, quality = 0.82): Promise<File> {
+  if (typeof document === 'undefined' || !file.type.startsWith('image/')) return file;
+  let objectUrl = '';
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+      img.src = objectUrl;
+    });
+
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const targetWidth = Math.max(1, Math.round(image.naturalWidth * scale));
+    const targetHeight = Math.max(1, Math.round(image.naturalHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return file;
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+  } catch (caughtError) {
+    console.error('[event-profile-card] image resize failed, uploading original', caughtError);
+    return file;
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+export async function uploadEventProfileCardPhoto(eventId: string, file: File): Promise<{ photoPath: string; photoUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const resized = await resizeImageForUpload(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-event-profile-card-photo', {
+    body: { eventId, photo, sessionToken: session.token },
+  });
+
+  if (error || data?.ok !== true) {
+    let message = '사진 업로드에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body (infra/gateway page) - keep the generic message.
+      }
+    }
+    console.error('[event-profile-card] photo upload failed', { error, eventId, fileName: file.name, fileSize: file.size, message });
+    throw new Error(message);
+  }
+
+  return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
 }
 
 // 테스트 참가자는 로그인할 수 없어 프로필 카드를 직접 제출할 수 없으므로

@@ -20,13 +20,14 @@ const filterOptions = ['성별', '나이', '재참여 여부', '심사대기', '
 
 export default function AdminApplicationsPage() {
   const navigate = useNavigate();
-  const { applications, error, loading, reload } = useOperationalData({ admin: true });
+  const { applications, error, events, loading, reload } = useOperationalData({ admin: true });
   const [activeTab, setActiveTab] = useState<ApplicationTab>('review');
   const [dateFilter, setDateFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('성별');
   const [reviewingApplication, setReviewingApplication] = useState<StoredApplication | null>(null);
   const [actionError, setActionError] = useState('');
+  const [reviewError, setReviewError] = useState('');
 
   const dateOptions = useMemo(() => {
     const byEventId = new Map<string, string>();
@@ -72,6 +73,26 @@ export default function AdminApplicationsPage() {
   const completedCount = applications.filter((item) => item.status === '참가 확정' || item.status === '반려' || item.status === '신청 취소').length;
   const newReviewCount = applications.filter((item) => item.status === '심사 대기' && item.isNew).length;
 
+  // Occupied = anyone who has already claimed a seat of this gender for the
+  // event, whether or not they've finished paying yet - matches the same
+  // status set the approval RPC itself gates on, so this preview never
+  // disagrees with what the server will actually enforce.
+  const capacityOccupyingStatuses = new Set(['결제 대기', '결제중', '입금 확인 중', '참가 확정']);
+  const reviewingCapacityInfo = useMemo(() => {
+    if (!reviewingApplication) return null;
+    const event = events.find((item) => item.id === reviewingApplication.eventId);
+    const capacity = reviewingApplication.gender === '남성' ? event?.maleCapacity : event?.femaleCapacity;
+    if (capacity == null) return null;
+    const occupied = applications.filter(
+      (item) =>
+        item.eventId === reviewingApplication.eventId &&
+        item.gender === reviewingApplication.gender &&
+        item.id !== reviewingApplication.id &&
+        capacityOccupyingStatuses.has(item.status),
+    ).length;
+    return { capacity, isFull: occupied >= capacity, occupied };
+  }, [applications, events, reviewingApplication]);
+
   const decideReview = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!reviewingApplication) return;
     const reason =
@@ -81,25 +102,36 @@ export default function AdminApplicationsPage() {
           ? window.prompt(`${reviewingApplication.id} 신청을 참가 대기 처리합니다. 대기 사유를 입력해주세요.`, '성비 및 신청 현황 고려')
           : '';
     if ((status === '반려' || status === '참여 보류') && !reason?.trim()) return;
+    setReviewError('');
     const now = new Date();
     const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const reviewedAt = now.toISOString();
     const paymentDeadline = status === '결제 대기' ? deadline.toISOString() : reviewingApplication.paymentDeadline;
     const paymentNoticeSentAt = status === '결제 대기' ? now.toISOString() : reviewingApplication.paymentNoticeSentAt;
-    // The server decides the real outcome - a 0원 event skips 결제 대기 and
-    // goes straight to 참가 확정, so the tab we land on has to follow what
-    // actually happened rather than what we requested.
-    const appliedStatus = await updateApplicationReviewInSupabase(reviewingApplication, status, {
-      paymentDeadline,
-      paymentNoticeSentAt,
-      reason: reason?.trim() || undefined,
-      reviewedAt,
-    });
-    await reload();
-    setReviewingApplication(null);
-    if (appliedStatus === '참여 보류') setActiveTab('waiting');
-    else if (appliedStatus === '결제 대기') setActiveTab('payment');
-    else if (appliedStatus === '참가 확정') setActiveTab('completed');
+    try {
+      // The server decides the real outcome - a 0원 event skips 결제 대기
+      // and goes straight to 참가 확정, so the tab we land on has to follow
+      // what actually happened rather than what we requested.
+      const appliedStatus = await updateApplicationReviewInSupabase(reviewingApplication, status, {
+        paymentDeadline,
+        paymentNoticeSentAt,
+        reason: reason?.trim() || undefined,
+        reviewedAt,
+      });
+      await reload();
+      setReviewingApplication(null);
+      if (appliedStatus === '참여 보류') setActiveTab('waiting');
+      else if (appliedStatus === '결제 대기') setActiveTab('payment');
+      else if (appliedStatus === '참가 확정') setActiveTab('completed');
+    } catch (caughtError) {
+      // Left open on failure (e.g. the server-side gender-capacity gate
+      // rejecting the approval) so the admin sees why and can retry a
+      // different action without losing their place - closing the modal
+      // here would silently discard the error.
+      console.error('Application review decision failed', caughtError);
+      setReviewError(getActionErrorMessage(caughtError, '처리에 실패했습니다.'));
+      await reload();
+    }
   };
 
   const completePayment = async (applicationId: string) => {
@@ -214,7 +246,10 @@ export default function AdminApplicationsPage() {
                 highlighted={index === 0 && activeTab === 'review'}
                 key={application.id}
                 onPaymentFail={() => void failPayment(application.id)}
-                onReview={() => setReviewingApplication(application)}
+                onReview={() => {
+                  setReviewError('');
+                  setReviewingApplication(application);
+                }}
                 onPaymentComplete={() => void completePayment(application.id)}
               />
             ))}
@@ -228,6 +263,8 @@ export default function AdminApplicationsPage() {
       {reviewingApplication && reviewingApplication.profile ? (
         <ReviewProfileModal
           application={reviewingApplication}
+          capacityInfo={reviewingCapacityInfo}
+          error={reviewError}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
         />
@@ -379,10 +416,14 @@ function formatDateTime(value: string) {
 
 export function ReviewProfileModal({
   application,
+  capacityInfo,
+  error,
   onClose,
   onDecide,
 }: {
   application: StoredApplication;
+  capacityInfo?: { capacity: number; isFull: boolean; occupied: number } | null;
+  error?: string;
   onClose: () => void;
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
 }) {
@@ -394,6 +435,7 @@ export function ReviewProfileModal({
   const [deciding, setDeciding] = useState(false);
   const canReview = application.status === '심사 대기' || application.status === '참여 보류';
   const [resettingPin, setResettingPin] = useState(false);
+  const capacityBlocksApproval = Boolean(capacityInfo?.isFull);
 
   const handleResetGuestPin = async () => {
     if (!application.userUuid || resettingPin) return;
@@ -431,6 +473,7 @@ export function ReviewProfileModal({
 
   const requestDecision = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!canDecide || deciding) return;
+    if (status === '결제 대기' && capacityBlocksApproval) return;
     const label = status === '결제 대기' ? '참가 승인' : status === '참여 보류' ? '참가 대기' : '참가 거부';
     const ok = window.confirm(`${application.id} · ${profile?.name ?? application.userId}\n처리 결과: ${label}\n이대로 처리할까요?`);
     if (!ok) return;
@@ -597,9 +640,18 @@ export function ReviewProfileModal({
         </div>
 
         <div className="sticky bottom-0 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
+          {capacityInfo ? (
+            <p className={`col-span-3 text-center text-[12px] font-black ${capacityBlocksApproval ? 'text-meet-pink' : 'text-[#8a929c]'}`}>
+              {application.gender} 정원 {capacityInfo.occupied}/{capacityInfo.capacity}
+              {capacityBlocksApproval ? ' · 정원이 모두 찼습니다' : ''}
+            </p>
+          ) : null}
+          {error ? (
+            <p className="col-span-3 rounded-[12px] bg-meet-pinkSoft p-3 text-center text-[13px] font-black leading-relaxed text-meet-pink">{error}</p>
+          ) : null}
           <button
             className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-blue px-2 text-[14px] font-black text-white disabled:bg-[#d8dee6]"
-            disabled={!canDecide || deciding}
+            disabled={!canDecide || capacityBlocksApproval || deciding}
             onClick={() => void requestDecision('결제 대기')}
             type="button"
           >
