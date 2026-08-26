@@ -13,7 +13,6 @@ import {
 import { unlockTabletAlertAudio } from '../utils/tabletAlertAudio';
 
 const KOREA_TIME_ZONE = 'Asia/Seoul';
-const storageKey = 'time2meet.tabletConnection';
 
 interface StoredTabletConnection {
   connectionToken: string;
@@ -21,24 +20,44 @@ interface StoredTabletConnection {
   tableNumber: number;
 }
 
-function readStoredConnection(eventId: string): StoredTabletConnection | null {
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredTabletConnection;
-    if (parsed.eventId !== eventId || !parsed.connectionToken || !parsed.tableNumber) return null;
-    return parsed;
-  } catch {
-    return null;
+// 예전엔 이벤트당(테이블 번호와 무관하게) 키가 하나뿐이었다 - 같은 크롬
+// 브라우저에서 태블릿 화면을 탭 여러 개로 열어(예: 1번 태블릿, 2번 태블릿
+// 확인용) 테스트하면 나중에 연결한 탭이 먼저 연결한 탭의 저장값을 그대로
+// 덮어써서, 먼저 연결했던 탭이 갑자기 "연결이 끊긴 것처럼" 보이는 원인이
+//됐다. 테이블 번호까지 키에 포함해 탭(테이블)마다 독립된 저장 공간을 쓰게
+// 한다 - 실제 태블릿은 기기가 물리적으로 분리돼 있어 원래도 문제가 없었고,
+// 이건 같은 브라우저로 여러 태블릿을 동시에 테스트할 때만 해당하는 수정.
+function tabletConnectionKey(eventId: string, tableNumber: number) {
+  return `time2meet.tabletConnection.${eventId}.${tableNumber}`;
+}
+
+// 이 연결 화면은 아직 테이블 번호를 모르는 상태(사용자가 고르기 전)라서,
+// 이 이벤트에 대해 테이블 번호와 무관하게 "이미 연결된 게 있으면" 그걸
+// 찾아서 자동으로 이어준다 - 테이블별로 키가 분리된 뒤에도 이 편의 기능은
+// 그대로 유지하기 위한 스캔.
+function findStoredConnectionForEvent(eventId: string): StoredTabletConnection | null {
+  const prefix = `time2meet.tabletConnection.${eventId}.`;
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key || !key.startsWith(prefix)) continue;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as StoredTabletConnection;
+      if (parsed.eventId === eventId && parsed.connectionToken && parsed.tableNumber) return parsed;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 function writeStoredConnection(connection: StoredTabletConnection) {
-  window.localStorage.setItem(storageKey, JSON.stringify(connection));
+  window.localStorage.setItem(tabletConnectionKey(connection.eventId, connection.tableNumber), JSON.stringify(connection));
 }
 
-function clearStoredConnection() {
-  window.localStorage.removeItem(storageKey);
+function clearStoredConnection(eventId: string, tableNumber: number) {
+  window.localStorage.removeItem(tabletConnectionKey(eventId, tableNumber));
 }
 
 type PageStage = 'checking' | 'need-admin-auth' | 'select' | 'connected' | 'restoring';
@@ -75,7 +94,7 @@ export default function AdminTabletConnectPage() {
     let active = true;
 
     const init = async () => {
-      const stored = readStoredConnection(eventId);
+      const stored = findStoredConnectionForEvent(eventId);
       if (stored) {
         const result = await verifyEventTabletConnection(eventId, stored.tableNumber, stored.connectionToken);
         if (!active) return;
@@ -83,7 +102,7 @@ export default function AdminTabletConnectPage() {
           navigate(`/admin/events/${eventId}/tablet/${stored.tableNumber}/seat`, { replace: true });
           return;
         }
-        clearStoredConnection();
+        clearStoredConnection(eventId, stored.tableNumber);
       }
 
       const adminSession = getAdminSession();

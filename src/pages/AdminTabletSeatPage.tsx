@@ -18,7 +18,6 @@ import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '
 import { createRequestGuard } from '../utils/requestGuard';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
-const storageKey = 'time2meet.tabletConnection';
 const progressPollIntervalMs = 3_000;
 const seatPollIntervalMs = 5_000;
 const roundPollIntervalMs = 3_000;
@@ -40,9 +39,18 @@ interface StoredTabletConnection {
   tableNumber: number;
 }
 
+// 테이블 번호까지 키에 포함 - 같은 브라우저에서 태블릿 화면을 탭 여러
+// 개로 열어(예: 1번 태블릿 탭 + 2번 태블릿 탭) 동시에 확인하면, 나중에
+// 연결한 탭이 먼저 연결한 탭의 저장값을 덮어써서 먼저 연결했던 쪽이
+// 갑자기 끊긴 것처럼 보이는 원인이 됐다(AdminTabletConnectPage.tsx와
+// 동일한 키 규칙을 써야 서로 읽고 쓸 수 있다).
+function tabletConnectionKey(eventId: string, tableNumber: number) {
+  return `time2meet.tabletConnection.${eventId}.${tableNumber}`;
+}
+
 function readStoredConnection(eventId: string, tableNumber: number): StoredTabletConnection | null {
   try {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = window.localStorage.getItem(tabletConnectionKey(eventId, tableNumber));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredTabletConnection;
     if (parsed.eventId !== eventId || parsed.tableNumber !== tableNumber || !parsed.connectionToken) return null;
@@ -52,8 +60,8 @@ function readStoredConnection(eventId: string, tableNumber: number): StoredTable
   }
 }
 
-function clearStoredConnection() {
-  window.localStorage.removeItem(storageKey);
+function clearStoredConnection(eventId: string, tableNumber: number) {
+  window.localStorage.removeItem(tabletConnectionKey(eventId, tableNumber));
 }
 
 // The tablet's whole "what am I showing right now" lives here, driven by the
@@ -182,7 +190,7 @@ export default function AdminTabletSeatPage() {
     let active = true;
 
     const goToConnect = () => {
-      clearStoredConnection();
+      clearStoredConnection(eventId, tableNumber);
       navigate(`/admin/events/${eventId}/tablet-connect`, { replace: true });
     };
 
