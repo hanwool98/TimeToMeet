@@ -763,14 +763,32 @@ function ConversationScreen({
 
   useEffect(() => {
     let active = true;
+    let retryTimeoutId: number | undefined;
     setCard(null);
-    void fetchParticipantPartnerPhoto(eventId)
-      .then((result) => {
-        if (active) setCard(result);
-      })
-      .catch(() => undefined);
+
+    // 일시적인 네트워크 오류/서버 함수 콜드스타트로 첫 조회가 실패하면 한
+    // 번 더 시도한다 - 예전에는 조용히 포기해서 상대 카드 전체가 아무
+    // 표시 없이 그냥 사라졌었다(다음 라운드가 될 때까지 재시도 자체가
+    // 없었음).
+    const load = (isRetry: boolean) => {
+      void fetchParticipantPartnerPhoto(eventId)
+        .then((result) => {
+          if (active) setCard(result);
+        })
+        .catch((caughtError) => {
+          if (!active) return;
+          if (!isRetry) {
+            retryTimeoutId = window.setTimeout(() => load(true), 3_000);
+            return;
+          }
+          console.error('[event-mode] failed to load partner profile card', caughtError);
+        });
+    };
+    load(false);
+
     return () => {
       active = false;
+      if (retryTimeoutId) window.clearTimeout(retryTimeoutId);
     };
   }, [eventId, progress.partnerApplicationId]);
 

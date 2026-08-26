@@ -734,10 +734,10 @@ function ReviewField({ label, value }: { label: string; value: string }) {
 }
 
 function RepresentativeThumb({ file, loading }: { file?: SignedApplicationFile; loading: boolean }) {
-  if (loading) return <div className="h-[78px] w-[78px] rounded-[24px] bg-[#f0f4f8]" />;
+  if (loading) return <div className="h-[78px] w-[78px] rounded-full bg-[#f0f4f8]" />;
   if (!file?.signedUrl) {
     return (
-      <div className="grid h-[78px] w-[78px] place-items-center rounded-[24px] bg-[#f0f4f8] text-[11px] font-black text-[#8a929c]">
+      <div className="grid h-[78px] w-[78px] place-items-center rounded-full bg-[#f0f4f8] text-[11px] font-black text-[#8a929c]">
         사진 없음
       </div>
     );
@@ -746,7 +746,7 @@ function RepresentativeThumb({ file, loading }: { file?: SignedApplicationFile; 
   return (
     <img
       alt="대표사진"
-      className="h-[78px] w-[78px] rounded-[24px] object-cover"
+      className="h-[78px] w-[78px] rounded-full object-cover"
       src={file.signedUrl}
     />
   );

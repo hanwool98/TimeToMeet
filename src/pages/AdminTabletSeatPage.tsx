@@ -169,8 +169,15 @@ export default function AdminTabletSeatPage() {
   // fixed-full-viewport root 90deg and swaps its own box to
   // 100vh(width) x 100vw(height) so the rotated box's landscape-designed
   // content exactly fills the (still-portrait) physical screen.
+  // `vh`/`vw` always resolve against the true (unrotated) browser viewport
+  // per the CSS spec, even though the box above is rotated 90deg - so any
+  // descendant sizing itself with raw `vh` (meant as "percent of this
+  // rotated box's visual height", which is actually the physical width)
+  // would size against the wrong axis and could overflow/overlap
+  // neighboring elements. `--tablet-vh` is the corrected "1 visual vh unit
+  // inside this box" for descendants to multiply via calc().
   const landscapeRotateStyle: React.CSSProperties = isPortraitViewport
-    ? {
+    ? ({
         bottom: 'auto',
         height: '100vw',
         left: '50%',
@@ -179,8 +186,9 @@ export default function AdminTabletSeatPage() {
         top: '50%',
         transform: 'translate(-50%, -50%) rotate(90deg)',
         width: '100vh',
-      }
-    : {};
+        '--tablet-vh': '1vw',
+      } as React.CSSProperties)
+    : ({ '--tablet-vh': '1vh' } as React.CSSProperties);
 
   // Primary heartbeat + stage driver. This is also what proves the
   // connection is still valid server-side, so an admin disconnect bounces
@@ -778,7 +786,13 @@ function RoundTimerRing({
   const digitColor = mixDigitColor(remaining <= 60 ? (60 - remaining) / 60 : 0);
 
   return (
-    <div className="relative grid shrink-0 place-items-center" style={{ height: 'clamp(420px, 72vh, 760px)', width: 'clamp(420px, 72vh, 760px)' }}>
+    <div
+      className="relative grid shrink-0 place-items-center"
+      style={{
+        height: 'clamp(420px, calc(var(--tablet-vh, 1vh) * 72), 760px)',
+        width: 'clamp(420px, calc(var(--tablet-vh, 1vh) * 72), 760px)',
+      }}
+    >
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
         <circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke={ringTrackColor} strokeWidth={trackStrokeWidth} />
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
