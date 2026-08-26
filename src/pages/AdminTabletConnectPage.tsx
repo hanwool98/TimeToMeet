@@ -142,8 +142,8 @@ export default function AdminTabletConnectPage() {
       await loginAdminSession(adminCode);
       await loadEventAndStatus();
       setStage('select');
-    } catch {
-      setAdminError('관리자 코드가 올바르지 않습니다.');
+    } catch (caughtError) {
+      setAdminError(caughtError instanceof Error ? caughtError.message : '관리자 코드가 올바르지 않습니다.');
     } finally {
       setAdminSubmitting(false);
     }

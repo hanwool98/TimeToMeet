@@ -85,8 +85,8 @@ export default function App() {
       resetAdminLogin();
       navigate('/admin');
       return;
-    } catch {
-      window.alert('관리자 코드가 올바르지 않습니다.');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '관리자 코드가 올바르지 않습니다.');
     } finally {
       setAdminSubmitting(false);
     }

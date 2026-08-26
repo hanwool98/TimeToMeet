@@ -230,8 +230,8 @@ export default function AdminEventPreparePage() {
             </span>
             <div className="min-w-0">
               <p className="text-[15px] font-black text-[#1f292d]">초기 테이블은 자동으로 정해져요</p>
-              <p className="mt-1 text-[13px] font-bold text-[#a35850]">남자 1번 + 여자 1번 → 1번 테이블</p>
-              <p className="mt-1 text-[12px] font-bold text-[#b98680]">참가자 목록의 남녀 순번이 같은 번호의 테이블에 표시됩니다</p>
+              <p className="mt-1 text-[13px] font-bold text-[#a35850]">체크인한 순서대로 같은 순번의 남녀가 짝지어져요</p>
+              <p className="mt-1 text-[12px] font-bold text-[#b98680]">자리유도에서 안내한 테이블이 실제 1라운드 테이블과 동일합니다</p>
             </div>
           </div>
         </section>
@@ -334,8 +334,9 @@ export default function AdminEventPreparePage() {
         <TabletStatusPanel eventId={event.id} onClose={() => setTabletPanelOpen(false)} requiredTablets={event.requiredTablets} />
       ) : null}
 
-      {startConfirmOpen && settings ? (
+      {startConfirmOpen && settings && event ? (
         <StartConfirmPanel
+          event={event}
           onCancel={() => setStartConfirmOpen(false)}
           onConfirm={() => void handleConfirmStart()}
           settings={settings}
@@ -356,17 +357,20 @@ function SettingRow({ children, label }: { children: ReactNode; label: string })
 }
 
 function StartConfirmPanel({
+  event,
   onCancel,
   onConfirm,
   settings,
   starting,
 }: {
+  event: AdminEventModeSummary;
   onCancel: () => void;
   onConfirm: () => void;
   settings: AdminEventSettings;
   starting: boolean;
 }) {
   const conversationLabel = conversationDurationOptions.find((option) => option.value === settings.conversationDurationSeconds)?.label ?? '10분';
+  const hasUncheckedParticipant = event.checkinCount < event.confirmedCount;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onCancel}>
       <div
@@ -374,7 +378,19 @@ function StartConfirmPanel({
         onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
         <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
-        <h3 className="mt-4 text-[18px] font-black">이 설정으로 행사를 시작할까요?</h3>
+        <h3 className="mt-4 text-[18px] font-black">{hasUncheckedParticipant ? '행사를 시작하시겠습니까?' : '이 설정으로 행사를 시작할까요?'}</h3>
+
+        {hasUncheckedParticipant ? (
+          <div className="mt-4 space-y-2 rounded-[16px] bg-[#fff1ee] px-4 py-3 text-[14px] font-bold text-[#555]">
+            <p>
+              현재 체크인 남성 <span className="font-black text-[#1f292d]">{event.maleCheckinCount}/{event.maleConfirmedCount}명</span>
+              {' · '}
+              여성 <span className="font-black text-[#1f292d]">{event.femaleCheckinCount}/{event.femaleConfirmedCount}명</span>
+            </p>
+            <p className="text-[#a35850]">아직 체크인하지 않은 참가자가 있습니다. 지금 행사를 시작하면 현재 참가자를 기준으로 진행됩니다.</p>
+          </div>
+        ) : null}
+
         <div className="mt-4 space-y-2 rounded-[16px] bg-[#fafafa] px-4 py-3 text-[14px] font-bold text-[#555]">
           <p>
             기본 라운드: <span className="font-black text-[#1f292d]">{conversationLabel}</span>
@@ -401,7 +417,7 @@ function StartConfirmPanel({
             onClick={onConfirm}
             type="button"
           >
-            {starting ? '시작하는 중' : '행사 시작'}
+            {starting ? '시작하는 중' : hasUncheckedParticipant ? '그래도 시작' : '행사 시작'}
           </button>
         </div>
       </div>

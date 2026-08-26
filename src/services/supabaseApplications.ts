@@ -1547,12 +1547,11 @@ export interface EventTableSeatGuide {
   ok: boolean;
 }
 
-// 참가자 리스트(신청번호 순, 성별 정렬)에서 N번째 남/여를 그대로 N번
-// 테이블에 배정한다 - 라운드 스케줄(event_table_assignments)과는 완전히
-// 무관하고, 승인된(참가 확정) 사람이면 출석 여부와 상관없이 항상 그
-// 자리가 정해져 있다. 다만 닉네임 표시 자체는 그 사람이 실제 체크인한
-// 뒤에만 나온다(체크인 전에는 자리는 정해져 있지만 화면에 이름이 아직
-// 안 뜬 상태).
+// 체크인 시각 순서로 N번째 남/여를 그대로 N번 테이블에 배정한다 - 실제
+// 1라운드 배정(generate_round_schedule_if_missing)과 정확히 동일한
+// 기준이라, 자리유도에서 안내한 테이블이 항상 실제 1라운드 테이블과
+// 일치한다. 아직 그 순번까지 체크인한 사람이 없으면 그냥 배정 대기
+// 상태로 보인다(오류 아님).
 export async function fetchEventTableSeatGuide(eventId: string, tableNumber: number, connectionToken: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
 

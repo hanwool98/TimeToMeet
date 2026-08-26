@@ -4,6 +4,7 @@ import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import ConversationTopicDeck from '../components/ConversationTopicDeck';
 import { DataLoadingState } from '../components/DataState';
 import TimerAlertToast from '../components/TimerAlertToast';
+import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import { useTabletTimerAlerts } from '../hooks/useTabletTimerAlerts';
 import {
   fetchEventProgressForTablet,
@@ -95,6 +96,10 @@ export default function AdminTabletSeatPage() {
   const progressGuardRef = useRef(createRequestGuard());
   const seatGuideGuardRef = useRef(createRequestGuard());
   const roundGuardRef = useRef(createRequestGuard());
+
+  // 태블릿은 행사 내내 테이블 위에 놓여있고 터치 없이 오래 방치되므로,
+  // 화면이 꺼지지 않게 이 화면에 머무는 동안 항상 켜둔다.
+  useScreenWakeLock(true);
 
   // Always-on 1s tick for the connection-status banner, independent of the
   // round-stage-gated countdown tick below.

@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 const adminSessionKey = 'time2meet.adminSession';
@@ -57,7 +58,15 @@ export async function loginAdminSession(code: string) {
     body: { code },
   });
 
-  if (error || !data?.session_token) throw error ?? new Error('관리자 코드가 올바르지 않습니다.');
+  if (error || !data?.session_token) {
+    // 백엔드는 이미 잠금(429)과 코드 오류(401)를 서로 다른 상태 코드로
+    // 내려주지만, supabase-js는 실패 응답의 body를 버리고 이 SDK 자체의
+    // 에러(FunctionsHttpError)만 넘기므로 여기서 status로 직접 구분한다.
+    if (error instanceof FunctionsHttpError && error.context.status === 429) {
+      throw new Error('로그인 시도가 너무 많습니다. 15분 후 다시 시도해주세요.');
+    }
+    throw new Error('관리자 코드가 올바르지 않습니다.');
+  }
   return writeAdminSession(data as AdminSessionResponse);
 }
 

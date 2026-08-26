@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { toPng } from 'html-to-image';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import HeartRatingInput from '../components/HeartRatingInput';
@@ -7,6 +8,7 @@ import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/P
 import PrimaryButton from '../components/PrimaryButton';
 import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
 import { profileKeywordLabel } from '../constants/profileKeywords';
+import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import {
   createParticipantPauseRequest,
   createParticipantReport,
@@ -163,6 +165,10 @@ function ParticipantEventScreen({
 }) {
   const navigate = useNavigate();
   const onBack = () => navigate(`/my-events/ticket/${eventId}`);
+
+  // 행사모드에 머무는 동안은 참가자가 한동안 화면을 안 만져도(대화 중,
+  // 타이머만 보는 중 등) 잠기지 않게 한다.
+  useScreenWakeLock(true);
 
   if (!progress) {
     return (
@@ -380,6 +386,9 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState('');
+  const cardCaptureRef = useRef<HTMLDivElement>(null);
+  const [cardImageSaving, setCardImageSaving] = useState(false);
+  const [cardImageSaveError, setCardImageSaveError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -455,6 +464,45 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     }
   };
 
+  // 어떤 이유로든(구형 브라우저, 캔버스 변환 실패, Web Share 미지원 등)
+  // 저장에 실패해도 조용히 에러 텍스트만 보여줄 뿐 화면/행사 진행에는
+  // 전혀 영향이 없다.
+  const handleSaveCardImage = async () => {
+    if (!cardCaptureRef.current || cardImageSaving) return;
+    setCardImageSaving(true);
+    setCardImageSaveError('');
+    try {
+      const dataUrl = await toPng(cardCaptureRef.current, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      const fileName = `${nickname || '프로필카드'}.png`;
+
+      // iOS/Safari는 <a download>가 이미지 저장으로 이어지지 않는 경우가
+      // 많아, Web Share API가 있으면 공유 시트(사진 앱에 저장 포함)를
+      // 우선 시도하고, 없거나 파일 공유를 지원하지 않으면 일반 다운로드로
+      // 대체한다.
+      const canShareFiles = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
+      if (canShareFiles) {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], fileName, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          return;
+        }
+      }
+
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (caughtError) {
+      if (caughtError instanceof Error && caughtError.name === 'AbortError') return;
+      setCardImageSaveError('프로필 카드를 저장하지 못했습니다.');
+    } finally {
+      setCardImageSaving(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (saving || photoUploading) return;
     setSaving(true);
@@ -512,6 +560,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <div ref={cardCaptureRef}>
           <div className="relative mx-auto w-fit">
             <ParticipantPhoto
               className="rounded-full bg-[#f5f7fa]"
@@ -568,6 +617,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
               <ProfileKeywordPicker onChange={setKeywords} selected={keywords} />
             </div>
           </div>
+          </div>
 
           {submittedAt ? (
             <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
@@ -583,6 +633,16 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
             type="button"
           >
             {photoUploading ? '사진 업로드 중' : saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
+          </button>
+
+          {cardImageSaveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{cardImageSaveError}</p> : null}
+          <button
+            className="mt-3 h-12 w-full rounded-[16px] border border-meet-blue text-[14px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
+            disabled={cardImageSaving}
+            onClick={() => void handleSaveCardImage()}
+            type="button"
+          >
+            {cardImageSaving ? '저장하는 중' : '프로필카드 저장'}
           </button>
         </section>
 
