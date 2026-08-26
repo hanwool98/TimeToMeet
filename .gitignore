@@ -8,3 +8,4 @@ dist/
 node_modules/.tmp/
 node_modules/.vite/
 supabase/.temp/
+backups/

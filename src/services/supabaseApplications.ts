@@ -5,6 +5,7 @@ import { getAppSession } from './appAuth';
 import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication, ParticipantAttendanceStatus } from '../utils/adminApplications';
+import { compressImageIfNeeded } from '../utils/imageCompression';
 export type { ParticipantAttendanceStatus } from '../utils/adminApplications';
 import type { RepresentativeCrop } from '../utils/representativeCrop';
 
@@ -90,6 +91,7 @@ interface SupabaseApplicationRow {
   account_type?: 'member' | 'guest';
   attendance_status?: string;
   is_emergency_walkin?: boolean;
+  is_test_participant?: boolean;
 }
 
 interface PublicEventSummaryRow {
@@ -666,6 +668,22 @@ export async function setParticipantAttendanceStatus(applicationId: string, stat
     application_id_value: applicationId,
     session_token: adminSession.token,
     status_value: status,
+  });
+
+  if (error) throw error;
+}
+
+// 실제 참가자와 절대 자동으로 섞이지 않도록, 관리자가 참가자 리스트에서
+// 명시적으로 누른 경우에만 호출된다(추정/패턴 기반 자동 분류 없음).
+export async function setTestParticipantFlag(applicationId: string, isTestParticipant: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_test_participant_flag_for_session', {
+    application_id_value: applicationId,
+    is_test_participant_value: isTestParticipant,
+    session_token: adminSession.token,
   });
 
   if (error) throw error;
@@ -2026,6 +2044,9 @@ export interface ParticipantRoundProgress {
   conversationDurationSeconds?: number;
   currentRound?: number;
   gender?: '남성' | '여성';
+  // 지각 체크인 등으로 한 번도 프로필 카드를 제출한 적이 없으면 false -
+  // 이 경우 라운드가 진행 중이어도 카드 작성 화면을 계속 보여줘야 한다.
+  hasSubmittedProfileCard?: boolean;
   isBonusRound?: boolean;
   // 성비 불균형으로 인해 이번 라운드 나에게 실제 상대가 없을 때(휴식 순환)
   // true.
@@ -2068,6 +2089,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     conversationDurationSeconds?: number | null;
     currentRound?: number;
     gender?: '남성' | '여성' | null;
+    hasSubmittedProfileCard?: boolean | null;
     isBonusRound?: boolean | null;
     isResting?: boolean | null;
     nextPartnerAge?: number | null;
@@ -2094,6 +2116,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     gender: row.gender ?? undefined,
+    hasSubmittedProfileCard: row.hasSubmittedProfileCard ?? undefined,
     isBonusRound: row.isBonusRound ?? undefined,
     isResting: row.isResting ?? undefined,
     nextPartnerAge: row.nextPartnerAge ?? undefined,
@@ -2569,51 +2592,16 @@ export async function saveEventProfileCard(eventId: string, input: EventProfileC
   return { submittedAt: row?.submittedAt ?? undefined };
 }
 
-// 리사이즈 실패(예: 지원하지 않는 이미지 형식)는 원본 그대로 업로드를
-// 시도하도록 조용히 폴백한다 - 리사이즈는 최적화일 뿐 업로드 자체를 막을
-// 이유가 아니다.
-async function resizeImageForUpload(file: File, maxDimension = 1440, quality = 0.82): Promise<File> {
-  if (typeof document === 'undefined' || !file.type.startsWith('image/')) return file;
-  let objectUrl = '';
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      objectUrl = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
-      img.src = objectUrl;
-    });
-
-    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
-    const targetWidth = Math.max(1, Math.round(image.naturalWidth * scale));
-    const targetHeight = Math.max(1, Math.round(image.naturalHeight * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    const context = canvas.getContext('2d');
-    if (!context) return file;
-    context.drawImage(image, 0, 0, targetWidth, targetHeight);
-
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
-    if (!blob || blob.size >= file.size) return file;
-
-    const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
-    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
-  } catch (caughtError) {
-    console.error('[event-profile-card] image resize failed, uploading original', caughtError);
-    return file;
-  } finally {
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-  }
-}
-
 export async function uploadEventProfileCardPhoto(eventId: string, file: File): Promise<{ photoPath: string; photoUrl: string | null }> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
-  const resized = await resizeImageForUpload(file);
+  // Same compression path submit-application uses for registration photos
+  // (downscale to 1600px / re-encode as JPEG, with a decode timeout and a
+  // clear-message hard cap for genuinely uncompressible inputs like
+  // full-page screenshots) rather than a separate, thinner ad-hoc resizer.
+  const resized = await compressImageIfNeeded(file);
   const photo = await fileToPayload(resized);
 
   const { data, error } = await supabase.functions.invoke('upload-event-profile-card-photo', {
@@ -2897,6 +2885,7 @@ function mapApplicationRow(row: SupabaseApplicationRow): StoredApplication {
     accountType: row.account_type ?? 'member',
     attendanceStatus: (row.attendance_status as ParticipantAttendanceStatus | undefined) ?? 'active',
     isEmergencyWalkin: row.is_emergency_walkin ?? false,
+    isTestParticipant: row.is_test_participant ?? false,
     eventId: row.event_id,
     eventDate: row.event_date ? formatApplicationEventDate(row.event_date) : '행사 날짜 미정',
     eventType: row.short_name ?? '로테이션',

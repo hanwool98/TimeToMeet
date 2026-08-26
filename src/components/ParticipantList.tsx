@@ -74,12 +74,15 @@ export default function ParticipantList({ title, participants, capacity, onProfi
       {/* Tailwind's JIT scanner can't see a runtime-computed class name, so
           the slot count (which now varies per event) has to be an inline
           style rather than a `grid-rows-[repeat(${capacity},48px)]` class. */}
-      <div className="grid gap-1.5" style={{ gridTemplateRows: `repeat(${Math.max(participants.length, capacity)}, 48px)` }}>
+      {/* minmax(48px, auto) keeps the usual compact row height but lets a
+          row with a long job title (which now wraps instead of being
+          ellipsis-truncated below) grow taller instead of clipping it. */}
+      <div className="grid gap-1.5" style={{ gridTemplateRows: `repeat(${Math.max(participants.length, capacity)}, minmax(48px, auto))` }}>
         {participants.map((participant) => {
           const isPlaying = currentlyPlayingId === participant.id;
           return (
             <article
-              className="grid h-12 min-w-0 grid-cols-[30px_minmax(0,1fr)_22px] items-center gap-1.5 rounded-[17px] bg-white px-1 py-1 shadow-[0_8px_18px_rgba(30,43,63,0.05)]"
+              className="grid min-h-12 min-w-0 grid-cols-[30px_minmax(0,1fr)_22px] items-center gap-1.5 rounded-[17px] bg-white px-1 py-1 shadow-[0_8px_18px_rgba(30,43,63,0.05)]"
               key={participant.id}
             >
               <button
@@ -105,7 +108,7 @@ export default function ParticipantList({ title, participants, capacity, onProfi
                   <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-black leading-[1.1] text-black min-[390px]:text-[11px]">
                     {participant.nickname}
                   </span>
-                  <span className="mt-0.5 block overflow-hidden text-ellipsis whitespace-nowrap text-[8px] font-extrabold leading-[1.1] text-[#8c8c8c] min-[390px]:text-[9px]">
+                  <span className="mt-0.5 block break-keep text-[8px] font-extrabold leading-[1.25] text-[#8c8c8c] min-[390px]:text-[9px]">
                     {participant.tags.map((tag) => `#${tag}`).join(' ')}
                   </span>
                 </span>

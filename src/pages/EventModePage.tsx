@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import HeartRatingInput from '../components/HeartRatingInput';
 import ParticipantPhoto from '../components/ParticipantPhoto';
+import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/PhotoSourceInputs';
 import PrimaryButton from '../components/PrimaryButton';
 import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
 import { profileKeywordLabel } from '../constants/profileKeywords';
@@ -181,6 +182,20 @@ function ParticipantEventScreen({
   // stages (no remount when intro_video → round_waiting), whatever they've
   // typed survives the phase change without needing a separate autosave.
   if (!progress.stage || progress.stage === 'seat_guide' || progress.stage === 'intro_video' || progress.stage === 'round_waiting') {
+    return <EventProfileCardScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
+  }
+
+  // 지각 체크인: 전원 체크인을 기다리지 않고 행사가 시작되므로, 라운드가
+  // 이미 진행 중인 뒤에 체크인하는 사람도 있을 수 있다. 그런 사람은 아직
+  // 프로필 카드를 한 번도 제출한 적이 없으므로(=아무 상대도 본 적 없음)
+  // 최종선택 전까지는 라운드 진행 중에도 카드 작성 화면을 계속 보여준다.
+  // 제출하고 나면 서버가 다음 라운드부터 자동으로 로테이션에 끼워 넣는다
+  // (그 전까지는 이번 라운드가 그냥 "쉬어가는 시간"으로 보일 뿐이다).
+  if (
+    progress.hasSubmittedProfileCard === false &&
+    progress.stage !== 'final_selection' &&
+    progress.stage !== 'ended'
+  ) {
     return <EventProfileCardScreen eventId={eventId} eventTitle={eventTitle} onBack={onBack} />;
   }
 
@@ -644,14 +659,7 @@ function PhotoPickerSheet({
   ownPhotos: Array<{ path: string; signedUrl: string | null }>;
   selectedPath: string | null;
 }) {
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const albumInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (file) onFileChosen(file);
-  };
+  const inputsRef = useRef<PhotoSourceInputsHandle>(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
@@ -692,7 +700,7 @@ function PhotoPickerSheet({
         <div className="mt-4 flex flex-col gap-2 pb-4">
           <button
             className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-meet-blueSoft text-[14px] font-black text-meet-blue"
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={() => inputsRef.current?.openCamera()}
             type="button"
           >
             <CameraGlyph />
@@ -700,7 +708,7 @@ function PhotoPickerSheet({
           </button>
           <button
             className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-[#f2f4f7] text-[14px] font-black text-[#333]"
-            onClick={() => albumInputRef.current?.click()}
+            onClick={() => inputsRef.current?.openGallery()}
             type="button"
           >
             앨범에서 선택
@@ -710,12 +718,10 @@ function PhotoPickerSheet({
           </button>
         </div>
 
-        {/* capture="environment"가 있으면 모바일 브라우저가 곧장 후면 카메라
-            앱을 열고, 없는 두 번째 입력은 갤러리/파일 선택기를 연다 - 둘 다
-            평범한 <input type=file>이라 네이티브 WebView 래퍼 코드가 전혀
+        {/* ProfileFormPage(신청서 작성)의 촬영/앨범 로직과 같은 공용
+            컴포넌트 - <input type=file>이라 네이티브 WebView 래퍼 코드가
             필요 없다(이 프로젝트는 순수 웹앱이라 그런 래퍼 자체가 없다). */}
-        <input accept="image/*" capture="environment" className="hidden" onChange={handleFileInputChange} ref={cameraInputRef} type="file" />
-        <input accept="image/*" className="hidden" onChange={handleFileInputChange} ref={albumInputRef} type="file" />
+        <PhotoSourceInputs onFiles={(files) => { if (files[0]) onFileChosen(files[0]); }} ref={inputsRef} />
       </div>
     </div>
   );

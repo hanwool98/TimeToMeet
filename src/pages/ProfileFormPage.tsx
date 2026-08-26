@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import BirthDateSelect from '../components/BirthDateSelect';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import LogoMark from '../components/LogoMark';
+import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/PhotoSourceInputs';
 import PrimaryButton from '../components/PrimaryButton';
 import { RefundPolicyBox } from '../data/refundPolicy';
 import useOperationalData from '../hooks/useOperationalData';
@@ -164,15 +165,8 @@ function UploadBox({
   onRemove?: () => void;
   previewUrl?: string;
 }) {
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const inputsRef = useRef<PhotoSourceInputsHandle>(null);
   const [showPicker, setShowPicker] = useState(false);
-
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    onFiles(Array.from(files ?? []));
-    event.target.value = '';
-  };
 
   return (
     <div>
@@ -208,36 +202,17 @@ function UploadBox({
           </button>
         ) : null}
       </div>
-      <input
-        accept="image/*"
-        aria-hidden="true"
-        capture="environment"
-        onChange={handleChange}
-        ref={cameraInputRef}
-        style={{ display: 'none' }}
-        tabIndex={-1}
-        type="file"
-      />
-      <input
-        accept="image/*"
-        aria-hidden="true"
-        multiple={multiple}
-        onChange={handleChange}
-        ref={galleryInputRef}
-        style={{ display: 'none' }}
-        tabIndex={-1}
-        type="file"
-      />
+      <PhotoSourceInputs multiple={multiple} onFiles={onFiles} ref={inputsRef} />
       {showPicker ? (
         <PhotoSourceSheet
           onCancel={() => setShowPicker(false)}
           onSelectCamera={() => {
             setShowPicker(false);
-            cameraInputRef.current?.click();
+            inputsRef.current?.openCamera();
           }}
           onSelectGallery={() => {
             setShowPicker(false);
-            galleryInputRef.current?.click();
+            inputsRef.current?.openGallery();
           }}
         />
       ) : null}
@@ -265,7 +240,7 @@ function PhotoSourceSheet({
           onClick={onSelectCamera}
           type="button"
         >
-          촬영으로 찍기
+          사진 촬영
         </button>
         <button
           className="h-16 w-full text-[16px] font-black text-black active:bg-[#f7f9fb]"

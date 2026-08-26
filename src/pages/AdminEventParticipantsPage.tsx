@@ -16,6 +16,7 @@ import {
   fetchAdminRoundProgress,
   resetTestEventData,
   setParticipantAttendanceStatus,
+  setTestParticipantFlag,
   simulateTestEventFinalSelections,
   simulateTestEventProfileCards,
   updateApplicationReviewInSupabase,
@@ -44,6 +45,7 @@ export default function AdminEventParticipantsPage() {
   const [eventStarted, setEventStarted] = useState<boolean | null>(null);
   const [emergencyTokenBusy, setEmergencyTokenBusy] = useState(false);
   const [emergencyApproveBusyId, setEmergencyApproveBusyId] = useState<string | null>(null);
+  const [testFlagBusy, setTestFlagBusy] = useState(false);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
 
@@ -183,6 +185,25 @@ export default function AdminEventParticipantsPage() {
       window.alert(caughtError instanceof Error ? caughtError.message : '처리에 실패했습니다.');
     } finally {
       setAttendanceBusy(false);
+    }
+  };
+
+  // 관리자가 직접 눌렀을 때만 호출된다 - 자동/추정 분류는 절대 하지 않는다
+  // (전화번호 패턴 등으로 실제 참가자가 실수로 분류되는 걸 막기 위함).
+  const handleToggleTestParticipant = async () => {
+    if (!previewApplication || testFlagBusy) return;
+    const targetId = previewApplication.dbId ?? previewApplication.id;
+    const next = !previewApplication.isTestParticipant;
+    const label = next ? '테스트 참여자로 표시' : '테스트 참여자 표시 해제';
+    if (!window.confirm(`${previewParticipant?.nickname ?? '이 참가자'}님을 ${label}할까요?`)) return;
+    setTestFlagBusy(true);
+    try {
+      await setTestParticipantFlag(targetId, next);
+      await reload();
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '처리에 실패했습니다.');
+    } finally {
+      setTestFlagBusy(false);
     }
   };
 
@@ -495,6 +516,12 @@ export default function AdminEventParticipantsPage() {
               </p>
             ) : null}
 
+            {previewApplication?.isTestParticipant ? (
+              <p className="mt-3 rounded-[16px] bg-[#f2f2f2] px-4 py-2 text-[13px] font-black text-[#666]">
+                테스트 참여자 (프로필 카드 자동 제출 대상)
+              </p>
+            ) : null}
+
             {previewParticipant.profile ? (
               <div className="mt-5 space-y-3">
                 <ProfileRow label="3. 이름" value={previewParticipant.profile.name} />
@@ -608,6 +635,19 @@ export default function AdminEventParticipantsPage() {
                 </button>
               </div>
             )}
+
+            {previewApplication ? (
+              <div className="mt-3 w-full max-w-full min-w-0">
+                <button
+                  className="h-11 w-full rounded-[18px] border border-[#d9d9d9] text-[13px] font-black text-[#666] transition active:scale-[0.99] disabled:opacity-50"
+                  disabled={testFlagBusy}
+                  onClick={() => void handleToggleTestParticipant()}
+                  type="button"
+                >
+                  {previewApplication.isTestParticipant ? '테스트 참여자 표시 해제' : '테스트 참여자로 표시'}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

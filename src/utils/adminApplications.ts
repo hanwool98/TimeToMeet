@@ -17,6 +17,7 @@ export interface StoredApplication {
   accountType?: 'member' | 'guest';
   attendanceStatus?: ParticipantAttendanceStatus;
   isEmergencyWalkin?: boolean;
+  isTestParticipant?: boolean;
   id: string;
   userId: string;
   gender: '남성' | '여성';
