@@ -244,6 +244,7 @@ export default function AdminApplicationsPage() {
               <ApplicationCard
                 application={application}
                 highlighted={index === 0 && activeTab === 'review'}
+                isTestEvent={events.find((event) => event.id === application.eventId)?.isTestEvent ?? false}
                 key={application.id}
                 onPaymentFail={() => void failPayment(application.id)}
                 onReview={() => {
@@ -265,6 +266,7 @@ export default function AdminApplicationsPage() {
           application={reviewingApplication}
           capacityInfo={reviewingCapacityInfo}
           error={reviewError}
+          isTestEvent={events.find((event) => event.id === reviewingApplication.eventId)?.isTestEvent ?? false}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
         />
@@ -297,12 +299,14 @@ function SummaryCard({ count, label, newCount = 0 }: { count: number; label: str
 function ApplicationCard({
   application,
   highlighted,
+  isTestEvent,
   onPaymentFail,
   onPaymentComplete,
   onReview,
 }: {
   application: StoredApplication;
   highlighted: boolean;
+  isTestEvent: boolean;
   onPaymentFail: () => void;
   onPaymentComplete: () => void;
   onReview: () => void;
@@ -317,6 +321,7 @@ function ApplicationCard({
         highlighted ? 'border-meet-blue' : isFemale ? 'border-meet-pink/25' : 'border-[#edf1f5]',
       ].join(' ')}
     >
+      {isTestEvent ? <TestEventBadge className="mb-2" /> : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -405,6 +410,16 @@ function StatusBadge({ status }: { status: StoredApplication['status'] }) {
   return <span className={`max-w-[44%] shrink-0 truncate rounded-[10px] px-3 py-2 text-[12px] font-black ${color}`}>{status}</span>;
 }
 
+// 심사자가 실제 심사 건과 절대 혼동하지 않도록, 색을 상태 배지들과 겹치지
+// 않는 짙은 보라 계열로 분리했다.
+function TestEventBadge({ className = '' }: { className?: string }) {
+  return (
+    <span className={`inline-flex w-fit shrink-0 items-center gap-1 rounded-[8px] bg-[#5b4b8a] px-2.5 py-1 text-[11px] font-black text-white ${className}`}>
+      테스트 행사
+    </span>
+  );
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -418,12 +433,14 @@ export function ReviewProfileModal({
   application,
   capacityInfo,
   error,
+  isTestEvent,
   onClose,
   onDecide,
 }: {
   application: StoredApplication;
   capacityInfo?: { capacity: number; isFull: boolean; occupied: number } | null;
   error?: string;
+  isTestEvent?: boolean;
   onClose: () => void;
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
 }) {
@@ -500,6 +517,7 @@ export function ReviewProfileModal({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <img alt="time2meet" className="h-auto w-[120px] object-contain" src="/assets/time2meet-logo.png" />
+              {isTestEvent ? <TestEventBadge className="mt-3" /> : null}
               <h2 className="mt-4 text-[26px] font-black leading-tight">참가신청 심사</h2>
             </div>
             <button

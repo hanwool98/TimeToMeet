@@ -241,13 +241,13 @@ export default function AdminTabletSeatPage() {
           () => fetchEventTableSeatGuide(eventId, tableNumber, stored.connectionToken),
           (result) => {
             if (!active) return;
-            if (result.ok) setLastSuccessAt(Date.now());
-            if (!result.ok || !result.maleNickname || !result.femaleNickname) {
-              console.error('[tablet-seat-guide] assignment missing or fetch not ok', {
-                eventId,
-                result,
-                tableNumber,
-              });
+            // 이름이 비어있는 건 그 사람이 아직 체크인 전이라는 정상 상태다
+            // (요청사항: 체크인한 순간부터 그 자리에 이름이 뜬다) - 진짜
+            // 오류는 오직 명단 자체를 못 불러온 경우(ok:false)뿐이다.
+            if (!result.ok) {
+              console.error('[tablet-seat-guide] roster fetch not ok', { eventId, result, tableNumber });
+            } else {
+              setLastSuccessAt(Date.now());
             }
             setSeatGuide(result);
             setSeatGuideAttempted(true);
@@ -259,7 +259,10 @@ export default function AdminTabletSeatPage() {
         // above via the "연결 확인 중" banner - this only needs to unblock
         // the loading -> error decision below.
         console.error('[tablet-seat-guide] fetch threw', { eventId, error: caughtError, tableNumber });
-        if (active) setSeatGuideAttempted(true);
+        if (active) {
+          setSeatGuide({ ok: false });
+          setSeatGuideAttempted(true);
+        }
       }
     };
 
@@ -668,28 +671,25 @@ export default function AdminTabletSeatPage() {
     );
   }
 
-  const seatGuideNamesReady = Boolean(seatGuide?.maleNickname && seatGuide?.femaleNickname);
-
   // Genuinely nothing has come back yet (first poll still in flight) - the
   // only state where a plain loading indicator is honest.
   if (!seatGuideAttempted) return <DataLoadingState />;
 
-  // A real fetch attempt happened and there's still no pairing - this event
-  // always assigns every table at once, at event start, so this can only
-  // mean the assignment step failed or hasn't been reached (event not
-  // started yet) - never a normal "please wait" moment, so it must not look
-  // like one.
-  if (!seatGuideNamesReady) {
+  // The only real error left: the roster fetch itself failed (bad
+  // connection/invalid table). A name being blank is NOT an error anymore -
+  // that person just hasn't checked in yet, which is the normal, expected
+  // state for however long check-in is still in progress.
+  if (!seatGuide?.ok) {
     return (
       <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
-          <p className="text-[20px] font-black text-[#ff8a80]">자리 배정을 불러오지 못했습니다</p>
+          <p className="text-[20px] font-black text-[#ff8a80]">참가자 명단을 불러오지 못했습니다</p>
           <p className="mt-4 text-[15px] font-bold text-white/70">
-            테이블 {Number.isFinite(tableNumber) ? tableNumber : '-'}번의 배정 정보가 없습니다.
+            테이블 {Number.isFinite(tableNumber) ? tableNumber : '-'}번 정보를 가져오지 못했습니다.
             <br />
-            행사가 아직 시작되지 않았거나 배정에 실패했을 수 있어요.
+            연결 상태를 확인해주세요.
           </p>
           <button
             className="mt-6 rounded-full bg-white px-6 py-3 text-[14px] font-black text-[#1f292d]"

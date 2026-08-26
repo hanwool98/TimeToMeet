@@ -1540,16 +1540,23 @@ export async function verifyEventTabletConnection(eventId: string, tableNumber: 
 }
 
 export interface EventTableSeatGuide {
+  femaleCheckedIn?: boolean;
   femaleNickname?: string;
+  maleCheckedIn?: boolean;
   maleNickname?: string;
   ok: boolean;
-  roundNumber?: number;
 }
 
+// 참가자 리스트(신청번호 순, 성별 정렬)에서 N번째 남/여를 그대로 N번
+// 테이블에 배정한다 - 라운드 스케줄(event_table_assignments)과는 완전히
+// 무관하고, 승인된(참가 확정) 사람이면 출석 여부와 상관없이 항상 그
+// 자리가 정해져 있다. 다만 닉네임 표시 자체는 그 사람이 실제 체크인한
+// 뒤에만 나온다(체크인 전에는 자리는 정해져 있지만 화면에 이름이 아직
+// 안 뜬 상태).
 export async function fetchEventTableSeatGuide(eventId: string, tableNumber: number, connectionToken: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
 
-  const { data, error } = await supabase.rpc('get_event_table_seat_guide', {
+  const { data, error } = await supabase.rpc('get_event_table_seat_guide_by_roster', {
     connection_token: connectionToken,
     event_id_value: eventId,
     table_number_value: tableNumber,
@@ -1558,10 +1565,11 @@ export async function fetchEventTableSeatGuide(eventId: string, tableNumber: num
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
   return {
+    femaleCheckedIn: Boolean(row?.female_checked_in),
     femaleNickname: row?.female_nickname ?? undefined,
+    maleCheckedIn: Boolean(row?.male_checked_in),
     maleNickname: row?.male_nickname ?? undefined,
     ok: Boolean(row?.ok),
-    roundNumber: row?.round_number ?? undefined,
   } satisfies EventTableSeatGuide;
 }
 
