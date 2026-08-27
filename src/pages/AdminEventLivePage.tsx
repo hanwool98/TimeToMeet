@@ -825,21 +825,25 @@ function RoundProgressSection({
   // bonus_rating은 round_phase가 방금 끝난 대화의 값을 그대로 들고 있어
   // (phase 자체가 없음) 별도로 duration/label을 정한다. 그 외에는
   // roundPhase 기반 - 정규는 이벤트에 설정된 대화시간, 추가시간 대화는
-  // 7분 고정, 자리 안내는 정규/추가시간 모두 2분 고정.
+  // 7분 고정, reveal(첫 추가시간 진입, 호감도 없음)은 1분 고정, 이동+
+  // 호감도 수정 구간은 다음 추가시간이 있으면 2분·마지막이면 1분.
+  const hasNextBonusRound = (roundProgress.bonusRoundIndex ?? 0) < (roundProgress.bonusRoundCount ?? 0);
   const phaseDuration =
     roundProgress.stage === 'bonus_rating'
       ? BONUS_RATING_PHASE_SECONDS
-      : phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds);
+      : phaseDurationSeconds(roundProgress.roundPhase, roundProgress.isBonusRound, roundProgress.conversationDurationSeconds, hasNextBonusRound);
   const liveElapsed = computeLiveElapsedSeconds(roundProgress, nowTick + roundProgress.clockOffsetMs);
   const remaining = Math.max(0, phaseDuration - liveElapsed);
   const phaseLabel =
     roundProgress.stage === 'bonus_rating'
       ? '호감도 수정'
-      : roundProgress.roundPhase === 'transition'
-        ? roundProgress.isBonusRound
-          ? '이동+호감도 수정'
-          : '이동 및 호감도 작성'
-        : `${Math.round(phaseDuration / 60)}분 대화`;
+      : roundProgress.roundPhase === 'reveal'
+        ? '자리 이동'
+        : roundProgress.roundPhase === 'transition'
+          ? roundProgress.isBonusRound
+            ? '이동+호감도 수정'
+            : '이동 및 호감도 작성'
+          : `${Math.round(phaseDuration / 60)}분 대화`;
   const isBonusConversation = roundProgress.isBonusRound && roundProgress.roundPhase === 'conversation' && roundProgress.stage !== 'bonus_rating';
   const roundHeaderLabel =
     roundProgress.isBonusRound && roundProgress.bonusRoundIndex

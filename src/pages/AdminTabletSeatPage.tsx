@@ -406,10 +406,11 @@ export default function AdminTabletSeatPage() {
   const hasTimerPhase =
     effectiveStage === 'round_active' || effectiveStage === 'bonus_seat_guide' || effectiveStage === 'bonus_rating';
 
+  const hasNextBonusRound = (roundProgress?.bonusRoundIndex ?? 0) < (roundProgress?.bonusRoundCount ?? 0);
   const timerPhaseDuration = !hasTimerPhase
     ? 0
     : effectiveStage === 'bonus_seat_guide'
-      ? phaseDurationSeconds('transition')
+      ? phaseDurationSeconds(roundProgress?.roundPhase, true, undefined, hasNextBonusRound)
       : effectiveStage === 'bonus_rating'
         ? BONUS_RATING_PHASE_SECONDS
         : phaseDurationSeconds(roundProgress?.roundPhase, roundProgress?.isBonusRound, roundProgress?.conversationDurationSeconds);
@@ -555,6 +556,12 @@ export default function AdminTabletSeatPage() {
   if (progress.stage === 'bonus_seat_guide') {
     if (!roundProgress) return <DataLoadingState />;
     const isLastBonusRound = (roundProgress.bonusRoundIndex ?? 0) >= (roundProgress.bonusRoundCount ?? 0);
+    const isReveal = roundProgress.roundPhase === 'reveal';
+    const bonusPhaseMessage = isReveal
+      ? '1분 안에 자리 이동을 완료해주세요'
+      : isLastBonusRound
+        ? '곧 최종 선택으로 넘어갑니다'
+        : '2분 안에 자리 이동을 완료해주세요';
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
@@ -563,7 +570,7 @@ export default function AdminTabletSeatPage() {
         <PetalDecor />
         <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
         <p className="px-6 text-center" style={{ color: '#c07f87', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
-          {isLastBonusRound ? '곧 최종 선택으로 넘어갑니다' : '2분 안에 자리 이동을 완료해주세요'}
+          {bonusPhaseMessage}
         </p>
       </main>
     );

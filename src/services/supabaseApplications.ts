@@ -1885,7 +1885,7 @@ export interface RoundProgress {
   pendingReportCount: number;
   profileCardsSubmitted: number;
   profileCardsTotal: number;
-  roundPhase?: 'conversation' | 'transition';
+  roundPhase?: 'conversation' | 'reveal' | 'transition';
   stage: EventProgressStage;
   timerPositionSeconds: number;
   timerStatus: 'paused' | 'running';
@@ -1913,7 +1913,7 @@ interface RoundProgressJson {
   pendingReportCount: number;
   profileCardsSubmitted?: number;
   profileCardsTotal?: number;
-  roundPhase: 'conversation' | 'transition' | null;
+  roundPhase: 'conversation' | 'reveal' | 'transition' | null;
   serverNow?: string | null;
   stage: EventProgressStage;
   timerPositionSeconds: number;
@@ -2043,7 +2043,7 @@ export interface TabletRoundProgress {
   isResting?: boolean;
   maleNickname?: string;
   ok: boolean;
-  roundPhase?: 'conversation' | 'transition';
+  roundPhase?: 'conversation' | 'reveal' | 'transition';
   stage?: EventProgressStage;
   timerPositionSeconds?: number;
   timerStatus?: 'paused' | 'running';
@@ -2146,6 +2146,11 @@ export interface ParticipantRoundProgress {
   // 지각 체크인 등으로 한 번도 프로필 카드를 제출한 적이 없으면 false -
   // 이 경우 라운드가 진행 중이어도 카드 작성 화면을 계속 보여줘야 한다.
   hasSubmittedProfileCard?: boolean;
+  // stage='bonus_seat_guide' && roundPhase='transition'일 때만 의미 있음 -
+  // 서버가 round_ratings.updated_at을 이번 transition phase 시작 시각과
+  // 비교해 계산하므로, 새로고침해도 값이 그대로 복구된다(로컬 state로만
+  // 관리하지 않음).
+  hasSubmittedBonusRating?: boolean;
   isBonusRound?: boolean;
   // 성비 불균형으로 인해 이번 라운드 나에게 실제 상대가 없을 때(휴식 순환)
   // true.
@@ -2163,7 +2168,7 @@ export interface ParticipantRoundProgress {
   partnerApplicationId?: string;
   partnerJob?: string;
   partnerNickname?: string;
-  roundPhase?: 'conversation' | 'transition';
+  roundPhase?: 'conversation' | 'reveal' | 'transition';
   // undefined stage means the operator hasn't pressed 행사 시작 yet (no
   // event_progress row exists) - distinct from any real EventProgressStage.
   stage?: EventProgressStage;
@@ -2188,6 +2193,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     conversationDurationSeconds?: number | null;
     currentRound?: number;
     gender?: '남성' | '여성' | null;
+    hasSubmittedBonusRating?: boolean | null;
     hasSubmittedProfileCard?: boolean | null;
     isBonusRound?: boolean | null;
     isResting?: boolean | null;
@@ -2200,7 +2206,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     partnerApplicationId?: string | null;
     partnerJob?: string | null;
     partnerNickname?: string | null;
-    roundPhase?: 'conversation' | 'transition' | null;
+    roundPhase?: 'conversation' | 'reveal' | 'transition' | null;
     serverNow?: string | null;
     stage?: EventProgressStage | null;
     tableNumber?: number | null;
@@ -2215,6 +2221,7 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     gender: row.gender ?? undefined,
+    hasSubmittedBonusRating: row.hasSubmittedBonusRating ?? undefined,
     hasSubmittedProfileCard: row.hasSubmittedProfileCard ?? undefined,
     isBonusRound: row.isBonusRound ?? undefined,
     isResting: row.isResting ?? undefined,

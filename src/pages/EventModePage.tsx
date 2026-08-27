@@ -1376,9 +1376,20 @@ function BonusSeatGuideScreen({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [locallySubmitted, setLocallySubmitted] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const { errorMessage: helpErrorMessage, sendingType, sendRequest, toast } = useHelpRequest(eventId, progress.tableNumber);
+
+  // reveal(자리이동 안내 전용, 첫 추가시간 진입 시) 동안에는 호감도를
+  // 수정할 대상 자체가 없으므로 폼을 절대 보여주지 않는다. transition
+  // (2분, 두 번째 추가시간부터) 동안은 제출 여부에 따라 폼과 "행운의
+  // 상대" 리빌을 배타적으로 보여준다 - 서버가 계산해 내려주는
+  // hasSubmittedBonusRating이 새로고침에도 살아남는 기준이고,
+  // locallySubmitted는 제출 버튼을 누른 즉시 다음 폴링을 기다리지 않고
+  // 바로 화면을 넘기기 위한 낙관적 업데이트일 뿐이다.
+  const isReveal = progress.roundPhase === 'reveal';
+  const showReveal = isReveal || locallySubmitted || Boolean(progress.hasSubmittedBonusRating);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
@@ -1394,7 +1405,9 @@ function BonusSeatGuideScreen({
     setScore(null);
     setMemo('');
     setAutoSubmitted(false);
+    setLocallySubmitted(false);
     setReportModalOpen(false);
+    if (isReveal) return undefined;
     void fetchParticipantPartnerPhoto(eventId)
       .then((result) => {
         if (active) setPhoto(result);
@@ -1410,7 +1423,7 @@ function BonusSeatGuideScreen({
     return () => {
       active = false;
     };
-  }, [eventId, progress.partnerApplicationId]);
+  }, [eventId, isReveal, progress.partnerApplicationId]);
 
   useEffect(() => {
     let active = true;
@@ -1426,7 +1439,11 @@ function BonusSeatGuideScreen({
     };
   }, [eventId, progress.nextPartnerNickname, progress.nextTableNumber]);
 
-  const phaseDuration = phaseDurationSeconds('transition');
+  const isFemale = progress.gender === '여성';
+  const nextNickname = progress.nextPartnerNickname;
+  const hasNextPartner = Boolean(nextNickname);
+
+  const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds, hasNextPartner);
   const remaining = Math.max(
     0,
     phaseDuration -
@@ -1446,6 +1463,7 @@ function BonusSeatGuideScreen({
     setSubmitError('');
     try {
       await submitMyBonusRating(eventId, score, memo);
+      setLocallySubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
     } finally {
@@ -1457,49 +1475,47 @@ function BonusSeatGuideScreen({
   // 저장해둔다(호감도를 아예 고르지 않았다면 0점을 임의로 만들지 않고
   // 그대로 둔다 - 정규 라운드에서 이미 남긴 원래 점수가 유지된다).
   useEffect(() => {
-    if (remaining > 0 || autoSubmitted || score === null || submitting) return;
+    if (isReveal || remaining > 0 || autoSubmitted || score === null || submitting) return;
     setAutoSubmitted(true);
-    void submitMyBonusRating(eventId, score, memo).catch(() => undefined);
-  }, [autoSubmitted, eventId, memo, remaining, score, submitting]);
-
-  const isFemale = progress.gender === '여성';
-  const nextNickname = progress.nextPartnerNickname;
-  const hasNextPartner = Boolean(nextNickname);
+    void submitMyBonusRating(eventId, score, memo)
+      .then(() => setLocallySubmitted(true))
+      .catch(() => undefined);
+  }, [autoSubmitted, eventId, isReveal, memo, remaining, score, submitting]);
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <RatingForm
-          memo={memo}
-          onMemoChange={setMemo}
-          onScoreChange={setScore}
-          onSubmit={() => void handleSubmit()}
-          partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
-            .filter(Boolean)
-            .join(' / ')}
-          photo={photo}
-          reportButton={
-            progress.partnerApplicationId ? (
-              <button className="text-[12px] font-bold text-[#aaa] underline" onClick={() => setReportModalOpen(true)} type="button">
-                신고
-              </button>
-            ) : undefined
-          }
-          score={score}
-          submitError={submitError}
-          submitting={submitting}
-          title={
-            <>
-              방금 대화한 분에게
-              <br />
-              호감도를 수정해보세요 💗
-            </>
-          }
-        />
-
-        {hasNextPartner ? (
+        {!showReveal ? (
+          <RatingForm
+            memo={memo}
+            onMemoChange={setMemo}
+            onScoreChange={setScore}
+            onSubmit={() => void handleSubmit()}
+            partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+              .filter(Boolean)
+              .join(' / ')}
+            photo={photo}
+            reportButton={
+              progress.partnerApplicationId ? (
+                <button className="text-[12px] font-bold text-[#aaa] underline" onClick={() => setReportModalOpen(true)} type="button">
+                  신고
+                </button>
+              ) : undefined
+            }
+            score={score}
+            submitError={submitError}
+            submitting={submitting}
+            title={
+              <>
+                방금 대화한 분에게
+                <br />
+                호감도를 수정해보세요 💗
+              </>
+            }
+          />
+        ) : hasNextPartner ? (
           <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-8 text-center shadow-calendar">
             <span className="mx-auto flex w-fit items-center rounded-full bg-meet-blueSoft px-4 py-1.5 text-[13px] font-black text-meet-blue">
               추가시간
@@ -1544,12 +1560,17 @@ function BonusSeatGuideScreen({
               </p>
             </div>
           </section>
-        ) : null}
+        ) : (
+          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+            <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
+            <p className="mt-3 break-keep text-[18px] font-black leading-tight">곧 최종 선택으로 넘어갑니다</p>
+          </section>
+        )}
 
         {progress.timerUpdatedAt ? (
           <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
             <ClockGlyph />
-            {hasNextPartner ? '다음 대화까지' : '다음 단계까지'}{' '}
+            {!showReveal ? '다음 단계까지' : hasNextPartner ? '다음 대화까지' : '최종 선택까지'}{' '}
             <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
           </p>
         ) : null}
