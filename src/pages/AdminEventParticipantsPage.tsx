@@ -15,6 +15,7 @@ import {
   fetchAdminEventParticipantMedia,
   fetchAdminRoundProgress,
   resetTestEventData,
+  restartTestEventProgress,
   setParticipantAttendanceStatus,
   setTestParticipantFlag,
   simulateTestEventFinalSelections,
@@ -346,6 +347,30 @@ export default function AdminEventParticipantsPage() {
     }
   };
 
+  // resetTestEventData(행사 전체 테스트 초기화)와 달리 체크인/프로필카드/
+  // 태블릿 연결은 그대로 두고 라운드 진행 데이터만 지운다 - 참가자를 다시
+  // 만들 필요 없이 라운드 흐름만 반복 테스트하기 위한 별도 기능.
+  const handleRestartTestProgress = async () => {
+    if (!eventId || testActionBusy) return;
+    if (
+      !window.confirm(
+        '행사 진행을 초기화하시겠어요?\n체크인, 프로필카드, 태블릿 연결은 유지되며 라운드 진행, 호감도, 추가시간, 최종선택 데이터가 초기화됩니다.',
+      )
+    ) {
+      return;
+    }
+    setTestActionBusy(true);
+    try {
+      await restartTestEventProgress(eventId);
+      await reload();
+      window.alert('행사 진행을 초기화했습니다. 준비 화면에서 행사 시작을 다시 눌러주세요.');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '행사 진행 초기화에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white px-2 py-12 text-black">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] w-full max-w-full min-w-0 flex-col justify-center">
@@ -476,6 +501,17 @@ export default function AdminEventParticipantsPage() {
                 >
                   테스트 최종선택 자동 제출
                 </button>
+                <div className="col-span-2 rounded-[14px] bg-white p-1.5 shadow-sm">
+                  <button
+                    className="h-12 w-full rounded-[12px] bg-meet-blueSoft text-[13px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-50"
+                    disabled={testActionBusy}
+                    onClick={() => void handleRestartTestProgress()}
+                    type="button"
+                  >
+                    행사 진행 초기화
+                  </button>
+                  <p className="mt-1.5 px-1 text-center text-[11px] font-bold text-[#8a93a3]">체크인 · 프로필카드 · 태블릿 연결은 유지됩니다</p>
+                </div>
                 <button
                   className="col-span-2 h-12 rounded-[14px] bg-meet-pinkSoft text-[13px] font-black text-meet-pink transition active:scale-[0.99] disabled:opacity-50"
                   disabled={testActionBusy}

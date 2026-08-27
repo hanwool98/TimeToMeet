@@ -40,6 +40,39 @@ import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from
 
 const progressPollIntervalMs = 4_000;
 
+// html-to-image(toPng)는 캡처 시점에 아직 로드/디코딩이 끝나지 않은 <img>는
+// 빈 채로 캡처해버린다 - 사진을 방금 고른 직후처럼 브라우저가 여전히
+// 디코딩 중인 상태에서 캡처가 시작되면 화면엔 보여도 저장된 PNG에서는
+// 빠질 수 있다. decode()가 없거나(구형 브라우저) 실패해도(일부 Safari
+// 버전의 알려진 동작) img.complete가 이미 true라면 화면에 실제로 그려진
+// 상태이므로 캡처를 막지 않고 그냥 진행한다.
+async function waitForImagesToLoad(container: HTMLElement) {
+  const images = Array.from(container.querySelectorAll('img'));
+  await Promise.all(
+    images.map(async (img) => {
+      if (!img.complete) {
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            img.removeEventListener('load', done);
+            img.removeEventListener('error', done);
+            resolve();
+          };
+          img.addEventListener('load', done);
+          img.addEventListener('error', done);
+        });
+      }
+      if (typeof img.decode === 'function') {
+        try {
+          await img.decode();
+        } catch {
+          // 무시 - 위에서 이미 load/complete를 확인했으므로 화면에는 정상
+          // 표시된 상태다.
+        }
+      }
+    }),
+  );
+}
+
 // ProfileFormPage의 대표사진 조정 편집기와 동일한 방식(드래그/핀치/휠로
 // 위치·확대 조절) - 행사 프로필 카드 사진도 같은 방식으로 조정할 수
 // 있어야 한다는 요청에 따라 같은 수식을 그대로 재사용한다.
@@ -428,7 +461,12 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         setDefaultPhotoCrop(result.defaultPhotoCrop);
         setOwnPhotos(result.ownPhotos);
         setPhotoPath(result.photoPath);
-        setPhotoCrop(result.photoCrop);
+        // 행사 전용 사진을 아직 고르지 않았으면(photoPath 없음) 기본
+        // 대표사진을 보여주는 것과 마찬가지로 그 대표사진의 crop/zoom/
+        // position(scale, offsetX, offsetY 전부 포함된 단일 객체)도 그대로
+        // 재현해야 한다 - 카드 전용 photoCrop은 아직 없으므로(null) 여기서
+        // defaultPhotoCrop으로 대체하지 않으면 원본이 중앙/무확대로 보인다.
+        setPhotoCrop(result.photoPath ? result.photoCrop : result.defaultPhotoCrop);
         setPhotoUrl(result.photoUrl);
         setHobby(result.hobby);
         setMbti(result.mbti);
@@ -586,7 +624,13 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     setCardImageSaving(true);
     setCardImageSaveError('');
     try {
-      const dataUrl = await toPng(cardCaptureRef.current, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      // toPng는 캡처 시점에 <img>가 아직 픽셀을 다 그리지 못했으면 그
+      // 자리를 그냥 비워버린다 - 사진을 방금 고른 직후처럼 브라우저가
+      // 아직 디코딩 중인 상태에서 버튼을 누르면 화면엔 보여도 캡처에는
+      // 빠질 수 있다. 캡처 직전에 카드 안의 모든 이미지가 실제로 로드+
+      // 디코딩까지 끝났는지 기다린다.
+      await waitForImagesToLoad(cardCaptureRef.current);
+      const dataUrl = await toPng(cardCaptureRef.current, { backgroundColor: '#ffffff', cacheBust: true, pixelRatio: 2 });
       const fileName = `${nickname || '프로필카드'}.png`;
 
       // iOS/Safari는 <a download>가 이미지 저장으로 이어지지 않는 경우가

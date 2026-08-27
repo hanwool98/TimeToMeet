@@ -1395,6 +1395,23 @@ export async function resetTestEventData(eventId: string) {
   if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '테스트 데이터 초기화에 실패했습니다.');
 }
 
+// "행사 전체 테스트 초기화"(resetTestEventData, 신청/체크인/프로필카드까지
+// 전부 삭제)와는 별개 - 체크인/프로필카드/태블릿 연결은 그대로 둔 채
+// 라운드 진행 데이터만 지워서 참가자 재생성 없이 라운드 흐름만 반복
+// 테스트할 수 있게 한다.
+export async function restartTestEventProgress(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('restart_test_event_progress_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw new Error(error.message || '행사 진행 초기화에 실패했습니다.');
+}
+
 export function subscribeToSupabaseChanges(onChange: () => void) {
   if (!supabase) return () => undefined;
 

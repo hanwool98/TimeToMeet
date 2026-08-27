@@ -595,9 +595,6 @@ export default function AdminTabletSeatPage() {
 
   if (progress.stage === 'round_active') {
     if (!roundProgress) return <DataLoadingState />;
-    const currentRound = roundProgress.currentRound ?? progress.currentRound ?? 1;
-    const roundLabel =
-      roundProgress.isBonusRound && roundProgress.bonusRoundIndex ? `추가시간 ${roundProgress.bonusRoundIndex} 진행 중` : `${currentRound}라운드 진행 중`;
 
     if (roundProgress.roundPhase === 'transition') {
       // Deliberately bare compared to the conversation-phase screen (no
@@ -637,7 +634,7 @@ export default function AdminTabletSeatPage() {
     }
 
     const stored = readStoredConnection(eventId ?? '', tableNumber);
-    const partnerNames = [roundProgress.maleNickname, roundProgress.femaleNickname].filter(Boolean).join(' · ');
+    const hasPair = Boolean(roundProgress.maleNickname || roundProgress.femaleNickname);
 
     return (
       <main className="fixed inset-0 flex items-center overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
@@ -645,27 +642,27 @@ export default function AdminTabletSeatPage() {
         <ReconnectedToast visible={showRecoveredToast} />
         <TimerAlertToast toast={timerAlertToast} />
         <PetalDecor />
-        {partnerNames ? (
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 px-6 pt-6 text-center">
-            <p className="max-w-[70vw] truncate text-[15px] font-black tracking-wide" style={{ color: '#a35850' }}>
-              {partnerNames}
+        {hasPair ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 grid items-center gap-3 px-6 pt-6"
+            style={{ gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)' }}
+          >
+            <p className="truncate text-left text-[15px] font-black tracking-wide" style={{ color: '#a35850' }}>
+              {roundProgress.maleNickname ?? ''}
             </p>
-            <p className="text-[12px] font-bold tracking-[0.2em]" style={{ color: '#c07f87' }}>
+            <p className="whitespace-nowrap text-center text-[12px] font-bold tracking-[0.2em]" style={{ color: '#c07f87' }}>
               TABLE {tableNumber}
+            </p>
+            <p className="truncate text-right text-[15px] font-black tracking-wide" style={{ color: '#a35850' }}>
+              {roundProgress.femaleNickname ?? ''}
             </p>
           </div>
         ) : null}
         <div className="flex h-full w-full items-center px-[5vw]">
-          <div className="flex flex-[68] items-center justify-center">
-            <RoundTimerRing
-              offline={isStale}
-              phaseLabel={`${Math.round(timerPhaseDuration / 60)}분 대화`}
-              phaseDuration={timerPhaseDuration}
-              remaining={timerRemaining}
-              roundLabel={roundLabel}
-            />
+          <div className="flex flex-[74] items-center justify-center">
+            <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
           </div>
-          <div className="flex flex-[32] justify-center">
+          <div className="flex flex-[26] justify-center">
             {stored?.connectionToken && eventId ? (
               <ConversationTopicDeck connectionToken={stored.connectionToken} eventId={eventId} tableNumber={tableNumber} />
             ) : null}
@@ -771,15 +768,11 @@ function mixDigitColor(t: number) {
 function RoundTimerRing({
   phaseDuration,
   offline = false,
-  phaseLabel,
   remaining,
-  roundLabel,
 }: {
   offline?: boolean;
   phaseDuration: number;
-  phaseLabel?: string;
   remaining: number;
-  roundLabel?: string;
 }) {
   const elapsedFraction = phaseDuration > 0 ? Math.min(1, Math.max(0, 1 - remaining / phaseDuration)) : 0;
   const size = 100;
@@ -801,8 +794,10 @@ function RoundTimerRing({
     <div
       className="relative grid shrink-0 place-items-center"
       style={{
-        height: 'clamp(420px, calc(var(--tablet-vh, 1vh) * 72), 760px)',
-        width: 'clamp(420px, calc(var(--tablet-vh, 1vh) * 72), 760px)',
+        // 라운드/phase 문구를 없앤 만큼 태블릿은 멀리서도 보이도록 숫자와
+        // 링 자체의 비중을 키운다 (이전 72vh/420~760px → 82vh/480~840px).
+        height: 'clamp(480px, calc(var(--tablet-vh, 1vh) * 82), 840px)',
+        width: 'clamp(480px, calc(var(--tablet-vh, 1vh) * 82), 840px)',
       }}
     >
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
@@ -834,14 +829,6 @@ function RoundTimerRing({
         />
       ) : null}
       <div className="px-[12%] text-center">
-        {roundLabel ? (
-          <p style={{ color: '#c07f87', fontSize: 'clamp(14px,1.7vh,19px)', fontWeight: 600, letterSpacing: '0.01em' }}>{roundLabel}</p>
-        ) : null}
-        {phaseLabel ? (
-          <p className="mt-1" style={{ color: '#d6ab9f', fontSize: 'clamp(11px,1.25vh,14px)', fontWeight: 500 }}>
-            {phaseLabel}
-          </p>
-        ) : null}
         {offline ? (
           <p
             style={{
@@ -850,7 +837,6 @@ function RoundTimerRing({
               fontWeight: 700,
               letterSpacing: '0.01em',
               lineHeight: 1.3,
-              marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
             }}
           >
             연결 확인 중
@@ -861,12 +847,11 @@ function RoundTimerRing({
             style={{
               color: digitColor,
               fontFamily: "'Noto Serif KR', 'Nanum Myeongjo', Georgia, 'Times New Roman', serif",
-              fontSize: 'clamp(84px,14.5vh,180px)',
+              fontSize: 'clamp(96px,17vh,210px)',
               fontVariantNumeric: 'tabular-nums',
               fontWeight: 300,
               letterSpacing: '0.01em',
               lineHeight: 1,
-              marginTop: roundLabel || phaseLabel ? '1.1rem' : 0,
               transition: 'color 1s linear',
             }}
           >
