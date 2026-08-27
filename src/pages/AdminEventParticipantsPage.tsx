@@ -347,14 +347,15 @@ export default function AdminEventParticipantsPage() {
     }
   };
 
-  // resetTestEventData(행사 전체 테스트 초기화)와 달리 체크인/프로필카드/
-  // 태블릿 연결은 그대로 두고 라운드 진행 데이터만 지운다 - 참가자를 다시
-  // 만들 필요 없이 라운드 흐름만 반복 테스트하기 위한 별도 기능.
+  // resetTestEventData(행사 전체 테스트 초기화)와 달리 신청/참가확정/체크인/
+  // 태블릿 연결은 그대로 두고, 프로필카드 작성 단계부터 행사 진행 전체(라운드/
+  // 호감도/추가시간/최종선택)를 지운다 - 참가자를 다시 만들거나 체크인/태블릿
+  // 연결을 다시 할 필요 없이 프로필카드 작성부터 반복 테스트하기 위한 기능.
   const handleRestartTestProgress = async () => {
     if (!eventId || testActionBusy) return;
     if (
       !window.confirm(
-        '행사 진행을 초기화하시겠어요?\n체크인, 프로필카드, 태블릿 연결은 유지되며 라운드 진행, 호감도, 추가시간, 최종선택 데이터가 초기화됩니다.',
+        '행사 진행을 초기화하시겠어요?\n참가자와 체크인, 태블릿 연결은 유지됩니다. 프로필카드와 라운드 진행, 호감도, 추가시간, 최종선택 데이터는 초기화됩니다.',
       )
     ) {
       return;
@@ -363,7 +364,7 @@ export default function AdminEventParticipantsPage() {
     try {
       await restartTestEventProgress(eventId);
       await reload();
-      window.alert('행사 진행을 초기화했습니다. 준비 화면에서 행사 시작을 다시 눌러주세요.');
+      window.alert('행사 진행을 초기화했습니다. 참가자는 다시 들어오면 프로필카드 작성부터 시작합니다.');
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '행사 진행 초기화에 실패했습니다.');
     } finally {
@@ -510,7 +511,7 @@ export default function AdminEventParticipantsPage() {
                   >
                     행사 진행 초기화
                   </button>
-                  <p className="mt-1.5 px-1 text-center text-[11px] font-bold text-[#8a93a3]">체크인 · 프로필카드 · 태블릿 연결은 유지됩니다</p>
+                  <p className="mt-1.5 px-1 text-center text-[11px] font-bold text-[#8a93a3]">체크인과 태블릿 연결은 유지하고 프로필카드 작성부터 다시 시작합니다</p>
                 </div>
                 <button
                   className="col-span-2 h-12 rounded-[14px] bg-meet-pinkSoft text-[13px] font-black text-meet-pink transition active:scale-[0.99] disabled:opacity-50"
