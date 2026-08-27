@@ -180,3 +180,222 @@ button {
   overflow-wrap: anywhere;
   word-break: keep-all;
 }
+
+/* ConversationTopicDeck (대화 주제 카드 더미) - 종이 두께 13겹 + 다음장 +
+   맨윗장 구조. 오프라인 태블릿용으로 Caveat Bold를 로컬 파일로 서빙한다.
+   로드 실패해도 화면이 깨지지 않도록 cursive 폴백을 남겨둔다. */
+@font-face {
+  font-family: 'Caveat';
+  font-weight: 700;
+  src: url('/fonts/Caveat-Bold.woff2') format('woff2');
+  font-display: swap;
+}
+
+.topic-deck {
+  --topic-deck-card-warm: #f7e0d8;
+  --topic-deck-gold: #c9a25f;
+  --topic-deck-brand-pink: #e6365e;
+  --topic-deck-brand-ink: #141414;
+  --topic-deck-brand-blue: #3d9bf7;
+  --topic-deck-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  position: relative;
+  width: 88px;
+  height: 140px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.topic-deck:focus-visible {
+  outline: 2px solid #e0a0a9;
+  outline-offset: 10px;
+  border-radius: 14px;
+}
+
+.topic-deck-ground {
+  position: absolute;
+  left: 5px;
+  right: 1px;
+  bottom: 2px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(178, 120, 132, 0.28);
+  filter: blur(7px);
+  z-index: 0;
+  /* 구형 기기에서 blur가 버벅이면 위 filter 줄을 지우고 아래로 대체 가능:
+     box-shadow: 0 0 0 6px rgba(178, 120, 132, 0.16); background: rgba(178, 120, 132, 0.28); */
+}
+
+.topic-deck-ply {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 116px;
+  border-radius: 8px;
+  background: linear-gradient(100deg, #fffaf7 0%, #f6e6df 46%, #ecd9d1 100%);
+  border-bottom: 1px solid rgba(206, 168, 157, 0.45);
+}
+
+.topic-deck-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 116px;
+  border-radius: 8px;
+  background: linear-gradient(150deg, #fffefc 0%, var(--topic-deck-card-warm) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  overflow: hidden;
+}
+.topic-deck-card-pattern {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.topic-deck-border-outer {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 6px;
+  border: 1.4px solid rgba(180, 120, 60, 0.5);
+}
+.topic-deck-border-inner {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(180, 120, 60, 0.32);
+}
+.topic-deck-corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  opacity: 0.75;
+}
+.topic-deck-corner svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.topic-deck-corner--tl {
+  left: 6px;
+  top: 6px;
+}
+.topic-deck-corner--tr {
+  right: 6px;
+  top: 6px;
+  transform: scaleX(-1);
+}
+.topic-deck-corner--bl {
+  left: 6px;
+  bottom: 6px;
+  transform: scaleY(-1);
+}
+.topic-deck-corner--br {
+  right: 6px;
+  bottom: 6px;
+  transform: scale(-1, -1);
+}
+
+.topic-deck-glare {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 44%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+}
+
+.topic-deck-wordmark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) rotate(-2deg);
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  font-family: 'Caveat', cursive;
+  font-weight: 700;
+  font-size: 16px;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 5px rgba(255, 255, 255, 0.85),
+    0 0 1px rgba(255, 255, 255, 0.9);
+}
+.topic-deck-wordmark-w1 {
+  color: var(--topic-deck-brand-pink);
+}
+.topic-deck-wordmark-w2 {
+  color: var(--topic-deck-brand-ink);
+}
+.topic-deck-wordmark-w3 {
+  color: var(--topic-deck-brand-blue);
+}
+
+.topic-deck-next {
+  z-index: 14;
+  transform: translateY(-16.8px);
+}
+.topic-deck-next::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(150, 105, 110, 0.13);
+}
+
+.topic-deck-top {
+  z-index: 15;
+  transform: translateY(-18.2px);
+  box-shadow: 0 2px 4px rgba(190, 130, 140, 0.2);
+  transition:
+    transform 0.5s var(--topic-deck-ease),
+    box-shadow 0.5s var(--topic-deck-ease);
+  animation: topicDeckBreathe 3.4s ease-in-out infinite;
+}
+.topic-deck:hover .topic-deck-top,
+.topic-deck:focus-visible .topic-deck-top {
+  transform: translate(2px, -34px) rotate(-3.5deg);
+  box-shadow: 0 14px 26px rgba(190, 130, 140, 0.32);
+  animation: none;
+}
+.topic-deck:active .topic-deck-top {
+  transform: translate(1px, -27px) rotate(-2deg);
+  animation: none;
+}
+/* 특정 기기에서 "숨쉬기" 애니메이션이 버벅이면 이 클래스를 deck 루트에
+   추가해 끌 수 있다 (ConversationTopicDeck.tsx에서
+   localStorage.getItem('time2meet.deckStaticMode')로 토글). */
+.topic-deck--static .topic-deck-top {
+  animation: none;
+}
+
+@keyframes topicDeckBreathe {
+  0%,
+  100% {
+    transform: translateY(-18.2px);
+  }
+  50% {
+    transform: translateY(-21.4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-deck-top {
+    animation: none;
+    transition-duration: 0.001s;
+  }
+}

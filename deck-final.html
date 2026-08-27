@@ -1,0 +1,176 @@
+<!-- ═══════════════════════════════════════════════════════════
+     카드 더미 — 최종 확정본
+     무늬: B. 문장(紋章) 격자   투명도: 0.27   타일: 26px
+     폰트: Caveat Bold (워드마크 전용)
+     ═══════════════════════════════════════════════════════════ -->
+
+<!--
+  적용 방법:
+  1) 아래 <style> 내용을 기존 스타일시트의 .deck 관련 블록과 통째로 교체
+  2) 아래 <button class="deck">...</button> 마크업으로 기존 카드 더미 마크업 교체
+  3) 상단 <link> 로 Caveat 폰트를 CDN에서 받고 있는데, 오프라인 태블릿용으로는
+     Caveat-Bold.ttf 파일을 내려받아 @font-face로 로컬 서빙 필요 (하단 주석 참고)
+-->
+
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap" rel="stylesheet">
+
+<style>
+/* 오프라인 배포 시 위 <link> 대신 아래로 교체하고 폰트 파일을 프로젝트에 포함
+@font-face{
+  font-family:'Caveat';
+  font-weight:700;
+  src:url('/fonts/Caveat-Bold.woff2') format('woff2');
+  font-display:swap;
+}
+*/
+
+:root{
+  --card-warm:#f7e0d8;
+  --gold:#c9a25f;
+  --brand-pink:#e6365e;
+  --brand-ink:#141414;
+  --brand-blue:#3d9bf7;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+
+.deck{
+  position:relative;margin:16px 0 0 40px;padding:0;border:0;background:none;
+  width:88px;height:140px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.deck:focus-visible{outline:2px solid #e0a0a9;outline-offset:10px;border-radius:14px}
+
+.ground{
+  position:absolute;left:5px;right:1px;bottom:2px;height:11px;border-radius:50%;
+  background:rgba(178,120,132,.28);filter:blur(7px);z-index:0;
+  /* 구형 기기에서 blur 버벅이면 이 한 줄을 지우고 box-shadow로 대체 가능 */
+}
+
+.ply{
+  position:absolute;left:0;right:0;bottom:0;height:116px;border-radius:8px;
+  background:linear-gradient(100deg,#fffaf7 0%,#f6e6df 46%,#ecd9d1 100%);
+  border-bottom:1px solid rgba(206,168,157,.45);
+}
+
+.card{
+  position:absolute;left:0;right:0;bottom:0;height:116px;border-radius:8px;
+  background:linear-gradient(150deg,#fffefc 0%,var(--card-warm) 100%);
+  border:1px solid rgba(255,255,255,.95);overflow:hidden;
+}
+.card .pat{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+
+/* 트럼프 카드풍 이중 테두리 + 코너 장식 */
+.card .border-outer{position:absolute;left:5px;right:5px;top:5px;bottom:5px;border-radius:6px;border:1.4px solid rgba(180,120,60,.5)}
+.card .border-inner{position:absolute;left:8px;right:8px;top:8px;bottom:8px;border-radius:4px;border:1px solid rgba(180,120,60,.32)}
+.card .corner{position:absolute;width:12px;height:12px;opacity:.75}
+.card .corner svg{width:100%;height:100%;display:block}
+.card .c-tl{left:6px;top:6px}
+.card .c-tr{right:6px;top:6px;transform:scaleX(-1)}
+.card .c-bl{left:6px;bottom:6px;transform:scaleY(-1)}
+.card .c-br{right:6px;bottom:6px;transform:scale(-1,-1)}
+
+.card .glare{
+  position:absolute;left:0;right:0;top:0;height:44%;
+  background:linear-gradient(180deg,rgba(255,255,255,.42) 0%,rgba(255,255,255,0) 100%);
+  pointer-events:none;
+}
+
+/* 워드마크 — 배경 없음, 흰색 계열 text-shadow로만 대비 확보 */
+.wordmark{
+  position:absolute;left:0;right:0;top:50%;
+  transform:translateY(-50%) rotate(-2deg);-webkit-transform:translateY(-50%) rotate(-2deg);
+  text-align:center;white-space:nowrap;line-height:1;letter-spacing:.2px;
+  font-family:'Caveat',cursive;font-weight:700;font-size:16px;
+  text-shadow:0 1px 0 rgba(255,255,255,.9), 0 0 5px rgba(255,255,255,.85), 0 0 1px rgba(255,255,255,.9);
+}
+.wordmark .w1{color:var(--brand-pink)}
+.wordmark .w2{color:var(--brand-ink)}
+.wordmark .w3{color:var(--brand-blue)}
+
+.next{z-index:14;transform:translateY(-16.8px);-webkit-transform:translateY(-16.8px)}
+.next::after{content:"";position:absolute;left:0;right:0;top:0;bottom:0;background:rgba(150,105,110,.13)}
+
+.top{
+  z-index:15;transform:translateY(-18.2px);-webkit-transform:translateY(-18.2px);
+  box-shadow:0 2px 4px rgba(190,130,140,.2);
+  transition:transform .5s var(--ease),box-shadow .5s var(--ease);
+  -webkit-transition:-webkit-transform .5s var(--ease),box-shadow .5s var(--ease);
+}
+.deck:hover .top,.deck:focus-visible .top{
+  transform:translate(2px,-34px) rotate(-3.5deg);-webkit-transform:translate(2px,-34px) rotate(-3.5deg);
+  box-shadow:0 14px 26px rgba(190,130,140,.32);
+}
+.deck:active .top{transform:translate(1px,-27px) rotate(-2deg);-webkit-transform:translate(1px,-27px) rotate(-2deg)}
+
+@-webkit-keyframes breathe{0%,100%{-webkit-transform:translateY(-18.2px)}50%{-webkit-transform:translateY(-21.4px)}}
+@keyframes breathe{0%,100%{transform:translateY(-18.2px)}50%{transform:translateY(-21.4px)}}
+.top{-webkit-animation:breathe 3.4s ease-in-out infinite;animation:breathe 3.4s ease-in-out infinite}
+.deck:hover .top,.deck:focus-visible .top,.deck:active .top{-webkit-animation:none;animation:none}
+@media (prefers-reduced-motion:reduce){.top{-webkit-animation:none;animation:none;transition-duration:.001s}}
+</style>
+
+<button class="deck" aria-label="대화 주제 카드 뽑기">
+  <span class="ground"></span>
+
+  <!-- 종이 두께 13겹, 이미 만들어둔 build() 로직 그대로 사용 -->
+  <span id="plies"></span>
+
+  <!-- 다음 장 -->
+  <span class="card next">
+    <svg class="pat" viewBox="0 0 88 116" preserveAspectRatio="xMidYMid slice" opacity="0.27">
+      <defs>
+        <pattern id="deckPatternNext" width="26" height="26" patternUnits="userSpaceOnUse">
+          <g transform="scale(1)" stroke="#d68a9a" fill="none" stroke-width="0.85">
+            <path d="M13 2 L13 24 M2 13 L24 13"/>
+            <path d="M13 6 L17 13 L13 20 L9 13 Z" fill="#e9b7c2" stroke="none"/>
+            <circle cx="13" cy="13" r="1.6" fill="#c9a25f" stroke="none"/>
+          </g>
+        </pattern>
+      </defs>
+      <rect width="88" height="116" fill="url(#deckPatternNext)"/>
+    </svg>
+    <span class="border-outer"></span><span class="border-inner"></span>
+    <span class="corner c-tl"></span><span class="corner c-tr"></span>
+    <span class="corner c-bl"></span><span class="corner c-br"></span>
+    <span class="wordmark"><span class="w1">time</span><span class="w2">2</span><span class="w3">meet</span></span>
+  </span>
+
+  <!-- 맨 윗장 (이 요소만 움직임) -->
+  <span class="card top" id="top">
+    <svg class="pat" viewBox="0 0 88 116" preserveAspectRatio="xMidYMid slice" opacity="0.27">
+      <defs>
+        <pattern id="deckPatternTop" width="26" height="26" patternUnits="userSpaceOnUse">
+          <g transform="scale(1)" stroke="#d68a9a" fill="none" stroke-width="0.85">
+            <path d="M13 2 L13 24 M2 13 L24 13"/>
+            <path d="M13 6 L17 13 L13 20 L9 13 Z" fill="#e9b7c2" stroke="none"/>
+            <circle cx="13" cy="13" r="1.6" fill="#c9a25f" stroke="none"/>
+          </g>
+        </pattern>
+      </defs>
+      <rect width="88" height="116" fill="url(#deckPatternTop)"/>
+    </svg>
+    <span class="glare"></span>
+    <span class="border-outer"></span><span class="border-inner"></span>
+    <span class="corner c-tl"></span><span class="corner c-tr"></span>
+    <span class="corner c-bl"></span><span class="corner c-br"></span>
+    <span class="wordmark"><span class="w1">time</span><span class="w2">2</span><span class="w3">meet</span></span>
+  </span>
+</button>
+
+<script>
+/* 코너 장식 SVG 주입 (기존 JS의 build() 로직과 나란히 두면 됨) */
+var cornerSVG = '<svg viewBox="0 0 12 12"><path d="M1 1 L1 8 C1 4 4 1 8 1 L1 1 Z" fill="#c08a4a" opacity=".55"/>'
+  + '<circle cx="1.6" cy="1.6" r="1.1" fill="#c08a4a" opacity=".7"/></svg>';
+document.querySelectorAll('.corner').forEach(function(c){ c.innerHTML = cornerSVG; });
+
+/* 종이 겹(두께) 생성 — 기존 로직 그대로 */
+var PLY = 13, STEP = 1.4;
+(function(){
+  var html = '', i, y;
+  for (i = 0; i < PLY; i++){
+    y = (-(i*STEP)).toFixed(2);
+    html += '<span class="ply" style="transform:translateY(' + y + 'px);-webkit-transform:translateY(' + y + 'px);'
+          + 'z-index:' + (i+1) + ';opacity:' + (0.74 + i*0.02).toFixed(2) + '"></span>';
+  }
+  document.getElementById('plies').innerHTML = html;
+})();
+</script>

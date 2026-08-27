@@ -1,10 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { fetchConversationTopicsForTablet, type TabletConversationTopic } from '../services/supabaseApplications';
 
 const topicsRefreshIntervalMs = 90_000;
 const flipTransitionMs = 520;
 const rotateDelayMs = 60;
 const rotateDurationMs = 460;
+
+// 종이 두께 겹 수/간격 - deck-final.html 확정본과 동일.
+const deckPlyCount = 13;
+const deckPlyStepPx = 1.4;
+
+// 특정 태블릿에서 "숨쉬기" 대기 애니메이션이 버벅이면, 그 기기 브라우저
+// 콘솔에서 localStorage.setItem('time2meet.deckStaticMode','1') 한 번
+// 실행해두면 이후 계속 꺼진 채로 유지된다(코드 재배포 없이 기기별로 끌
+// 수 있는 탈출구).
+function isDeckStaticModeEnabled() {
+  try {
+    return window.localStorage.getItem('time2meet.deckStaticMode') === '1';
+  } catch {
+    return false;
+  }
+}
 
 function shuffle<T>(items: T[]): T[] {
   const arr = items.slice();
@@ -74,6 +90,10 @@ export default function ConversationTopicDeck({
   const stackCardRef = useRef<HTMLDivElement | null>(null);
   const overlayAnchorRef = useRef<HTMLDivElement | null>(null);
   const closeTimeoutRef = useRef<number | null>(null);
+  const [staticMode] = useState(isDeckStaticModeEnabled);
+  const patternIdBase = useId();
+  const nextPatternId = `${patternIdBase}-next`;
+  const topPatternId = `${patternIdBase}-top`;
 
   useEffect(() => {
     let active = true;
@@ -188,18 +208,35 @@ export default function ConversationTopicDeck({
 
       <div className="relative grid w-full place-items-center" style={{ height: 'clamp(230px, 30vh, 340px)' }}>
         <div
-          className="relative"
+          className={`topic-deck${staticMode ? ' topic-deck--static' : ''}`}
           onClick={openDeck}
           role="button"
-          style={{ height: 'clamp(180px, 23vh, 260px)', width: 'clamp(128px, 16vh, 185px)' }}
         >
-          <DeckCard rotate={11} translate="52% 12%" tone="sliver" />
-          <DeckCard rotate={9} translate="46% 9%" tone="back" />
-          <DeckCard rotate={-7} translate="-42% -7%" tone="middle" />
-          <div ref={stackCardRef} style={{ visibility: isFlying ? 'hidden' : 'visible' }}>
-            <DeckCard rotate={0} tone="front">
-              <QuestionMarkGlyph />
-            </DeckCard>
+          <span className="topic-deck-ground" />
+
+          {Array.from({ length: deckPlyCount }, (_, index) => (
+            <span
+              className="topic-deck-ply"
+              key={index}
+              style={{ opacity: 0.74 + index * 0.02, transform: `translateY(${-(index * deckPlyStepPx)}px)`, zIndex: index + 1 }}
+            />
+          ))}
+
+          <span className="topic-deck-card topic-deck-next">
+            <DeckPatternSvg patternId={nextPatternId} />
+            <span className="topic-deck-border-outer" />
+            <span className="topic-deck-border-inner" />
+            <DeckCorners />
+            <DeckWordmark />
+          </span>
+
+          <div className="topic-deck-card topic-deck-top" ref={stackCardRef} style={{ visibility: isFlying ? 'hidden' : 'visible' }}>
+            <DeckPatternSvg patternId={topPatternId} />
+            <span className="topic-deck-glare" />
+            <span className="topic-deck-border-outer" />
+            <span className="topic-deck-border-inner" />
+            <DeckCorners />
+            <DeckWordmark />
           </div>
         </div>
       </div>
@@ -325,73 +362,62 @@ function QuestionFace({ topic }: { topic: TabletConversationTopic }) {
   );
 }
 
-// 뒤 카드일수록(sliver -> back -> middle -> front) 더 옅고 채도가 낮은
-// 톤을 써서 두께감과 원근감을 같이 준다. 테두리는 순백 대신 은은한
-// 로즈골드 라인 - 카드 자체에 살짝 고급스러운 느낌을 더한다. 클릭 핸들러는
-// 이 스택을 감싸는 바깥 div 하나에만 걸려 있고(openDeck), FLIP 애니메이션의
-// 시작 좌표(stackCardRef)도 front 카드 하나만 가리키므로 뒤쪽 장식 카드를
-// 몇 장 더 추가해도 클릭 영역/애니메이션 바인딩에는 전혀 영향이 없다.
-function DeckCard({
-  children,
-  rotate,
-  tone,
-  translate = '0 0',
-}: {
-  children?: React.ReactNode;
-  rotate: number;
-  tone: 'back' | 'front' | 'middle' | 'sliver';
-  translate?: string;
-}) {
-  const [tx, ty] = translate.split(' ');
-  const background =
-    tone === 'front'
-      ? 'linear-gradient(160deg, #fffdfb 0%, #f7e0d8 100%)'
-      : tone === 'middle'
-        ? 'linear-gradient(160deg, #ffe9e0 0%, #ffd9ca 100%)'
-        : tone === 'back'
-          ? 'linear-gradient(160deg, #ffdfd2 0%, #fecab5 100%)'
-          : 'linear-gradient(160deg, #fcd2c0 0%, #f7bda5 100%)';
-  const shadow =
-    tone === 'front'
-      ? '0 6px 16px rgba(196,122,104,0.14), 0 22px 40px -6px rgba(196,122,104,0.28)'
-      : '0 6px 20px rgba(196,122,104,0.16)';
-  const zIndex = tone === 'front' ? 4 : tone === 'middle' ? 3 : tone === 'back' ? 2 : 1;
-
+// 문장(紋章)풍 격자 무늬 - 카드 뒷면 패턴. 이미지 파일 없이 인라인 SVG
+// pattern으로 그린다. next/top 카드가 각각 고유한 patternId를 써야
+// (동일 id가 DOM에 중복되면 브라우저가 앞의 것만 렌더링할 수 있음).
+function DeckPatternSvg({ patternId }: { patternId: string }) {
   return (
-    <div
-      className="absolute inset-0 grid place-items-center rounded-[11px] border"
-      style={{
-        background,
-        borderColor: 'rgba(224,178,132,0.45)',
-        borderWidth: tone === 'front' ? 1.5 : 1,
-        boxShadow: shadow,
-        transform: `translate(${tx}, ${ty}) rotate(${rotate}deg)`,
-        zIndex,
-      }}
-    >
-      {children}
-    </div>
+    <svg className="topic-deck-card-pattern" preserveAspectRatio="xMidYMid slice" viewBox="0 0 88 116">
+      <defs>
+        <pattern height="26" id={patternId} patternUnits="userSpaceOnUse" width="26">
+          <g fill="none" stroke="#d68a9a" strokeWidth={0.85}>
+            <path d="M13 2 L13 24 M2 13 L24 13" />
+            <path d="M13 6 L17 13 L13 20 L9 13 Z" fill="#e9b7c2" stroke="none" />
+            <circle cx={13} cy={13} fill="#c9a25f" r={1.6} stroke="none" />
+          </g>
+        </pattern>
+      </defs>
+      <rect fill={`url(#${patternId})`} height={116} opacity={0.27} width={88} />
+    </svg>
   );
 }
 
-function QuestionMarkGlyph() {
+// 카드 네 모서리의 트럼프 카드풍 장식 - 4방향 재사용, CSS transform으로
+// 대칭시킨다(topic-deck-corner--tr/bl/br).
+function DeckCorners() {
   return (
-    <span
-      aria-hidden="true"
-      className="grid place-items-center rounded-full"
-      style={{
-        background: 'rgba(255,255,255,0.55)',
-        border: '1px solid rgba(224,178,132,0.5)',
-        color: '#c98a6c',
-        fontFamily: "Georgia, 'Times New Roman', serif",
-        fontSize: '1.6em',
-        fontWeight: 700,
-        height: '1.9em',
-        lineHeight: 1,
-        width: '1.9em',
-      }}
-    >
-      ?
+    <>
+      <span className="topic-deck-corner topic-deck-corner--tl">
+        <DeckCornerGlyph />
+      </span>
+      <span className="topic-deck-corner topic-deck-corner--tr">
+        <DeckCornerGlyph />
+      </span>
+      <span className="topic-deck-corner topic-deck-corner--bl">
+        <DeckCornerGlyph />
+      </span>
+      <span className="topic-deck-corner topic-deck-corner--br">
+        <DeckCornerGlyph />
+      </span>
+    </>
+  );
+}
+
+function DeckCornerGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12">
+      <path d="M1 1 L1 8 C1 4 4 1 8 1 L1 1 Z" fill="#c08a4a" opacity={0.55} />
+      <circle cx={1.6} cy={1.6} fill="#c08a4a" opacity={0.7} r={1.1} />
+    </svg>
+  );
+}
+
+function DeckWordmark() {
+  return (
+    <span className="topic-deck-wordmark">
+      <span className="topic-deck-wordmark-w1">time</span>
+      <span className="topic-deck-wordmark-w2">2</span>
+      <span className="topic-deck-wordmark-w3">meet</span>
     </span>
   );
 }
