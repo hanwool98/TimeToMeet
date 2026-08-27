@@ -39,6 +39,18 @@ export default function ParticipantPhoto({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [measuredSize, setMeasuredSize] = useState(sizePx ?? 0);
+  // crossOrigin='anonymous' is needed so a save-as-image feature (e.g. the
+  // 프로필카드 저장 button) can actually read this photo's pixels into a
+  // canvas - without it, the browser silently treats a cross-origin image
+  // (Supabase Storage) as tainted and canvas export tools skip/blank it.
+  // If the storage response ever lacks the CORS header this needs, the
+  // crossOrigin load itself fails - fall back to a plain (non-CORS) load so
+  // the photo still just displays normally, matching today's behavior.
+  const [useCrossOrigin, setUseCrossOrigin] = useState(true);
+
+  useEffect(() => {
+    setUseCrossOrigin(true);
+  }, [photoUrl]);
 
   useEffect(() => {
     if (sizePx !== undefined) {
@@ -65,6 +77,11 @@ export default function ParticipantPhoto({
           <img
             alt=""
             className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
+            crossOrigin={useCrossOrigin ? 'anonymous' : undefined}
+            key={useCrossOrigin ? 'cors' : 'plain'}
+            onError={() => {
+              if (useCrossOrigin) setUseCrossOrigin(false);
+            }}
             src={photoUrl}
             style={representativeCropTransform(crop, measuredSize)}
           />

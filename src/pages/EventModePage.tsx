@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
 import { toPng } from 'html-to-image';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
@@ -33,12 +33,25 @@ import {
   type ParticipantRoundProgress,
   type PartnerEventProfileCard,
 } from '../services/supabaseApplications';
-import type { RepresentativeCrop } from '../utils/representativeCrop';
+import { representativeCropTransform, type RepresentativeCrop } from '../utils/representativeCrop';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard } from '../utils/requestGuard';
 import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
+
+// ProfileFormPage의 대표사진 조정 편집기와 동일한 방식(드래그/핀치/휠로
+// 위치·확대 조절) - 행사 프로필 카드 사진도 같은 방식으로 조정할 수
+// 있어야 한다는 요청에 따라 같은 수식을 그대로 재사용한다.
+function clampCardCropOffset(offset: number, scale: number) {
+  const maxOffsetFraction = Math.max(0, (scale - 1) / 2);
+  return Math.max(-maxOffsetFraction, Math.min(maxOffsetFraction, offset));
+}
+
+function getCardCropEditorBoxSize() {
+  if (typeof window === 'undefined') return 320;
+  return Math.min(window.innerWidth * 0.96, 430);
+}
 
 // The entire /events/:eventId/mode route is "행사모드" - it intentionally
 // never renders <BottomTabs/> on any sub-screen (wait screen, conversation,
@@ -390,6 +403,17 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [cardImageSaving, setCardImageSaving] = useState(false);
   const [cardImageSaveError, setCardImageSaveError] = useState('');
 
+  // 대표사진 조정 편집기와 동일한 방식으로, 사진을 새로 고를 때마다
+  // 원 안에서 위치/확대를 직접 조정할 수 있게 하는 전체화면 편집기.
+  const [cropEditor, setCropEditor] = useState<{ path: string | null; photoUrl: string } | null>(null);
+  const [cropOffsetX, setCropOffsetX] = useState(0);
+  const [cropOffsetY, setCropOffsetY] = useState(0);
+  const [cropScale, setCropScale] = useState(1);
+  const [cropMinScale, setCropMinScale] = useState(1);
+  const cropDragStartRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const cropPinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
+  const cropActivePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -428,20 +452,41 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     };
   }, [eventId, loadRetryTick]);
 
-  // 기존에 쓰던 대표사진을 그대로 고르면 원래 crop을 재사용하고, 다른
-  // 사진으로 바꾸면 중앙/확대없음 기본값에서 다시 시작한다(전체 크롭
-  // 편집기를 이 화면에 새로 만들지 않기 위한 의도적인 단순화).
+  // 기존에 쓰던 대표사진을 그대로 고르면 원래 crop에서 시작하고, 다른
+  // 사진으로 바꾸면 중앙/확대없음 기본값에서 시작한다 - 어느 쪽이든
+  // 대표사진 조정 화면과 동일한 전체화면 편집기로 이어져 직접 위치/확대를
+  // 조정할 수 있다.
+  const cropEditorObjectUrlRef = useRef<string | null>(null);
+
+  const openCropEditor = (path: string | null, url: string, initialCrop: RepresentativeCrop | undefined) => {
+    setCropOffsetX(initialCrop?.offsetX ?? 0);
+    setCropOffsetY(initialCrop?.offsetY ?? 0);
+    setCropScale(initialCrop?.scale ?? 1);
+    setCropMinScale(1);
+    setCropEditor({ path, photoUrl: url });
+  };
+
+  const closeCropEditorCleanup = () => {
+    if (cropEditorObjectUrlRef.current) {
+      URL.revokeObjectURL(cropEditorObjectUrlRef.current);
+      cropEditorObjectUrlRef.current = null;
+    }
+    setCropEditor(null);
+  };
+
   const selectPhoto = (path: string | null) => {
     setPhotoUploadError('');
-    setPhotoPath(path);
-    const effectivePath = path ?? defaultPhotoPath;
-    setPhotoCrop(path === null ? defaultPhotoCrop : path === defaultPhotoPath ? defaultPhotoCrop : { offsetX: 0, offsetY: 0, scale: 1 });
-    setPhotoUrl(ownPhotos.find((photo) => photo.path === effectivePath)?.signedUrl ?? null);
     setPhotoPickerOpen(false);
+    const effectivePath = path ?? defaultPhotoPath;
+    const url = ownPhotos.find((photo) => photo.path === effectivePath)?.signedUrl ?? null;
+    if (!url) return;
+    const initialCrop = path === null ? defaultPhotoCrop : path === defaultPhotoPath ? defaultPhotoCrop : { offsetX: 0, offsetY: 0, scale: 1 };
+    openCropEditor(path, url, initialCrop);
   };
 
   // 촬영/앨범에서 새로 고른 파일 업로드. 성공 전까지는 photoPath(=실제
   // 제출될 값)를 건드리지 않고 pendingPreviewUrl로만 미리보기를 바꾼다.
+  // 업로드가 끝나면 곧장 반영하지 않고 조정 편집기를 연다.
   const handlePhotoFileChosen = async (file: File) => {
     setPhotoPickerOpen(false);
     setPhotoUploadError('');
@@ -450,18 +495,87 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     setPhotoUploading(true);
     try {
       const result = await uploadEventProfileCardPhoto(eventId, file);
-      setPhotoPath(result.photoPath);
-      setPhotoCrop({ offsetX: 0, offsetY: 0, scale: 1 });
-      setPhotoUrl(result.photoUrl ?? localUrl);
+      const finalUrl = result.photoUrl ?? localUrl;
+      if (!result.photoUrl) cropEditorObjectUrlRef.current = localUrl;
+      openCropEditor(result.photoPath, finalUrl, { offsetX: 0, offsetY: 0, scale: 1 });
     } catch (caughtError) {
       setPhotoUploadError(caughtError instanceof Error ? caughtError.message : '사진 업로드에 실패했습니다.');
     } finally {
       setPhotoUploading(false);
       setPendingPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
+        if (current && current !== cropEditorObjectUrlRef.current) URL.revokeObjectURL(current);
         return null;
       });
     }
+  };
+
+  const confirmCropEditor = () => {
+    if (!cropEditor) return;
+    setPhotoPath(cropEditor.path);
+    setPhotoCrop({ offsetX: cropOffsetX, offsetY: cropOffsetY, scale: cropScale });
+    setPhotoUrl(cropEditor.photoUrl);
+    closeCropEditorCleanup();
+  };
+
+  const cancelCropEditor = () => {
+    closeCropEditorCleanup();
+  };
+
+  const getCropPointerDistance = () => {
+    const pointers = Array.from(cropActivePointersRef.current.values());
+    if (pointers.length < 2) return 0;
+    return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+  };
+
+  const handleCropPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropActivePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (cropActivePointersRef.current.size === 2) {
+      cropPinchStartRef.current = { distance: getCropPointerDistance(), scale: cropScale };
+      cropDragStartRef.current = null;
+      return;
+    }
+    cropDragStartRef.current = { x: event.clientX, y: event.clientY, offsetX: cropOffsetX, offsetY: cropOffsetY };
+  };
+
+  const handleCropPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!cropActivePointersRef.current.has(event.pointerId)) return;
+    cropActivePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (cropActivePointersRef.current.size >= 2 && cropPinchStartRef.current) {
+      const distance = getCropPointerDistance();
+      if (cropPinchStartRef.current.distance > 0) {
+        const maxScale = Math.max(2.6, cropMinScale + 1.5);
+        const nextScale = Math.min(
+          maxScale,
+          Math.max(cropMinScale, Number((cropPinchStartRef.current.scale * (distance / cropPinchStartRef.current.distance)).toFixed(2))),
+        );
+        setCropScale(nextScale);
+        setCropOffsetX((current) => clampCardCropOffset(current, nextScale));
+        setCropOffsetY((current) => clampCardCropOffset(current, nextScale));
+      }
+      return;
+    }
+    if (!cropDragStartRef.current) return;
+    const boxSize = getCardCropEditorBoxSize();
+    setCropOffsetX(clampCardCropOffset(cropDragStartRef.current.offsetX + (event.clientX - cropDragStartRef.current.x) / boxSize, cropScale));
+    setCropOffsetY(clampCardCropOffset(cropDragStartRef.current.offsetY + (event.clientY - cropDragStartRef.current.y) / boxSize, cropScale));
+  };
+
+  const handleCropPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    cropActivePointersRef.current.delete(event.pointerId);
+    cropDragStartRef.current = null;
+    cropPinchStartRef.current = null;
+  };
+
+  const handleCropWheel = (event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const maxScale = Math.max(2.6, cropMinScale + 1.5);
+    setCropScale((current) => {
+      const nextScale = Math.min(maxScale, Math.max(cropMinScale, Number((current + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2))));
+      setCropOffsetX((currentOffsetX) => clampCardCropOffset(currentOffsetX, nextScale));
+      setCropOffsetY((currentOffsetY) => clampCardCropOffset(currentOffsetY, nextScale));
+      return nextScale;
+    });
   };
 
   // 어떤 이유로든(구형 브라우저, 캔버스 변환 실패, Web Share 미지원 등)
@@ -675,6 +789,35 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         />
       ) : null}
 
+      {cropEditor ? (
+        <EventCardPhotoCropEditor
+          minScale={cropMinScale}
+          offsetX={cropOffsetX}
+          offsetY={cropOffsetY}
+          onCancel={cancelCropEditor}
+          onConfirm={confirmCropEditor}
+          onImageLoad={(naturalWidth, naturalHeight) => {
+            if (!naturalWidth || !naturalHeight) return;
+            const aspect = naturalWidth / naturalHeight;
+            const minScale = Number((aspect >= 1 ? 1 : 1 / aspect).toFixed(2));
+            setCropMinScale(minScale);
+            setCropScale((current) => Math.max(current, minScale));
+          }}
+          onPointerCancel={handleCropPointerUp}
+          onPointerDown={handleCropPointerDown}
+          onPointerMove={handleCropPointerMove}
+          onPointerUp={handleCropPointerUp}
+          onReset={() => {
+            setCropOffsetX(0);
+            setCropOffsetY(0);
+            setCropScale(cropMinScale);
+          }}
+          onWheel={handleCropWheel}
+          photoUrl={cropEditor.photoUrl}
+          scale={cropScale}
+        />
+      ) : null}
+
       <ToastBanner toast={toast} />
     </div>
   );
@@ -700,6 +843,94 @@ function CardField({
         placeholder={placeholder}
         value={value}
       />
+    </div>
+  );
+}
+
+// ProfileFormPage의 대표사진 조정 전체화면 편집기와 동일한 레이아웃/조작
+// 방식(드래그로 이동, 핀치/휠로 확대) - 행사 프로필 카드 사진도 신청서
+// 대표사진처럼 원 안에서 직접 위치/확대를 조정할 수 있어야 한다는 요청에
+// 따라 새로 만들었다.
+function EventCardPhotoCropEditor({
+  minScale,
+  offsetX,
+  offsetY,
+  onCancel,
+  onConfirm,
+  onImageLoad,
+  onPointerCancel,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onReset,
+  onWheel,
+  photoUrl,
+  scale,
+}: {
+  minScale: number;
+  offsetX: number;
+  offsetY: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onImageLoad: (naturalWidth: number, naturalHeight: number) => void;
+  onPointerCancel: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
+  onReset: () => void;
+  onWheel: (event: WheelEvent<HTMLDivElement>) => void;
+  photoUrl: string;
+  scale: number;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#080d13] text-white">
+      <div className="flex h-[86px] shrink-0 items-center justify-between px-5">
+        <button
+          aria-label="사진 조정 취소"
+          className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/10 text-[34px] font-light leading-none"
+          onClick={onCancel}
+          type="button"
+        >
+          ×
+        </button>
+        <h2 className="text-[20px] font-black">사진 조정</h2>
+        <button
+          aria-label="사진 조정 완료"
+          className="grid h-12 w-12 place-items-center rounded-full bg-meet-blue text-[28px] font-black leading-none"
+          onClick={onConfirm}
+          type="button"
+        >
+          ✓
+        </button>
+      </div>
+      <div className="flex shrink-0 justify-center pb-3">
+        <button className="rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-[13px] font-extrabold text-white/85" onClick={onReset} type="button">
+          초기화
+        </button>
+      </div>
+      <div
+        className="relative min-h-0 flex-1 touch-none overflow-hidden bg-black"
+        onPointerCancel={onPointerCancel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onWheel={onWheel}
+      >
+        <div className="absolute left-1/2 top-1/2 h-[96vw] max-h-[430px] w-[96vw] max-w-[430px] -translate-x-1/2 -translate-y-1/2">
+          <img
+            alt="사진 조정"
+            className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
+            draggable={false}
+            onLoad={(event) => onImageLoad(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+            src={photoUrl}
+            style={{ ...representativeCropTransform({ offsetX, offsetY, scale }, getCardCropEditorBoxSize()), touchAction: 'none' }}
+          />
+        </div>
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[96vw] max-h-[430px] w-[96vw] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/90 shadow-[0_0_0_999px_rgba(0,0,0,0.55)]" />
+      </div>
+      <p className="shrink-0 py-4 text-center text-[13px] font-bold text-white/60">
+        최소 {minScale.toFixed(1)}배 ~ 드래그로 이동, 손가락으로 확대/축소
+      </p>
     </div>
   );
 }
