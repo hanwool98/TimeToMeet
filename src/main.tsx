@@ -17,6 +17,7 @@ import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
 import AdminFinalSelectionsPage from './pages/AdminFinalSelectionsPage';
 import AdminPage from './pages/AdminPage';
+import AdminPreroundSeatsPage from './pages/AdminPreroundSeatsPage';
 import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
 import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
 import EmergencyProfileFormPage from './pages/EmergencyProfileFormPage';
@@ -73,6 +74,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/events/:eventId/edit" element={<AdminEventCreatePage />} />
             <Route path="/admin/events/:eventId/check-in" element={<AdminCheckInPage />} />
             <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
+            <Route path="/admin/events/:eventId/prepare/seats" element={<AdminPreroundSeatsPage />} />
             <Route path="/admin/events/:eventId/live" element={<AdminEventLivePage />} />
           </Route>
           <Route path="/admin/events/:eventId/tablet-connect" element={<AdminTabletConnectPage />} />

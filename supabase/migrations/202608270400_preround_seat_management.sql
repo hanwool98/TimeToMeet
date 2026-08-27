@@ -539,15 +539,21 @@ begin
       return;
     end if;
 
+    -- 지각(아직 체크인 전) 참가자는 자리 자체는 draft에 예약돼 있지만,
+    -- "행사 시작 시 해당 자리는 빈자리"이어야 하므로 실제 1라운드에는
+    -- 체크인을 마친 사람만 채워 넣는다 - 체크인하지 않은 쪽은 자연히
+    -- null(성비 불균형과 동일한 방식으로 화면에 "자리 배정 대기"로 표시).
     with males as (
       select s.male_application_id as id, s.table_number as rn
       from public.event_preround_seats s
-      where s.event_id = event_id_value and s.male_application_id is not null
+      join public.applications a on a.id = s.male_application_id
+      where s.event_id = event_id_value and a.checked_in_at is not null
     ),
     females as (
       select s.female_application_id as id, s.table_number as rn
       from public.event_preround_seats s
-      where s.event_id = event_id_value and s.female_application_id is not null
+      join public.applications a on a.id = s.female_application_id
+      where s.event_id = event_id_value and a.checked_in_at is not null
     )
     insert into public.event_table_assignments (event_id, table_number, round_number, male_application_id, female_application_id)
     select event_id_value, f.rn, from_round_number + r - 1, m.id, f.id

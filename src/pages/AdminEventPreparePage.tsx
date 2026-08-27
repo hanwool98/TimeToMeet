@@ -221,6 +221,15 @@ export default function AdminEventPreparePage() {
             subtitle={`${event.tabletCount} / ${event.requiredTablets}대`}
             title="테이블 태블릿 연결"
           />
+          <ActionRow
+            active={operationsActive}
+            badge="배치 확인"
+            description="지각/참여취소 처리 및 자리 직접 수정"
+            icon={<SeatsIcon />}
+            onClick={() => navigate(`/admin/events/${event.id}/prepare/seats`)}
+            subtitle="행사 시작 전까지 수정 가능"
+            title="자리배치 확인"
+          />
         </section>
 
         <section className="mt-5 rounded-[20px] bg-[#fff1ee] px-5 py-4">
@@ -230,8 +239,8 @@ export default function AdminEventPreparePage() {
             </span>
             <div className="min-w-0">
               <p className="text-[15px] font-black text-[#1f292d]">초기 테이블은 자동으로 정해져요</p>
-              <p className="mt-1 text-[13px] font-bold text-[#a35850]">체크인한 순서대로 같은 순번의 남녀가 짝지어져요</p>
-              <p className="mt-1 text-[12px] font-bold text-[#b98680]">자리유도에서 안내한 테이블이 실제 1라운드 테이블과 동일합니다</p>
+              <p className="mt-1 text-[13px] font-bold text-[#a35850]">참가자 목록의 남녀 순번이 같은 번호의 테이블에 배정돼요</p>
+              <p className="mt-1 text-[12px] font-bold text-[#b98680]">체크인 즉시 자리가 안내되고, 자리배치 확인 화면에서 행사 시작 전까지 지각/참여취소·자리 수정이 가능합니다</p>
             </div>
           </div>
         </section>
@@ -668,6 +677,17 @@ function TabletIcon() {
     <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
       <rect height="24" rx="3" stroke="currentColor" strokeWidth="2.3" width="16" x="8" y="4" />
       <path d="M15 24.5h2" stroke="currentColor" strokeLinecap="round" strokeWidth="2.3" />
+    </svg>
+  );
+}
+
+function SeatsIcon() {
+  return (
+    <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
+      <rect height="10" rx="2" stroke="currentColor" strokeWidth="2.2" width="24" x="4" y="9" />
+      <circle cx="11" cy="14" fill="currentColor" r="1.6" />
+      <circle cx="21" cy="14" fill="currentColor" r="1.6" />
+      <path d="M4 24h24" stroke="currentColor" strokeLinecap="round" strokeWidth="2.2" />
     </svg>
   );
 }

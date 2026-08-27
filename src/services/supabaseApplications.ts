@@ -673,6 +673,98 @@ export async function setParticipantAttendanceStatus(applicationId: string, stat
   if (error) throw error;
 }
 
+export interface AdminPreroundSeat {
+  femaleApplicationId?: string;
+  femaleAttendanceStatus?: ParticipantAttendanceStatus;
+  femaleCheckedIn: boolean;
+  femaleIsLate: boolean;
+  femaleNickname?: string;
+  maleApplicationId?: string;
+  maleAttendanceStatus?: ParticipantAttendanceStatus;
+  maleCheckedIn: boolean;
+  maleIsLate: boolean;
+  maleNickname?: string;
+  tableNumber: number;
+}
+
+// 자리유도가 이미 쓰고 있는 배치(event_preround_seats)를 그대로 보여준다 -
+// 여기서 새로 자리를 만드는 게 아니라 기존 배치를 조회/편집하는 화면이다.
+export async function fetchAdminPreroundSeatPlan(eventId: string): Promise<{ rows: AdminPreroundSeat[]; roundOneStarted: boolean }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_preround_seat_plan_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{
+    female_application_id: string | null;
+    female_attendance_status: string | null;
+    female_checked_in: boolean | null;
+    female_is_late: boolean | null;
+    female_nickname: string | null;
+    male_application_id: string | null;
+    male_attendance_status: string | null;
+    male_checked_in: boolean | null;
+    male_is_late: boolean | null;
+    male_nickname: string | null;
+    round_one_started: boolean;
+    table_number: number;
+  }>;
+
+  return {
+    roundOneStarted: rows[0]?.round_one_started ?? false,
+    rows: rows.map((row) => ({
+      femaleApplicationId: row.female_application_id ?? undefined,
+      femaleAttendanceStatus: (row.female_attendance_status as ParticipantAttendanceStatus | null) ?? undefined,
+      femaleCheckedIn: row.female_checked_in ?? false,
+      femaleIsLate: row.female_is_late ?? false,
+      femaleNickname: row.female_nickname ?? undefined,
+      maleApplicationId: row.male_application_id ?? undefined,
+      maleAttendanceStatus: (row.male_attendance_status as ParticipantAttendanceStatus | null) ?? undefined,
+      maleCheckedIn: row.male_checked_in ?? false,
+      maleIsLate: row.male_is_late ?? false,
+      maleNickname: row.male_nickname ?? undefined,
+      tableNumber: row.table_number,
+    })),
+  };
+}
+
+// 지각 표시는 계산 로직에 영향 없는 순수 안내용 플래그 - 참여취소는 기존
+// setParticipantAttendanceStatus('no_show')를 그대로 재사용한다(같은 상태
+// 하나를 두 화면에서 별도 경로로 다루지 않기 위함).
+export async function setPreroundLateFlag(applicationId: string, isLate: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_preround_late_flag_for_session', {
+    application_id_value: applicationId,
+    is_late_value: isLate,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
+// 두 참가자(또는 참가자와 빈 자리)의 테이블을 서로 바꾼다. 1라운드가 이미
+// 시작된 뒤에는 서버가 거부한다.
+export async function movePreroundSeat(eventId: string, applicationId: string, targetTableNumber: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('move_preround_seat_for_session', {
+    application_id_value: applicationId,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+    target_table_number: targetTableNumber,
+  });
+  if (error) throw error;
+}
+
 // 실제 참가자와 절대 자동으로 섞이지 않도록, 관리자가 참가자 리스트에서
 // 명시적으로 누른 경우에만 호출된다(추정/패턴 기반 자동 분류 없음).
 export async function setTestParticipantFlag(applicationId: string, isTestParticipant: boolean) {
