@@ -7,6 +7,7 @@ import ParticipantPhoto from '../components/ParticipantPhoto';
 import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/PhotoSourceInputs';
 import PrimaryButton from '../components/PrimaryButton';
 import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
+import { DRINKING_AMOUNT_OPTIONS, DRINKING_FREQUENCY_OPTIONS } from '../constants/drinkingOptions';
 import { profileKeywordLabel } from '../constants/profileKeywords';
 import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import {
@@ -419,7 +420,8 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [contactStyle, setContactStyle] = useState('');
   const [dateStyle, setDateStyle] = useState('');
   const [smoking, setSmoking] = useState('');
-  const [drinking, setDrinking] = useState('');
+  const [drinkingFrequency, setDrinkingFrequency] = useState('');
+  const [drinkingAmount, setDrinkingAmount] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
   const [submittedAt, setSubmittedAt] = useState<string | undefined>(undefined);
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
@@ -474,7 +476,8 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         setContactStyle(result.contactStyle);
         setDateStyle(result.dateStyle);
         setSmoking(result.smoking);
-        setDrinking(result.drinking);
+        setDrinkingFrequency(result.drinkingFrequency);
+        setDrinkingAmount(result.drinkingAmount);
         setKeywords(result.keywords);
         setSubmittedAt(result.submittedAt);
       })
@@ -668,7 +671,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     try {
       const result = await saveEventProfileCard(
         eventId,
-        { contactStyle, dateStyle, drinking, hobby, idealType, keywords, mbti, photoCrop, photoPath, smoking },
+        { contactStyle, dateStyle, drinkingAmount, drinkingFrequency, hobby, idealType, keywords, mbti, photoCrop, photoPath, smoking },
         true,
       );
       setSubmittedAt(result.submittedAt);
@@ -753,19 +756,37 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
             <CardField label="연락스타일" onChange={setContactStyle} placeholder="예) 바쁘면 가끔, 연락은 자주" value={contactStyle} />
             <CardField label="원하는 데이트 스타일" onChange={setDateStyle} placeholder="예) 맛집 탐방, 영화 데이트" value={dateStyle} />
             <div className="rounded-[16px] bg-meet-blueSoft/60 p-3">
-              <p className="text-[12px] font-black text-[#666]">흡연 및 주량</p>
+              <p className="text-[12px] font-black text-[#666]">흡연 및 음주</p>
               <input
                 className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
                 onChange={(event) => setSmoking(event.target.value)}
                 placeholder="예) 비흡연"
                 value={smoking}
               />
-              <input
+              <select
                 className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
-                onChange={(event) => setDrinking(event.target.value)}
-                placeholder="예) 주량 2잔"
-                value={drinking}
-              />
+                onChange={(event) => setDrinkingFrequency(event.target.value)}
+                value={drinkingFrequency}
+              >
+                <option value="">음주 빈도 선택</option>
+                {DRINKING_FREQUENCY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+                onChange={(event) => setDrinkingAmount(event.target.value)}
+                value={drinkingAmount}
+              >
+                <option value="">주량 선택</option>
+                {DRINKING_AMOUNT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -1225,7 +1246,7 @@ const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: stri
   { key: 'contactStyle', label: '연락스타일' },
   { key: 'dateStyle', label: '원하는 데이트 스타일' },
   { key: 'smoking', label: '흡연' },
-  { key: 'drinking', label: '주량' },
+  { key: 'drinking', label: '음주' },
 ];
 
 // 상대가 프로필 카드를 작성했으면 읽기 전용으로 보여준다 - 아직 작성 전인

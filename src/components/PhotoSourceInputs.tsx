@@ -1,10 +1,32 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, CSSProperties } from 'react';
 
 export interface PhotoSourceInputsHandle {
   openCamera: () => void;
   openGallery: () => void;
 }
+
+// display:none is unreliable for triggering the native file picker on some
+// mobile browser engines (a real, well-documented gap - certain Android
+// WebView-based browsers silently no-op input.click() on a display:none
+// file input instead of opening the picker, which is exactly what "촬영/
+// 앨범 버튼이 웹에서 작동하지 않는다" looks like from the outside). The
+// classic "visually hidden but still laid out" technique below (1x1px,
+// clipped, positioned off but not display:none) is the pattern most
+// production file-upload libraries use because .click() reliably opens the
+// picker across engines.
+const visuallyHiddenInputStyle: CSSProperties = {
+  border: 0,
+  clip: 'rect(0, 0, 0, 0)',
+  clipPath: 'inset(50%)',
+  height: 1,
+  margin: -1,
+  overflow: 'hidden',
+  padding: 0,
+  position: 'absolute',
+  whiteSpace: 'nowrap',
+  width: 1,
+};
 
 // 촬영/앨범 <input type=file> 한 쌍을 감싼 공용 컴포넌트 - capture=
 // "environment"가 있으면 모바일 브라우저가 곧장 후면 카메라 앱을 열고,
@@ -39,7 +61,7 @@ const PhotoSourceInputs = forwardRef<PhotoSourceInputsHandle, { multiple?: boole
           capture="environment"
           onChange={handleChange}
           ref={cameraInputRef}
-          style={{ display: 'none' }}
+          style={visuallyHiddenInputStyle}
           tabIndex={-1}
           type="file"
         />
@@ -49,7 +71,7 @@ const PhotoSourceInputs = forwardRef<PhotoSourceInputsHandle, { multiple?: boole
           multiple={multiple}
           onChange={handleChange}
           ref={galleryInputRef}
-          style={{ display: 'none' }}
+          style={visuallyHiddenInputStyle}
           tabIndex={-1}
           type="file"
         />

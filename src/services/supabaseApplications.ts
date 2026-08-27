@@ -2588,7 +2588,8 @@ export interface MyEventProfileCard {
   dateStyle: string;
   defaultPhotoCrop?: RepresentativeCrop;
   defaultPhotoPath: string | null;
-  drinking: string;
+  drinkingAmount: string;
+  drinkingFrequency: string;
   hobby: string;
   idealType: string;
   job: string;
@@ -2636,7 +2637,8 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
   const card = data.card as {
     contactStyle: string;
     dateStyle: string;
-    drinking: string;
+    drinkingAmount?: string;
+    drinkingFrequency?: string;
     hobby: string;
     idealType: string;
     keywords: string[];
@@ -2654,7 +2656,8 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
     dateStyle: card.dateStyle,
     defaultPhotoCrop: data.defaultPhotoCrop ?? undefined,
     defaultPhotoPath: data.defaultPhotoPath ?? null,
-    drinking: card.drinking,
+    drinkingAmount: card.drinkingAmount ?? '',
+    drinkingFrequency: card.drinkingFrequency ?? '',
     hobby: card.hobby,
     idealType: card.idealType,
     job: data.job ?? '',
@@ -2673,7 +2676,8 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
 export interface EventProfileCardInput {
   contactStyle: string;
   dateStyle: string;
-  drinking: string;
+  drinkingAmount: string;
+  drinkingFrequency: string;
   hobby: string;
   idealType: string;
   keywords: string[];
@@ -2691,7 +2695,11 @@ export async function saveEventProfileCard(eventId: string, input: EventProfileC
   const { data, error } = await supabase.rpc('save_event_profile_card_for_session', {
     contact_style_value: input.contactStyle,
     date_style_value: input.dateStyle,
-    drinking_value: input.drinking,
+    // drinking_value(자유 입력 legacy 컬럼)는 서버가 frequency/amount로부터
+    // 합성해서 채우므로 더 이상 의미 있는 값을 보낼 필요가 없다.
+    drinking_amount_value: input.drinkingAmount,
+    drinking_frequency_value: input.drinkingFrequency,
+    drinking_value: '',
     event_id_value: eventId,
     hobby_value: input.hobby,
     ideal_type_value: input.idealType,
@@ -2749,6 +2757,72 @@ export async function uploadEventProfileCardPhoto(eventId: string, file: File): 
   }
 
   return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
+}
+
+// 행사 준비 화면에서 운영자가 등록하는 "오픈채팅방 QR 코드" - 행사 하나당
+// 한 장이라 event_profile_cards 사진과 달리 참가자별이 아니다.
+export async function fetchAdminEventOpenChatQr(eventId: string): Promise<{ qrUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('get-event-open-chat-qr', {
+    body: { eventId, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) throw new Error(data?.message || (error instanceof Error ? error.message : 'QR 코드를 불러오지 못했습니다.'));
+  return { qrUrl: (data.qrUrl as string | null) ?? null };
+}
+
+export async function uploadAdminEventOpenChatQr(eventId: string, file: File): Promise<{ qrUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-event-open-chat-qr', {
+    body: { eventId, photo, sessionToken: adminSession.token },
+  });
+
+  if (error || data?.ok !== true) {
+    let message = 'QR 코드 업로드에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body (infra/gateway page) - keep the generic message.
+      }
+    }
+    throw new Error(message);
+  }
+  return { qrUrl: (data.qrUrl as string | null) ?? null };
+}
+
+export async function deleteAdminEventOpenChatQr(eventId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('delete-event-open-chat-qr', {
+    body: { eventId, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) throw new Error(data?.message || (error instanceof Error ? error.message : 'QR 코드 삭제에 실패했습니다.'));
+}
+
+// 태블릿 최종선택 대기 화면 - connectionToken으로 이 태블릿이 실제로 그
+// 행사의 그 테이블에 연결된 기기인지 검증한 뒤 QR signed URL을 내려준다.
+export async function fetchEventOpenChatQrForTablet(eventId: string, tableNumber: number, connectionToken: string): Promise<{ qrUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.functions.invoke('get-event-open-chat-qr', {
+    body: { connectionToken, eventId, tableNumber },
+  });
+  if (error || data?.ok !== true) return { qrUrl: null };
+  return { qrUrl: (data.qrUrl as string | null) ?? null };
 }
 
 // 테스트 참가자는 로그인할 수 없어 프로필 카드를 직접 제출할 수 없으므로

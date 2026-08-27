@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import {
+  deleteAdminEventOpenChatQr,
   disconnectAdminEventTablet,
   fetchAdminEventModeSummaries,
+  fetchAdminEventOpenChatQr,
   fetchAdminEventSettings,
   fetchAdminEventTabletStatus,
   startAdminEvent,
   subscribeToAdminEventModeChanges,
   updateAdminEventSettings,
+  uploadAdminEventOpenChatQr,
   type AdminEventModeSummary,
   type AdminEventSettings,
   type AdminEventTabletStatus,
@@ -37,6 +40,11 @@ export default function AdminEventPreparePage() {
   const [settingsError, setSettingsError] = useState('');
   const [savingSetting, setSavingSetting] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [openChatQrUrl, setOpenChatQrUrl] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(true);
+  const [qrError, setQrError] = useState('');
+  const [qrBusy, setQrBusy] = useState(false);
+  const qrFileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -84,6 +92,55 @@ export default function AdminEventPreparePage() {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  const loadOpenChatQr = useCallback(async () => {
+    if (!eventId) return;
+    setQrLoading(true);
+    setQrError('');
+    try {
+      const result = await fetchAdminEventOpenChatQr(eventId);
+      setOpenChatQrUrl(result.qrUrl);
+    } catch (caughtError) {
+      setQrError(caughtError instanceof Error ? caughtError.message : 'QR 코드를 불러오지 못했습니다.');
+    } finally {
+      setQrLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    void loadOpenChatQr();
+  }, [loadOpenChatQr]);
+
+  const handleQrFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !eventId || qrBusy) return;
+    setQrBusy(true);
+    setQrError('');
+    try {
+      const result = await uploadAdminEventOpenChatQr(eventId, file);
+      setOpenChatQrUrl(result.qrUrl);
+    } catch (caughtError) {
+      setQrError(caughtError instanceof Error ? caughtError.message : 'QR 코드 업로드에 실패했습니다.');
+    } finally {
+      setQrBusy(false);
+    }
+  };
+
+  const handleDeleteQr = async () => {
+    if (!eventId || qrBusy) return;
+    if (!window.confirm('오픈채팅방 QR 코드를 삭제할까요?')) return;
+    setQrBusy(true);
+    setQrError('');
+    try {
+      await deleteAdminEventOpenChatQr(eventId);
+      setOpenChatQrUrl(null);
+    } catch (caughtError) {
+      setQrError(caughtError instanceof Error ? caughtError.message : 'QR 코드 삭제에 실패했습니다.');
+    } finally {
+      setQrBusy(false);
+    }
+  };
 
   const handleSettingChange = async (patch: Partial<Pick<AdminEventSettings, 'bonusRoundCount' | 'conversationDurationSeconds' | 'finalSelectionLimit'>>) => {
     if (!eventId || !settings || savingSetting || eventStarted) return;
@@ -312,6 +369,55 @@ export default function AdminEventPreparePage() {
 
           {settingsError && settings ? <p className="mt-3 text-[12px] font-bold text-[#ef554a]">{settingsError}</p> : null}
           <p className="mt-4 text-[12px] font-bold text-[#aaa]">행사 시작 후에는 진행 설정을 변경할 수 없습니다.</p>
+        </section>
+
+        <section className="mt-6 rounded-[20px] border border-[#f0f0f0] bg-white px-5 py-5">
+          <h3 className="text-[17px] font-black">오픈채팅방 QR 코드</h3>
+          <p className="mt-1 text-[12px] font-bold text-[#999]">최종 선택 단계에서 태블릿에 크게 보여줄 QR 코드예요.</p>
+
+          <div className="mt-4 flex items-center gap-4">
+            <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-[14px] border border-[#eee] bg-[#fafafa]">
+              {qrLoading ? (
+                <span className="text-[11px] font-bold text-[#bbb]">불러오는 중</span>
+              ) : openChatQrUrl ? (
+                <img alt="오픈채팅방 QR 코드" className="h-full w-full object-contain" src={openChatQrUrl} />
+              ) : (
+                <span className="px-1 text-center text-[10px] font-bold text-[#bbb]">미등록</span>
+              )}
+            </div>
+            <div className="flex flex-1 flex-col gap-2">
+              <button
+                className="h-10 rounded-[10px] bg-meet-blueSoft text-[13px] font-black text-meet-blue disabled:opacity-50"
+                disabled={qrBusy || qrLoading}
+                onClick={() => qrFileInputRef.current?.click()}
+                type="button"
+              >
+                {qrBusy ? '처리 중' : openChatQrUrl ? '다른 이미지로 변경' : '이미지 업로드'}
+              </button>
+              {openChatQrUrl ? (
+                <button
+                  className="h-10 rounded-[10px] bg-meet-pinkSoft text-[13px] font-black text-meet-pink disabled:opacity-50"
+                  disabled={qrBusy}
+                  onClick={() => void handleDeleteQr()}
+                  type="button"
+                >
+                  삭제
+                </button>
+              ) : null}
+            </div>
+            <input
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => void handleQrFileChosen(event)}
+              ref={qrFileInputRef}
+              type="file"
+            />
+          </div>
+
+          {qrError ? <p className="mt-3 text-[12px] font-bold text-[#ef554a]">{qrError}</p> : null}
+          {!qrLoading && !openChatQrUrl && !qrError ? (
+            <p className="mt-3 text-[12px] font-bold text-[#a35850]">⚠ 아직 QR 코드가 등록되지 않았어요. 최종 선택 단계 전까지 등록해주세요.</p>
+          ) : null}
         </section>
 
         <div className="mt-7">

@@ -63,7 +63,9 @@ Deno.serve(async (request) => {
 
   const { data: card } = await supabase
     .from('event_profile_cards')
-    .select('photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking, keywords, submitted_at')
+    .select(
+      'photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking_frequency, drinking_amount, keywords, submitted_at',
+    )
     .eq('event_id', payload.eventId)
     .eq('application_id', myApplication.id)
     .maybeSingle();
@@ -95,7 +97,8 @@ Deno.serve(async (request) => {
       contactStyle: card?.contact_style ?? '',
       dateStyle: card?.date_style ?? '',
       smoking: card?.smoking ?? '',
-      drinking: card?.drinking ?? '',
+      drinkingFrequency: card?.drinking_frequency ?? '',
+      drinkingAmount: card?.drinking_amount ?? '',
       keywords: Array.isArray(card?.keywords) ? card.keywords : [],
       submittedAt: card?.submitted_at ?? null,
     },

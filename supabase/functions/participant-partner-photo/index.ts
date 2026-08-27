@@ -110,7 +110,9 @@ Deno.serve(async (request) => {
   // 기본 프로필 대표사진으로 fallback한다.
   const { data: partnerCard } = await supabase
     .from('event_profile_cards')
-    .select('photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking, keywords')
+    .select(
+      'photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking_frequency, drinking_amount, keywords',
+    )
     .eq('event_id', payload.eventId)
     .eq('application_id', partnerApplicationId)
     .maybeSingle();
@@ -141,7 +143,7 @@ Deno.serve(async (request) => {
     contactStyle: partnerCard?.contact_style ?? '',
     dateStyle: partnerCard?.date_style ?? '',
     smoking: partnerCard?.smoking ?? '',
-    drinking: partnerCard?.drinking ?? '',
+    drinking: formatDrinkingDisplay(partnerCard?.drinking_frequency, partnerCard?.drinking_amount),
     keywords: Array.isArray(partnerCard?.keywords) ? partnerCard.keywords : [],
     myKeywords: Array.isArray(myCard?.keywords) ? myCard.keywords : [],
   });
@@ -150,6 +152,19 @@ Deno.serve(async (request) => {
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {
   const { data } = await supabase.storage.from('application-files').createSignedUrl(path, signedUrlExpirySeconds);
   return data?.signedUrl ?? null;
+}
+
+// save_event_profile_card_for_session이 저장 시점에 legacy drinking
+// 컬럼에 합성해 넣는 것과 동일한 형식("빈도 / 주량 N병") - 상대 카드
+// 화면은 그 legacy 컬럼을 쓰지 않고 여기서 직접 다시 합성해 최신 값을
+// 그대로 반영한다(둘 다 같은 결과가 나오도록 형식을 반드시 맞춘다).
+function formatDrinkingDisplay(frequency?: string | null, amount?: string | null) {
+  const hasFrequency = Boolean(frequency);
+  const hasAmount = Boolean(amount);
+  if (hasFrequency && hasAmount) return `${frequency} / 주량 ${amount}`;
+  if (hasFrequency) return frequency as string;
+  if (hasAmount) return `주량 ${amount}`;
+  return '';
 }
 
 function json(body: Record<string, unknown>, status = 200) {

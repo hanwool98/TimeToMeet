@@ -7,6 +7,7 @@ import TimerAlertToast from '../components/TimerAlertToast';
 import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import { useTabletTimerAlerts } from '../hooks/useTabletTimerAlerts';
 import {
+  fetchEventOpenChatQrForTablet,
   fetchEventProgressForTablet,
   fetchEventTableSeatGuide,
   fetchRoundProgressForTablet,
@@ -672,16 +673,21 @@ export default function AdminTabletSeatPage() {
     );
   }
 
+  // 정규+추가시간 대화가 전부 끝나고 참가자들이 휴대폰으로 최종선택을
+  // 진행하는 동안 태블릿은 오픈채팅방 QR을 크게 보여준다 - 운영자가 실제
+  // "행사 종료"(stage='ended')를 누르기 전까지는 참가자마다 최종선택을
+  // 끝내는 시점이 달라도 계속 이 화면을 유지한다.
   if (progress.stage === 'final_selection') {
+    const stored = readStoredConnection(eventId ?? '', tableNumber);
     return (
-      <main className="fixed inset-0 grid place-items-center bg-[#1f292d] px-10 text-center text-white" style={landscapeRotateStyle}>
-        <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
-        <ReconnectedToast visible={showRecoveredToast} />
-        <div>
-          <p className="text-[20px] font-black text-[#ff8a80]">모든 대화 종료</p>
-          <p className="mt-4 text-[28px] font-black">최종 선택 진행 중</p>
-        </div>
-      </main>
+      <OpenChatQrScreen
+        connectionToken={stored?.connectionToken ?? null}
+        eventId={eventId ?? ''}
+        isStale={isStale}
+        landscapeRotateStyle={landscapeRotateStyle}
+        showRecoveredToast={showRecoveredToast}
+        tableNumber={tableNumber}
+      />
     );
   }
 
@@ -756,6 +762,83 @@ const ringArcColor = '#e0a0a9';
 const ringDotColor = '#e5949f';
 const digitColorNormal = { b: 0x6d, g: 0x64, r: 0xb5 };
 const digitColorUrgent = { b: 0x5a, g: 0x4f, r: 0xa8 };
+
+// 최종선택 대기 화면 QR - connectionToken이 아직 없거나(태블릿이 방금
+// 이 stage로 들어와 아직 저장된 연결 정보를 못 읽었을 때) 등록된 QR이
+// 없으면 안전한 안내 문구로 대체한다. 행사 준비 화면에서 QR을 바꾸면
+// 이 화면도 반영해야 하므로(요청 9) 폴링으로 주기적으로 다시 불러온다.
+const openChatQrRefreshMs = 30_000;
+
+function OpenChatQrScreen({
+  connectionToken,
+  eventId,
+  isStale,
+  landscapeRotateStyle,
+  showRecoveredToast,
+  tableNumber,
+}: {
+  connectionToken: string | null;
+  eventId: string;
+  isStale: boolean;
+  landscapeRotateStyle: React.CSSProperties;
+  showRecoveredToast: boolean;
+  tableNumber: number;
+}) {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!eventId || !connectionToken || !Number.isFinite(tableNumber)) return undefined;
+    let active = true;
+
+    const load = async () => {
+      const result = await fetchEventOpenChatQrForTablet(eventId, tableNumber, connectionToken);
+      if (!active) return;
+      setQrUrl(result.qrUrl);
+      setLoaded(true);
+    };
+
+    void load();
+    const intervalId = window.setInterval(() => void load(), openChatQrRefreshMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [connectionToken, eventId, tableNumber]);
+
+  return (
+    <main className="fixed inset-0 flex flex-col items-center justify-center gap-6 overflow-hidden px-10 text-center" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
+      <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
+      <ReconnectedToast visible={showRecoveredToast} />
+      <PetalDecor />
+      <p className="text-[15px] font-black tracking-wide" style={{ color: '#c07f87' }}>
+        모든 대화가 종료되었어요
+      </p>
+      {qrUrl ? (
+        <div className="grid place-items-center rounded-[28px] bg-white p-6 shadow-lg" style={{ height: 'min(56vh, 520px)', width: 'min(56vh, 520px)' }}>
+          <img alt="오픈채팅방 QR 코드" className="h-full w-full object-contain" src={qrUrl} />
+        </div>
+      ) : loaded ? (
+        <div className="rounded-[22px] bg-white/80 px-8 py-10 shadow-sm" style={{ color: '#a35850' }}>
+          <p className="text-[18px] font-black">오픈채팅방 QR 코드가 등록되지 않았습니다.</p>
+          <p className="mt-2 text-[14px] font-bold">운영자에게 문의해주세요.</p>
+        </div>
+      ) : (
+        <div style={{ color: '#c07f87' }}>불러오는 중</div>
+      )}
+      {qrUrl ? (
+        <div className="max-w-[560px] text-[16px] font-bold leading-relaxed" style={{ color: '#5a4f47' }}>
+          <p>
+            최종 선택 후 QR 코드를 통해 채팅방에 접속하신 후
+            <br />
+            호스트에게 본인 닉네임을 말씀해주세요!
+          </p>
+          <p className="mt-3">매칭이 성사되면 매칭 상대와의 카톡방을 만들어드립니다 💗</p>
+        </div>
+      ) : null}
+    </main>
+  );
+}
 
 function mixDigitColor(t: number) {
   const clamped = Math.max(0, Math.min(1, t));
