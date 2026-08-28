@@ -36,9 +36,24 @@ import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
 import TicketDetailPage from './pages/TicketDetailPage';
 import { getSupabaseDiagnostics } from './lib/supabase';
+import { logClientError } from './services/supabaseApplications';
 import './styles.css';
 
 window.time2meetDiagnostics = getSupabaseDiagnostics;
+
+// 신청서 제출 흐름 밖에서 발생하는(관리자 화면 포함) 예외를 잡아 못 잡은
+// 채로 조용히 사라지는 대신 관리자 "오류 로그" 화면에서 볼 수 있게 하는
+// 최소한의 전역 안전망. 각 화면에서 명시적으로 catch해서 자체 에러 문구를
+// 보여주는 경우는 여기 안 걸리므로(이미 처리된 오류라 window까지 전파되지
+// 않음), 그런 화면은 필요하면 catch 블록에서 logClientError를 직접 호출해야
+// 한다.
+window.addEventListener('error', (event) => {
+  void logClientError('global:window-error', `${event.message} (${event.filename}:${event.lineno}:${event.colno})`);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason instanceof Error ? `${event.reason.name}: ${event.reason.message}` : String(event.reason);
+  void logClientError('global:unhandled-rejection', reason);
+});
 
 // Registering a service worker (even one that does no caching) is required
 // for Android Chrome/Samsung Internet to consider the app "installable" and

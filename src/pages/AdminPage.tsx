@@ -85,7 +85,7 @@ export default function AdminPage() {
             <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="회원 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="shield" />} label="신고 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="video" />} label="콘텐츠 관리" onClick={() => navigate('/admin/content')} />
-            <MenuCard icon={<Icon className="h-5 w-5" name="alert" />} label="신청 오류 로그" onClick={() => navigate('/admin/application-errors')} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="alert" />} label="오류 로그" onClick={() => navigate('/admin/application-errors')} />
           </div>
           <button
             className="mt-5 h-14 w-full rounded-[18px] border border-[#dce8f4] bg-white text-[17px] font-black text-[#555] shadow-sm transition active:scale-[0.99]"

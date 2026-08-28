@@ -490,9 +490,43 @@ export async function logApplicationError(input: {
   }
 }
 
+/**
+ * General-purpose version of logApplicationError for anything that isn't
+ * the application-submit flow (admin actions, uncaught errors anywhere in
+ * the app, etc.) - reuses the same table/RPC/admin screen rather than
+ * standing up a parallel logging system. `context` is a short free-text
+ * label identifying where the error came from (e.g.
+ * "AdminEventPreparePage:qr-upload") since `stage` stays reserved for the
+ * submit flow's own fixed set of stages (always passed as 'unknown' here).
+ * Prefers whichever session is actually active (admin session for admin
+ * screens, app session otherwise) so the log ties back to who hit it.
+ * Never throws - same fire-and-forget contract as logApplicationError.
+ */
+export async function logClientError(context: string, message: string, extra?: { applicationId?: string; eventId?: string }) {
+  try {
+    if (!supabase) return;
+    const token = getAdminSession()?.token ?? getAppSession()?.token ?? '';
+    await supabase.rpc('log_application_error', {
+      p_application_id: extra?.applicationId ?? null,
+      p_context: context,
+      p_event_id: extra?.eventId ?? '',
+      p_file_count: null,
+      p_message: message,
+      p_session_token: token,
+      p_stage: 'unknown',
+      p_total_bytes: null,
+      p_user_agent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
+    });
+  } catch {
+    // Fire-and-forget: a logging failure must never surface on top of the
+    // real error it was trying to record.
+  }
+}
+
 export interface ApplicationErrorLogRow {
   applicationId: string | null;
   applicationNo: string | null;
+  context: string | null;
   createdAt: string;
   eventDate: string | null;
   eventId: string | null;
@@ -519,6 +553,7 @@ export async function fetchAdminApplicationErrorLogs(limit = 100): Promise<Appli
   return (data ?? []).map((row: Record<string, unknown>) => ({
     applicationId: (row.application_id as string) ?? null,
     applicationNo: (row.application_no as string) ?? null,
+    context: (row.context as string) ?? null,
     createdAt: row.created_at as string,
     eventDate: (row.event_date as string) ?? null,
     eventId: (row.event_id as string) ?? null,

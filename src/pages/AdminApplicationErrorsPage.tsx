@@ -48,7 +48,7 @@ export default function AdminApplicationErrorsPage() {
         </header>
 
         <div className="mt-5 flex items-center justify-between">
-          <h1 className="text-[22px] font-black">최근 신청 오류</h1>
+          <h1 className="text-[22px] font-black">최근 오류</h1>
           <button className="text-[13px] font-black text-meet-blue" onClick={() => navigate('/admin')} type="button">
             ← 관리자 홈
           </button>
@@ -58,7 +58,7 @@ export default function AdminApplicationErrorsPage() {
         <div className="mt-4 space-y-3">
           {logs && logs.length === 0 ? (
             <p className="rounded-[18px] bg-meet-blueSoft p-4 text-center text-[14px] font-black text-[#555]">
-              최근 신청 오류가 없습니다.
+              최근 오류가 없습니다.
             </p>
           ) : null}
           {(logs ?? []).map((log) => (
@@ -66,7 +66,7 @@ export default function AdminApplicationErrorsPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[13px] font-black text-[#8a8a8a]">{formatDateTime(log.createdAt)}</p>
                 <span className="rounded-[8px] bg-meet-pinkSoft px-2 py-0.5 text-[11px] font-black text-meet-pink">
-                  {stageLabels[log.stage] ?? log.stage}
+                  {log.context || stageLabels[log.stage] || log.stage}
                 </span>
               </div>
               <p className="mt-2 text-[15px] font-black text-black">

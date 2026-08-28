@@ -8,6 +8,7 @@ import {
   fetchAdminEventOpenChatQr,
   fetchAdminEventSettings,
   fetchAdminEventTabletStatus,
+  logClientError,
   startAdminEvent,
   subscribeToAdminEventModeChanges,
   updateAdminEventSettings,
@@ -121,7 +122,9 @@ export default function AdminEventPreparePage() {
       const result = await uploadAdminEventOpenChatQr(eventId, file);
       setOpenChatQrUrl(result.qrUrl);
     } catch (caughtError) {
-      setQrError(caughtError instanceof Error ? caughtError.message : 'QR 코드 업로드에 실패했습니다.');
+      const message = caughtError instanceof Error ? caughtError.message : 'QR 코드 업로드에 실패했습니다.';
+      setQrError(message);
+      void logClientError('AdminEventPreparePage:qr-upload', message, { eventId });
     } finally {
       setQrBusy(false);
     }
@@ -136,7 +139,9 @@ export default function AdminEventPreparePage() {
       await deleteAdminEventOpenChatQr(eventId);
       setOpenChatQrUrl(null);
     } catch (caughtError) {
-      setQrError(caughtError instanceof Error ? caughtError.message : 'QR 코드 삭제에 실패했습니다.');
+      const message = caughtError instanceof Error ? caughtError.message : 'QR 코드 삭제에 실패했습니다.';
+      setQrError(message);
+      void logClientError('AdminEventPreparePage:qr-delete', message, { eventId });
     } finally {
       setQrBusy(false);
     }
@@ -385,7 +390,7 @@ export default function AdminEventPreparePage() {
                 <span className="px-1 text-center text-[10px] font-bold text-[#bbb]">미등록</span>
               )}
             </div>
-            <div className="flex flex-1 flex-col gap-2">
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
               <button
                 className="h-10 rounded-[10px] bg-meet-blueSoft text-[13px] font-black text-meet-blue disabled:opacity-50"
                 disabled={qrBusy || qrLoading}
@@ -407,9 +412,13 @@ export default function AdminEventPreparePage() {
             </div>
             <input
               accept="image/*"
+              // className="hidden" 단독으로는 일부 브라우저에서 file
+              // input이 그대로 노출되는 경우가 있어(AdminCheckInPage.tsx의
+              // 같은 이중 처리 참고) style로도 명시적으로 숨긴다.
               className="hidden"
               onChange={(event) => void handleQrFileChosen(event)}
               ref={qrFileInputRef}
+              style={{ display: 'none' }}
               type="file"
             />
           </div>
