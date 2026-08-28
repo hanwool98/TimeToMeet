@@ -34,6 +34,11 @@ export default function AdminContentPage() {
             label="최종선택"
             onClick={() => navigate('/admin/content/final-selections')}
           />
+          <MenuCard
+            icon={<KeywordIcon />}
+            label="키워드 관리"
+            onClick={() => navigate('/admin/content/profile-keywords')}
+          />
         </div>
       </div>
     </main>
@@ -68,6 +73,15 @@ function FinalSelectionIcon() {
     <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
       <path d="M16 25.5 7.3 17A5.6 5.6 0 0 1 15 8.9l1 1 1-1a5.6 5.6 0 0 1 7.7 8.1L16 25.5Z" />
       <path d="m12.5 16 2.2 2.2 4.8-5" />
+    </svg>
+  );
+}
+
+function KeywordIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <path d="M6 12a3 3 0 0 1 3-3h9l8 7-8 7H9a3 3 0 0 1-3-3v-8Z" />
+      <circle cx="13" cy="16" fill="currentColor" r="1.4" stroke="none" />
     </svg>
   );
 }

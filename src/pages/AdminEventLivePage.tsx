@@ -4,6 +4,7 @@ import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import HeartRating from '../components/HeartRating';
 import ParticipantPhoto from '../components/ParticipantPhoto';
+import { profileKeywordLabel } from '../constants/profileKeywords';
 import useOperationalData from '../hooks/useOperationalData';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard, debounce } from '../utils/requestGuard';
@@ -16,6 +17,7 @@ import {
   fetchAdminEventProgress,
   fetchAdminFinalSelectionResults,
   fetchAdminMutualRatings,
+  fetchAdminParticipantEventProfileCard,
   fetchAdminParticipantRatings,
   fetchAdminParticipantReports,
   fetchAdminPauseRequests,
@@ -28,6 +30,7 @@ import {
   updatePauseRequestStatus,
   type AdminEventModeSummary,
   type AdminFinalSelectionResults,
+  type AdminParticipantEventProfileCard,
   type EventPauseRequest,
   type EventProgress,
   type IntroVideoAction,
@@ -1315,6 +1318,8 @@ function ParticipantListPanel({
   const [selected, setSelected] = useState<StoredApplication | null>(null);
   const [ratings, setRatings] = useState<ParticipantRating[]>([]);
   const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [profileCard, setProfileCard] = useState<AdminParticipantEventProfileCard | null>(null);
+  const [profileCardLoading, setProfileCardLoading] = useState(false);
 
   const confirmedApplicants = useMemo(() => applications.filter((item) => item.status === '참가 확정'), [applications]);
   const filtered = useMemo(() => {
@@ -1327,14 +1332,23 @@ function ParticipantListPanel({
 
   const selectParticipant = async (application: StoredApplication) => {
     setSelected(application);
+    setProfileCard(null);
     if (!application.dbId) return;
     setRatingsLoading(true);
+    setProfileCardLoading(true);
     try {
       setRatings(await fetchAdminParticipantRatings(eventId, application.dbId));
     } catch {
       setRatings([]);
     } finally {
       setRatingsLoading(false);
+    }
+    try {
+      setProfileCard(await fetchAdminParticipantEventProfileCard(eventId, application.dbId));
+    } catch {
+      setProfileCard(null);
+    } finally {
+      setProfileCardLoading(false);
     }
   };
 
@@ -1366,6 +1380,12 @@ function ParticipantListPanel({
                 <p className="text-[13px] font-bold text-[#999]">{selected.id}</p>
               </div>
             </div>
+
+            {profileCardLoading ? (
+              <p className="mt-4 text-[13px] font-bold text-[#999]">프로필 카드 불러오는 중</p>
+            ) : profileCard ? (
+              <AdminParticipantProfileCardView card={profileCard} />
+            ) : null}
 
             <h4 className="mt-6 text-[14px] font-black text-[#555]">호감도 작성 기록</h4>
             {ratingsLoading ? (
@@ -1428,6 +1448,60 @@ function ParticipantListPanel({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+const adminProfileCardFields: Array<{ key: keyof AdminParticipantEventProfileCard; label: string }> = [
+  { key: 'hobby', label: '취미' },
+  { key: 'mbti', label: 'MBTI' },
+  { key: 'idealType', label: '이성을 볼 때 중요하게 생각하는 것' },
+  { key: 'contactStyle', label: '연락스타일' },
+  { key: 'dateStyle', label: '원하는 데이트 스타일' },
+  { key: 'dateDestination', label: '연인과 함께 가고 싶은 곳' },
+  { key: 'smoking', label: '흡연' },
+  { key: 'drinking', label: '음주' },
+];
+
+// 행사 진행 중 참가자 상세에서, 기존 호감도 기록 위에 보여줄 읽기 전용
+// 프로필카드. 요청 10의 "참가자-상대 조회와 동일한 사진 우선순위"를
+// admin-participant-event-profile-card Edge Function이 이미 구현하므로
+// 여기서는 결과를 그대로 표시만 한다.
+function AdminParticipantProfileCardView({ card }: { card: AdminParticipantEventProfileCard }) {
+  const filledFields = adminProfileCardFields.filter((field) => card[field.key]);
+  if (!card.hasSubmittedCard) {
+    return <p className="mt-4 text-[13px] font-bold text-[#bbb]">아직 행사 프로필 카드를 작성하지 않았습니다</p>;
+  }
+  return (
+    <div className="mt-4 rounded-[18px] border border-[#f0f3f6] bg-[#fafbfc] p-4">
+      <div className="flex items-center gap-3">
+        <ParticipantPhoto className="rounded-full bg-white" crop={card.representativeCrop} photoUrl={card.photoUrl} sizePx={56} />
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-black">{card.nickname}</p>
+          <p className="text-[12px] font-bold text-[#999]">{[card.age ? `${card.age}세` : null, card.job].filter(Boolean).join(' · ')}</p>
+        </div>
+      </div>
+
+      {filledFields.length > 0 ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {filledFields.map((field) => (
+            <div className="rounded-[12px] bg-white p-2.5" key={field.key}>
+              <p className="text-[10.5px] font-black text-[#999]">{field.label}</p>
+              <p className="mt-0.5 truncate text-[12.5px] font-bold text-[#333]">{card[field.key] as string}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {card.keywords.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {card.keywords.map((keyword) => (
+            <span className="rounded-full border border-[#eee] bg-white px-2.5 py-1 text-[11px] font-bold text-[#777]" key={keyword}>
+              {profileKeywordLabel(keyword)}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1054,6 +1054,7 @@ export default function ProfileFormPage() {
 
           <Section title="14. 직업">
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setJob(event.target.value)} placeholder="ex) 초등학교 교사, 자영업, 의사, 프리랜서" value={job} />
+            <p className="mt-1.5 text-[12px] font-bold text-[#999]">기업명이 아닌 직업을 작성해주세요. (예: 삼성전자 X, 마케터 O)</p>
             <ErrorText>{touched && !job.trim() ? '직업을 입력해주세요.' : ''}</ErrorText>
           </Section>
 

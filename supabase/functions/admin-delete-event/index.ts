@@ -73,6 +73,17 @@ Deno.serve(async (request) => {
     return json({ message: 'Admin session required.' }, 401);
   }
 
+  // 행사 잠금 - 프론트에서 버튼을 숨기는 것과 별개로, 서버에서도 실제로
+  // 삭제를 거부한다(set_event_lock_for_admin_session으로 잠근 행사).
+  const { data: eventLockRow, error: eventLockError } = await supabase
+    .from('events')
+    .select('is_locked')
+    .eq('id', eventId)
+    .maybeSingle();
+
+  if (eventLockError) return json({ message: 'Event could not be inspected.' }, 500);
+  if (eventLockRow?.is_locked) return json({ message: '잠긴 행사는 삭제할 수 없습니다.' }, 409);
+
   const { data: applicationFiles, error: applicationFilesError } = await supabase
     .from('applications')
     .select('id, id_photo_path, profile_photo_paths, voice_intro_path, employment_proof_path')

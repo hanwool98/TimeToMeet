@@ -697,6 +697,20 @@ export default function AdminTabletSeatPage() {
         <div>
           <p className="text-[22px] font-black">오늘의 모든 일정이 종료되었습니다</p>
           <p className="mt-4 text-[18px] font-black text-white/80">수고하셨습니다</p>
+          <button
+            className="mx-auto mt-8 block rounded-full border border-white/40 px-8 py-3 text-[15px] font-black text-white transition active:scale-[0.97]"
+            onClick={() => {
+              // 이 태블릿-테이블 연결 정보를 지워야, 다시 이 URL로 들어와도
+              // 방금 종료된 행사로 자동 재연결되지 않고 새로 연결하는
+              // 정상 흐름을 탄다(연결 정보가 event_id별 localStorage
+              // key라 다른 행사를 고르면 애초에 이 값을 읽지 않는다).
+              clearStoredConnection(eventId ?? '', tableNumber);
+              navigate('/admin/event-mode');
+            }}
+            type="button"
+          >
+            메인메뉴로 돌아가기
+          </button>
         </div>
       </main>
     );

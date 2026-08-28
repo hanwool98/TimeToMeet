@@ -6,6 +6,7 @@ import type { EventData } from '../types/event';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { StoredApplication, ParticipantAttendanceStatus } from '../utils/adminApplications';
 import { compressImageIfNeeded } from '../utils/imageCompression';
+import type { ProfileKeywordOption } from '../constants/profileKeywords';
 export type { ParticipantAttendanceStatus } from '../utils/adminApplications';
 import type { RepresentativeCrop } from '../utils/representativeCrop';
 
@@ -119,6 +120,7 @@ interface PublicEventSummaryRow {
   early_bird_discount_female: number | null;
   is_test_event?: boolean;
   ended_at?: string | null;
+  is_locked?: boolean;
 }
 
 interface AdminEventDetailsRow {
@@ -140,6 +142,7 @@ interface AdminEventDetailsRow {
   early_bird_discount_male: number | null;
   early_bird_discount_female: number | null;
   is_test_event?: boolean;
+  is_locked?: boolean;
 }
 
 interface PublicParticipantPreviewRow {
@@ -244,6 +247,7 @@ export interface MyEventTicket {
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
+  eventReviewSubmittedAt?: string;
 }
 
 interface MyEventTicketRow {
@@ -280,6 +284,7 @@ interface MyEventTicketRow {
   bank_name: string;
   bank_account_number: string;
   bank_account_holder: string;
+  event_review_submitted_at: string | null;
 }
 
 export interface AdminCheckInResult {
@@ -937,6 +942,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     endedAt: event.ended_at ?? undefined,
     endTime: event.end_time.slice(0, 5),
     id: event.id,
+    isLocked: event.is_locked ?? false,
     isTestEvent: event.is_test_event ?? false,
     location: event.location,
     malePrice: event.male_price ?? 50000,
@@ -1009,6 +1015,7 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
     femalePrice: row.female_price,
     id: row.id,
     location: row.location,
+    isLocked: row.is_locked ?? false,
     isTestEvent: row.is_test_event,
     maleCapacity: row.male_capacity,
     malePrice: row.male_price,
@@ -1440,12 +1447,38 @@ export async function restartTestEventProgress(eventId: string) {
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('restart_test_event_progress_for_session', {
+  const { data, error } = await supabase.rpc('restart_test_event_progress_for_session', {
     event_id_value: eventId,
     session_token: adminSession.token,
   });
 
   if (error) throw new Error(error.message || '행사 진행 초기화에 실패했습니다.');
+
+  // DB 초기화는 이미 커밋됐으니, 행사 전용으로 업로드됐던 Storage
+  // 사진(기본 프로필 사진은 절대 포함되지 않음 - RPC가 event_profile_cards.
+  // photo_path만 모은다)까지 뒤이어 정리한다. 이 단계가 실패해도 DB 상태는
+  // 이미 정상이므로 오류 로그만 남기고 조용히 넘어간다(반복 테스트를
+  // 막지 않기 위함).
+  const orphanedPhotoPaths = (data as { orphanedPhotoPaths?: string[] } | null)?.orphanedPhotoPaths ?? [];
+  if (orphanedPhotoPaths.length > 0) {
+    try {
+      const { data: cleanupData, error: cleanupError } = await supabase.functions.invoke('admin-delete-storage-objects', {
+        body: { paths: orphanedPhotoPaths, sessionToken: adminSession.token },
+      });
+      const failed = (cleanupData as { failed?: string[] } | null)?.failed ?? [];
+      if (cleanupError || failed.length > 0) {
+        void logClientError('restartTestEventProgress:storage-cleanup', cleanupError?.message || `${failed.length}개 파일 정리 실패`, {
+          eventId,
+        });
+      }
+    } catch (cleanupCaughtError) {
+      void logClientError(
+        'restartTestEventProgress:storage-cleanup',
+        cleanupCaughtError instanceof Error ? cleanupCaughtError.message : String(cleanupCaughtError),
+        { eventId },
+      );
+    }
+  }
 }
 
 export function subscribeToSupabaseChanges(onChange: () => void) {
@@ -2556,6 +2589,7 @@ export interface ParticipantPhotoInfo {
 // 않았으면 전부 빈 값/빈 배열로 내려온다(오류로 취급하지 않는다).
 export interface PartnerEventProfileCard extends ParticipantPhotoInfo {
   contactStyle: string;
+  dateDestination: string;
   dateStyle: string;
   drinking: string;
   hobby: string;
@@ -2569,6 +2603,7 @@ export interface PartnerEventProfileCard extends ParticipantPhotoInfo {
 export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound = false): Promise<PartnerEventProfileCard> {
   const empty: PartnerEventProfileCard = {
     contactStyle: '',
+    dateDestination: '',
     dateStyle: '',
     drinking: '',
     hobby: '',
@@ -2589,6 +2624,7 @@ export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound
   if (error) throw error;
   const row = data as {
     contactStyle?: string | null;
+    dateDestination?: string | null;
     dateStyle?: string | null;
     drinking?: string | null;
     hobby?: string | null;
@@ -2604,6 +2640,7 @@ export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound
   if (!row?.ok) return empty;
   return {
     contactStyle: row.contactStyle ?? '',
+    dateDestination: row.dateDestination ?? '',
     dateStyle: row.dateStyle ?? '',
     drinking: row.drinking ?? '',
     hobby: row.hobby ?? '',
@@ -2620,6 +2657,7 @@ export async function fetchParticipantPartnerPhoto(eventId: string, useNextRound
 export interface MyEventProfileCard {
   age: number | null;
   contactStyle: string;
+  dateDestination: string;
   dateStyle: string;
   defaultPhotoCrop?: RepresentativeCrop;
   defaultPhotoPath: string | null;
@@ -2671,6 +2709,7 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
 
   const card = data.card as {
     contactStyle: string;
+    dateDestination?: string;
     dateStyle: string;
     drinkingAmount?: string;
     drinkingFrequency?: string;
@@ -2688,6 +2727,7 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
   return {
     age: data.age ?? null,
     contactStyle: card.contactStyle,
+    dateDestination: card.dateDestination ?? '',
     dateStyle: card.dateStyle,
     defaultPhotoCrop: data.defaultPhotoCrop ?? undefined,
     defaultPhotoPath: data.defaultPhotoPath ?? null,
@@ -2710,6 +2750,7 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
 
 export interface EventProfileCardInput {
   contactStyle: string;
+  dateDestination: string;
   dateStyle: string;
   drinkingAmount: string;
   drinkingFrequency: string;
@@ -2729,6 +2770,7 @@ export async function saveEventProfileCard(eventId: string, input: EventProfileC
 
   const { data, error } = await supabase.rpc('save_event_profile_card_for_session', {
     contact_style_value: input.contactStyle,
+    date_destination_value: input.dateDestination,
     date_style_value: input.dateStyle,
     // drinking_value(자유 입력 legacy 컬럼)는 서버가 frequency/amount로부터
     // 합성해서 채우므로 더 이상 의미 있는 값을 보낼 필요가 없다.
@@ -2792,6 +2834,166 @@ export async function uploadEventProfileCardPhoto(eventId: string, file: File): 
   }
 
   return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
+}
+
+// 최종선택 완료 후 후기 작성 안내 화면 + 종료 티켓의 "후기 작성" 버튼에서
+// 쓰인다. final_selections/final_selection_submissions와 완전히 분리된
+// 테이블이라 후기 미작성/삭제가 최종선택 결과에 영향을 주지 않는다.
+export async function fetchMyEventReview(eventId: string): Promise<{ content: string; submittedAt?: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return { content: '' };
+
+  const { data, error } = await supabase.rpc('get_my_event_review_for_session', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw new Error(error.message || '후기 정보를 불러오지 못했습니다.');
+  const row = data as { content?: string; submittedAt?: string | null };
+  return { content: row?.content ?? '', submittedAt: row?.submittedAt ?? undefined };
+}
+
+export async function saveEventReview(eventId: string, content: string): Promise<{ submittedAt?: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('save_event_review_for_session', {
+    content_value: content,
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw new Error(error.message || '후기 저장에 실패했습니다.');
+  const row = data as { ok: boolean; submittedAt?: string | null };
+  return { submittedAt: row?.submittedAt ?? undefined };
+}
+
+// 프로필 카드 "나를 표현하는 키워드" 활성 목록 - 관리자 콘텐츠 관리에서
+// 조정한 최신 값. 세션이 필요 없는 공개 콘텐츠라 다른 공개 콘텐츠 조회와
+// 동일하게 인증 없이 호출한다. 실패 시 호출부가 코드 상수로 폴백한다.
+export async function fetchActiveProfileKeywords(): Promise<ProfileKeywordOption[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_active_profile_keywords');
+  if (error) throw new Error(error.message || '키워드 목록을 불러오지 못했습니다.');
+  return (data as Array<{ key: string; label: string }>).map((row) => ({ key: row.key, label: row.label }));
+}
+
+export interface AdminProfileKeyword {
+  createdAt: string;
+  isActive: boolean;
+  key: string;
+  label: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export async function fetchAdminProfileKeywords(): Promise<AdminProfileKeyword[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_profile_keywords', { session_token: adminSession.token });
+  if (error) throw new Error(error.message || '키워드 목록을 불러오지 못했습니다.');
+  return (
+    data as Array<{ key: string; label: string; sort_order: number; is_active: boolean; created_at: string; updated_at: string }>
+  ).map((row) => ({
+    createdAt: row.created_at,
+    isActive: row.is_active,
+    key: row.key,
+    label: row.label,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function upsertAdminProfileKeyword(key: string, label: string, sortOrder?: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('upsert_admin_profile_keyword_for_session', {
+    key_value: key,
+    label_value: label,
+    session_token: adminSession.token,
+    sort_order_value: sortOrder ?? null,
+  });
+  if (error) throw new Error(error.message || '키워드 저장에 실패했습니다.');
+}
+
+export async function setAdminProfileKeywordActive(key: string, isActive: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_profile_keyword_active_for_session', {
+    is_active_value: isActive,
+    key_value: key,
+    session_token: adminSession.token,
+  });
+  if (error) throw new Error(error.message || '키워드 상태 변경에 실패했습니다.');
+}
+
+// 행사 진행 중 운영자 화면에서 참가자를 선택하면 호감도 기록 위에 보여줄
+// 읽기 전용 프로필카드. participant-partner-photo와 동일한 "행사 전용
+// 사진 우선" 우선순위를 그대로 쓴다.
+export interface AdminParticipantEventProfileCard {
+  age: number | null;
+  contactStyle: string;
+  dateDestination: string;
+  dateStyle: string;
+  drinking: string;
+  hasSubmittedCard: boolean;
+  hobby: string;
+  idealType: string;
+  job: string;
+  keywords: string[];
+  mbti: string;
+  nickname: string;
+  photoUrl: string | null;
+  representativeCrop?: RepresentativeCrop;
+  smoking: string;
+}
+
+export async function fetchAdminParticipantEventProfileCard(eventId: string, applicationId: string): Promise<AdminParticipantEventProfileCard | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-participant-event-profile-card', {
+    body: { applicationId, eventId, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) return null;
+  return {
+    age: data.age ?? null,
+    contactStyle: data.contactStyle ?? '',
+    dateDestination: data.dateDestination ?? '',
+    dateStyle: data.dateStyle ?? '',
+    drinking: data.drinking ?? '',
+    hasSubmittedCard: Boolean(data.hasSubmittedCard),
+    hobby: data.hobby ?? '',
+    idealType: data.idealType ?? '',
+    job: data.job ?? '',
+    keywords: data.keywords ?? [],
+    mbti: data.mbti ?? '',
+    nickname: data.nickname ?? '',
+    photoUrl: data.photoUrl ?? null,
+    representativeCrop: data.representativeCrop ?? undefined,
+    smoking: data.smoking ?? '',
+  };
+}
+
+// 행사 잠금 - 관리자 행사 수정 화면의 자물쇠 버튼에서 호출.
+export async function setEventLock(eventId: string, isLocked: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_event_lock_for_admin_session', {
+    event_id_value: eventId,
+    is_locked_value: isLocked,
+    session_token: adminSession.token,
+  });
+  if (error) throw new Error(error.message || '행사 잠금 상태 변경에 실패했습니다.');
 }
 
 // 행사 준비 화면에서 운영자가 등록하는 "오픈채팅방 QR 코드" - 행사 하나당
@@ -3185,6 +3387,7 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     endTime: row.end_time.slice(0, 5),
     eventDate: row.event_date,
     eventId: row.event_id,
+    eventReviewSubmittedAt: row.event_review_submitted_at ?? undefined,
     eventTitle: row.event_title,
     gender: row.gender,
     job: row.job,

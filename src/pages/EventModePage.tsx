@@ -8,20 +8,23 @@ import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/P
 import PrimaryButton from '../components/PrimaryButton';
 import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
 import { DRINKING_AMOUNT_OPTIONS, DRINKING_FREQUENCY_OPTIONS } from '../constants/drinkingOptions';
-import { profileKeywordLabel } from '../constants/profileKeywords';
+import { PROFILE_KEYWORD_OPTIONS, resolveProfileKeywordLabel, type ProfileKeywordOption } from '../constants/profileKeywords';
 import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import {
   createParticipantPauseRequest,
   createParticipantReport,
+  fetchActiveProfileKeywords,
   fetchFinalSelectionCandidatePhotos,
   fetchFinalSelectionCandidates,
   fetchMyBonusRating,
   fetchMyEventProfileCard,
+  fetchMyEventReview,
   fetchMyEventTickets,
   fetchMyRoundRating,
   fetchParticipantPartnerPhoto,
   fetchParticipantRoundProgress,
   saveEventProfileCard,
+  saveEventReview,
   submitFinalSelection,
   submitMyBonusRating,
   submitRoundRating,
@@ -40,6 +43,18 @@ import { createRequestGuard } from '../utils/requestGuard';
 import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
+
+// 프로필 키워드 목록(관리자 콘텐츠 관리에서 관리)은 세션 중 자주 바뀌지
+// 않으므로, 같은 페이지 방문 동안은 한 번만 서버에서 받아와 캐시한다 -
+// 프로필카드 작성 화면과 대화 중 화면(공통 키워드 라벨 표시)이 각각 다시
+// fetch하지 않게. 실패하면 코드 상수로 폴백해 화면이 비어보이지 않는다.
+let cachedProfileKeywordOptionsPromise: Promise<ProfileKeywordOption[]> | null = null;
+function loadProfileKeywordOptions() {
+  if (!cachedProfileKeywordOptionsPromise) {
+    cachedProfileKeywordOptionsPromise = fetchActiveProfileKeywords().catch(() => PROFILE_KEYWORD_OPTIONS);
+  }
+  return cachedProfileKeywordOptionsPromise;
+}
 
 // html-to-image(toPng)는 캡처 시점에 아직 로드/디코딩이 끝나지 않은 <img>는
 // 빈 채로 캡처해버린다 - 사진을 방금 고른 직후처럼 브라우저가 여전히
@@ -72,6 +87,52 @@ async function waitForImagesToLoad(container: HTMLElement) {
       }
     }),
   );
+}
+
+// 캡처 직전에만, cardCaptureRef 안의 모든 <img>의 src를 fetch()->blob()->
+// object URL로 바꿔치기한다. html-to-image(toPng)는 네이티브 canvas
+// drawImage와 달리 각 <img>를 자체적으로 다시 fetch해서 base64로
+// 임베딩하는데, 이 내부 fetch는 화면 표시용 <img>의 crossOrigin 속성/
+// onError 폴백과 완전히 무관하게 동작한다 - Supabase Storage 서명 URL을
+// 그 fetch가 못 읽으면(CORS/토큰 처리 등 정확한 원인과 무관하게) 화면엔
+// 정상적으로 보이는 사진이 캡처된 PNG에서만 조용히 빈 채로 나온다. 같은
+// 오리진의 blob object URL로 바꾸면 그 내부 fetch가 애초에 크로스오리진
+// 요청을 할 필요가 없어져 근본 원인과 무관하게 우회된다. 캡처가 끝나면
+// 원래 src로 되돌리고 만든 object URL은 반드시 revoke한다.
+async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promise<T>): Promise<T> {
+  const images = Array.from(container.querySelectorAll('img'));
+  const originalSrcs = images.map((img) => img.src);
+  const createdObjectUrls: string[] = [];
+
+  await Promise.all(
+    images.map(async (img, index) => {
+      const originalSrc = originalSrcs[index];
+      if (!originalSrc || originalSrc.startsWith('blob:') || originalSrc.startsWith('data:')) return;
+      try {
+        const response = await fetch(originalSrc, { cache: 'no-store' });
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        createdObjectUrls.push(objectUrl);
+        img.src = objectUrl;
+        if (typeof img.decode === 'function') {
+          await img.decode().catch(() => undefined);
+        }
+      } catch {
+        // 실패하면 원래 src(서명 URL)를 그대로 둔다 - 최소한 이전과 같은
+        // 동작(성공할 수도, 빈 채로 캡처될 수도)으로 되돌아갈 뿐 더
+        // 나빠지지는 않는다.
+      }
+    }),
+  );
+
+  try {
+    return await run();
+  } finally {
+    images.forEach((img, index) => {
+      img.src = originalSrcs[index];
+    });
+    createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
 }
 
 // ProfileFormPage의 대표사진 조정 편집기와 동일한 방식(드래그/핀치/휠로
@@ -419,10 +480,12 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [idealType, setIdealType] = useState('');
   const [contactStyle, setContactStyle] = useState('');
   const [dateStyle, setDateStyle] = useState('');
+  const [dateDestination, setDateDestination] = useState('');
   const [smoking, setSmoking] = useState('');
   const [drinkingFrequency, setDrinkingFrequency] = useState('');
   const [drinkingAmount, setDrinkingAmount] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordOptions, setKeywordOptions] = useState<ProfileKeywordOption[]>(PROFILE_KEYWORD_OPTIONS);
   const [submittedAt, setSubmittedAt] = useState<string | undefined>(undefined);
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -451,6 +514,16 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
 
   useEffect(() => {
     let active = true;
+    void loadProfileKeywordOptions().then((options) => {
+      if (active) setKeywordOptions(options);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     setLoading(true);
     setLoadError('');
     fetchMyEventProfileCard(eventId)
@@ -475,6 +548,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         setIdealType(result.idealType);
         setContactStyle(result.contactStyle);
         setDateStyle(result.dateStyle);
+        setDateDestination(result.dateDestination);
         setSmoking(result.smoking);
         setDrinkingFrequency(result.drinkingFrequency);
         setDrinkingAmount(result.drinkingAmount);
@@ -633,7 +707,9 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       // 빠질 수 있다. 캡처 직전에 카드 안의 모든 이미지가 실제로 로드+
       // 디코딩까지 끝났는지 기다린다.
       await waitForImagesToLoad(cardCaptureRef.current);
-      const dataUrl = await toPng(cardCaptureRef.current, { backgroundColor: '#ffffff', cacheBust: true, pixelRatio: 2 });
+      const dataUrl = await withCaptureSafeImages(cardCaptureRef.current, () =>
+        toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', cacheBust: true, pixelRatio: 2 }),
+      );
       const fileName = `${nickname || '프로필카드'}.png`;
 
       // iOS/Safari는 <a download>가 이미지 저장으로 이어지지 않는 경우가
@@ -671,7 +747,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     try {
       const result = await saveEventProfileCard(
         eventId,
-        { contactStyle, dateStyle, drinkingAmount, drinkingFrequency, hobby, idealType, keywords, mbti, photoCrop, photoPath, smoking },
+        { contactStyle, dateDestination, dateStyle, drinkingAmount, drinkingFrequency, hobby, idealType, keywords, mbti, photoCrop, photoPath, smoking },
         true,
       );
       setSubmittedAt(result.submittedAt);
@@ -722,7 +798,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
           <div ref={cardCaptureRef}>
-          <div className="relative mx-auto w-fit">
+          <div className="relative mx-auto w-fit rounded-full bg-gradient-to-br from-meet-pinkSoft via-white to-meet-blueSoft p-[3px]">
             <ParticipantPhoto
               className="rounded-full bg-[#f5f7fa]"
               crop={pendingPreviewUrl ? { offsetX: 0, offsetY: 0, scale: 1 } : photoCrop}
@@ -752,19 +828,23 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           <div className="mt-6 grid grid-cols-2 gap-3 text-left">
             <CardField label="취미" onChange={setHobby} placeholder="예) 영화 감상, 요가" value={hobby} />
             <CardField label="MBTI" onChange={setMbti} placeholder="예) ENFP" value={mbti} />
-            <CardField label="이상형" onChange={setIdealType} placeholder="예) 따뜻하고 유머있는 사람" value={idealType} />
+            <CardField label="이성을 볼 때 중요하게 생각하는 것" onChange={setIdealType} placeholder="예) 따뜻하고 유머있는 사람" value={idealType} />
             <CardField label="연락스타일" onChange={setContactStyle} placeholder="예) 바쁘면 가끔, 연락은 자주" value={contactStyle} />
             <CardField label="원하는 데이트 스타일" onChange={setDateStyle} placeholder="예) 맛집 탐방, 영화 데이트" value={dateStyle} />
-            <div className="rounded-[16px] bg-meet-blueSoft/60 p-3">
-              <p className="text-[12px] font-black text-[#666]">흡연 및 음주</p>
-              <input
-                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
-                onChange={(event) => setSmoking(event.target.value)}
-                placeholder="예) 비흡연"
-                value={smoking}
-              />
+            <CardField label="연인과 함께 가고 싶은 곳" onChange={setDateDestination} placeholder="예) 한강, 바다, 일본여행" value={dateDestination} />
+          </div>
+
+          <div className="mt-3 rounded-[16px] border border-[#f0f3f6] bg-white p-3 text-left shadow-sm">
+            <p className="text-[12px] font-black text-[#888]">흡연 및 음주</p>
+            <input
+              className="mt-1.5 h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2.5 text-[13px] font-bold outline-none"
+              onChange={(event) => setSmoking(event.target.value)}
+              placeholder="예) 비흡연"
+              value={smoking}
+            />
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
               <select
-                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+                className="h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2 text-[13px] font-bold outline-none"
                 onChange={(event) => setDrinkingFrequency(event.target.value)}
                 value={drinkingFrequency}
               >
@@ -776,7 +856,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
                 ))}
               </select>
               <select
-                className="mt-1.5 h-8 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+                className="h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2 text-[13px] font-bold outline-none"
                 onChange={(event) => setDrinkingAmount(event.target.value)}
                 value={drinkingAmount}
               >
@@ -793,7 +873,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           <div className="mt-6 text-left">
             <h2 className="text-[15px] font-black">나를 표현하는 키워드를 선택해주세요</h2>
             <div className="mt-3">
-              <ProfileKeywordPicker onChange={setKeywords} selected={keywords} />
+              <ProfileKeywordPicker onChange={setKeywords} options={keywordOptions} selected={keywords} />
             </div>
           </div>
           </div>
@@ -900,10 +980,10 @@ function CardField({
   value: string;
 }) {
   return (
-    <div className="rounded-[16px] bg-meet-blueSoft/60 p-3">
-      <p className="text-[12px] font-black text-[#666]">{label}</p>
+    <div className="rounded-[16px] border border-[#f0f3f6] bg-white p-3 shadow-sm">
+      <p className="text-[11.5px] font-black text-[#9aa0a8]">{label}</p>
       <input
-        className="mt-1.5 h-9 w-full rounded-[8px] bg-white px-2 text-[13px] font-bold outline-none"
+        className="mt-1.5 h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2.5 text-[13px] font-bold text-[#222] outline-none"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
@@ -1111,10 +1191,21 @@ function ConversationScreen({
   // 상대가 바뀔 때마다(라운드 변경) null로 리셋한 뒤 새로 불러오므로, 이전
   // 상대의 카드/키워드 하이라이트가 남아있는 일이 없다.
   const [card, setCard] = useState<PartnerEventProfileCard | null>(null);
+  const [keywordOptions, setKeywordOptions] = useState<ProfileKeywordOption[]>(PROFILE_KEYWORD_OPTIONS);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
     return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void loadProfileKeywordOptions().then((options) => {
+      if (active) setKeywordOptions(options);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1191,7 +1282,7 @@ function ConversationScreen({
             </p>
           ) : null}
 
-          {card ? <PartnerProfileCardDetails card={card} /> : null}
+          {card ? <PartnerProfileCardDetails card={card} keywordOptions={keywordOptions} /> : null}
         </section>
 
         <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
@@ -1242,9 +1333,10 @@ function ConversationScreen({
 const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: string }> = [
   { key: 'hobby', label: '취미' },
   { key: 'mbti', label: 'MBTI' },
-  { key: 'idealType', label: '이상형' },
+  { key: 'idealType', label: '이성을 볼 때 중요하게 생각하는 것' },
   { key: 'contactStyle', label: '연락스타일' },
   { key: 'dateStyle', label: '원하는 데이트 스타일' },
+  { key: 'dateDestination', label: '연인과 함께 가고 싶은 곳' },
   { key: 'smoking', label: '흡연' },
   { key: 'drinking', label: '음주' },
 ];
@@ -1253,7 +1345,7 @@ const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: stri
 // 필드는 빈 값이라 자연히 표시되지 않고, 전체 카드를 아예 안 만들었어도
 // (fetchParticipantPartnerPhoto가 항상 빈 문자열/빈 배열을 내려주므로)
 // undefined 값이나 오류 없이 조용히 빈 섹션이 된다.
-function PartnerProfileCardDetails({ card }: { card: PartnerEventProfileCard }) {
+function PartnerProfileCardDetails({ card, keywordOptions }: { card: PartnerEventProfileCard; keywordOptions: ProfileKeywordOption[] }) {
   const filledFields = partnerCardFields.filter((field) => card[field.key]);
   const myKeywordSet = new Set(card.myKeywords);
 
@@ -1264,8 +1356,8 @@ function PartnerProfileCardDetails({ card }: { card: PartnerEventProfileCard }) 
       {filledFields.length > 0 ? (
         <div className="grid grid-cols-2 gap-2.5">
           {filledFields.map((field) => (
-            <div className="rounded-[14px] bg-[#f5f7fa] p-3" key={field.key}>
-              <p className="text-[11px] font-black text-[#999]">{field.label}</p>
+            <div className="rounded-[14px] border border-[#f0f3f6] bg-[#fafbfc] p-3" key={field.key}>
+              <p className="text-[10.5px] font-black text-[#9aa0a8]">{field.label}</p>
               <p className="mt-1 text-[13px] font-bold text-[#333]">{card[field.key] as string}</p>
             </div>
           ))}
@@ -1284,7 +1376,7 @@ function PartnerProfileCardDetails({ card }: { card: PartnerEventProfileCard }) 
                 ].join(' ')}
                 key={keyword}
               >
-                {profileKeywordLabel(keyword)}
+                {resolveProfileKeywordLabel(keyword, keywordOptions)}
               </span>
             );
           })}
@@ -2168,7 +2260,13 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
     );
   }
 
-  if (data.submitted || justSubmitted) {
+  // justSubmitted(방금 이 화면에서 제출)일 때만 후기 안내로 이어간다 -
+  // data.submitted만 true인 건 이미 제출된 뒤 다시 들어온 경우(뒤로가기
+  // 등)라 매번 후기 안내를 다시 보여주면 불편하므로 기존 완료 화면 그대로.
+  if (justSubmitted) {
+    return <ReviewPromptScreen eventId={eventId} onSkip={() => navigate('/my-events')} />;
+  }
+  if (data.submitted) {
     return <FinalSelectionCompleteScreen onGoHome={() => navigate('/my-events')} />;
   }
 
@@ -2537,6 +2635,39 @@ function FinalSelectionSubmitConfirmModal({
 
 // 완료 화면(5번) - 요청대로 문구/버튼 딱 두 개만: 완료 문구 + 메인화면으로
 // 돌아가기. 결과 공개/마이페이지 안내 등은 이번 범위에서 의도적으로 제외.
+// 최종선택 제출 직후에만 보여준다("다시 방문"이 아니라 "방금 제출"). "후기
+// 작성하기"는 종료 티켓에서도 재사용하는 ReviewFormPage로 이동하고,
+// "다음에 작성하기"는 아무 것도 저장/변경하지 않고 그냥 메인으로 간다 -
+// 후기를 강제로 작성해야만 나갈 수 있는 느낌이 들면 안 된다는 요청에 따라
+// Secondary 버튼은 덜 강조된 text 스타일로 둔다.
+function ReviewPromptScreen({ eventId, onSkip }: { eventId: string; onSkip: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <div className="px-4 pt-12 min-[380px]:px-5">
+      <div className="mobile-container mx-auto mt-16 pb-8 text-center">
+        <img alt="" className="mx-auto h-[160px] w-[160px] object-contain" src="/assets/rating-complete-heart.png" />
+        <p className="mt-8 text-[24px] font-black leading-tight">최종 선택이 완료되었어요!</p>
+        <p className="mt-4 text-[15px] font-bold leading-relaxed text-[#666]">
+          참여자 여러분들의 후기는 앞으로의 행사와
+          <br />
+          타임투밋 운영에 큰 힘이 됩니다! 부탁드립니다 💗
+        </p>
+
+        <button
+          className="mt-10 h-14 w-full rounded-[16px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99]"
+          onClick={() => navigate(`/my-events/ticket/${eventId}/review`)}
+          type="button"
+        >
+          후기 작성하기
+        </button>
+        <button className="mt-4 text-[14px] font-bold text-[#999] underline underline-offset-2" onClick={onSkip} type="button">
+          다음에 작성하기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FinalSelectionCompleteScreen({ onGoHome }: { onGoHome: () => void }) {
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">

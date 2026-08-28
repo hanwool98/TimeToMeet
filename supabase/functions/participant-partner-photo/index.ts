@@ -111,7 +111,7 @@ Deno.serve(async (request) => {
   const { data: partnerCard } = await supabase
     .from('event_profile_cards')
     .select(
-      'photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking_frequency, drinking_amount, keywords',
+      'photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, smoking, drinking_frequency, drinking_amount, keywords, date_destination',
     )
     .eq('event_id', payload.eventId)
     .eq('application_id', partnerApplicationId)
@@ -144,6 +144,7 @@ Deno.serve(async (request) => {
     dateStyle: partnerCard?.date_style ?? '',
     smoking: partnerCard?.smoking ?? '',
     drinking: formatDrinkingDisplay(partnerCard?.drinking_frequency, partnerCard?.drinking_amount),
+    dateDestination: partnerCard?.date_destination ?? '',
     keywords: Array.isArray(partnerCard?.keywords) ? partnerCard.keywords : [],
     myKeywords: Array.isArray(myCard?.keywords) ? myCard.keywords : [],
   });

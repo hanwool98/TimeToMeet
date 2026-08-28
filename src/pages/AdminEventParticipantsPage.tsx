@@ -16,6 +16,7 @@ import {
   fetchAdminRoundProgress,
   resetTestEventData,
   restartTestEventProgress,
+  setEventLock,
   setParticipantAttendanceStatus,
   setTestParticipantFlag,
   simulateTestEventFinalSelections,
@@ -40,6 +41,7 @@ export default function AdminEventParticipantsPage() {
   const [previewFilesLoading, setPreviewFilesLoading] = useState(false);
   const [previewFilesError, setPreviewFilesError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
   const [testActionBusy, setTestActionBusy] = useState(false);
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [participantMedia, setParticipantMedia] = useState<Map<string, ParticipantMediaRow>>(new Map());
@@ -134,6 +136,25 @@ export default function AdminEventParticipantsPage() {
       window.alert(`행사를 삭제하지 못했습니다. ${message}`);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleToggleLock = async () => {
+    if (!event || !eventId || lockBusy) return;
+    const nextLocked = !event.isLocked;
+    const confirmed = nextLocked
+      ? window.confirm('행사를 잠그시겠어요?\n잠금 상태에서는 행사 수정 및 삭제가 제한됩니다.')
+      : window.confirm('행사 잠금을 해제하시겠어요?\n해제하면 다시 행사 수정 및 삭제가 가능해집니다.');
+    if (!confirmed) return;
+
+    setLockBusy(true);
+    try {
+      await setEventLock(eventId, nextLocked);
+      await reload();
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '행사 잠금 상태를 변경하지 못했습니다.');
+    } finally {
+      setLockBusy(false);
     }
   };
 
@@ -443,13 +464,29 @@ export default function AdminEventParticipantsPage() {
             </PrimaryButton>
             <button
               className="h-14 rounded-[18px] bg-meet-pink px-5 text-[16px] font-extrabold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!event || deleting}
+              disabled={!event || deleting || Boolean(event?.isLocked)}
               onClick={handleDeleteEvent}
               type="button"
             >
               {deleting ? '삭제 중' : '행사 삭제'}
             </button>
           </div>
+
+          <button
+            className={[
+              'mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] text-[14px] font-black transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50',
+              event?.isLocked ? 'bg-[#fff2ef] text-meet-pink' : 'border border-[#e2e6ea] text-[#666]',
+            ].join(' ')}
+            disabled={!event || lockBusy}
+            onClick={() => void handleToggleLock()}
+            type="button"
+          >
+            <LockToggleGlyph locked={Boolean(event?.isLocked)} />
+            {lockBusy ? '처리 중' : event?.isLocked ? '행사 잠금 해제' : '행사 잠그기'}
+          </button>
+          {event?.isLocked ? (
+            <p className="mt-1.5 text-center text-[12px] font-bold text-[#bbb]">잠긴 행사는 정보 수정/삭제만 제한됩니다 · 행사 진행에는 영향 없어요</p>
+          ) : null}
 
           {event?.isTestEvent ? (
             <div className="mt-5 w-full max-w-full min-w-0 rounded-[22px] border border-meet-blue/25 bg-meet-blueSoft/40 p-4">
@@ -891,5 +928,18 @@ function MissingFile({ text }: { text: string }) {
     <div className="mt-3 grid min-h-[120px] place-items-center rounded-[18px] border border-dashed border-[#d7e2ee] bg-white p-4 text-center text-[13px] font-black text-[#8a8a8a]">
       {text}
     </div>
+  );
+}
+
+function LockToggleGlyph({ locked }: { locked: boolean }) {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <rect height="10" rx="2" stroke="currentColor" strokeWidth="1.8" width="14" x="5" y="11" />
+      {locked ? (
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      ) : (
+        <path d="M8 11V8a4 4 0 0 1 7-2.6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      )}
+    </svg>
   );
 }

@@ -24,4 +24,5 @@ export interface EventData {
   femaleConfirmed?: number;
   isTestEvent?: boolean;
   endedAt?: string;
+  isLocked?: boolean;
 }

@@ -8,6 +8,7 @@ import AdminApplicationsPage from './pages/AdminApplicationsPage';
 import AdminCheckInPage from './pages/AdminCheckInPage';
 import AdminContentPage from './pages/AdminContentPage';
 import AdminConversationTopicsPage from './pages/AdminConversationTopicsPage';
+import AdminProfileKeywordsPage from './pages/AdminProfileKeywordsPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
 import AdminEventLivePage from './pages/AdminEventLivePage';
 import AdminEventPreparePage from './pages/AdminEventPreparePage';
@@ -35,6 +36,7 @@ import ParticipantProfilePage from './pages/ParticipantProfilePage';
 import ProfileFormPage from './pages/ProfileFormPage';
 import ProfileReadyPage from './pages/ProfileReadyPage';
 import TicketDetailPage from './pages/TicketDetailPage';
+import ReviewFormPage from './pages/ReviewFormPage';
 import { getSupabaseDiagnostics } from './lib/supabase';
 import { logClientError } from './services/supabaseApplications';
 import './styles.css';
@@ -79,6 +81,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/application-errors" element={<AdminApplicationErrorsPage />} />
             <Route path="/admin/content" element={<AdminContentPage />} />
             <Route path="/admin/content/conversation-topics" element={<AdminConversationTopicsPage />} />
+            <Route path="/admin/content/profile-keywords" element={<AdminProfileKeywordsPage />} />
             <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
             <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
@@ -98,6 +101,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/my-events" element={<MyEventsPage />} />
           <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />
           <Route path="/my-events/ticket/:eventId" element={<TicketDetailPage />} />
+          <Route path="/my-events/ticket/:eventId/review" element={<ReviewFormPage />} />
           <Route path="/mypage" element={<MyPage />} />
           <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
           <Route path="/profile/new" element={<ProfileFormPage />} />

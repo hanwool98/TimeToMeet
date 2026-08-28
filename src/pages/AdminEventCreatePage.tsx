@@ -125,6 +125,7 @@ export default function AdminEventCreatePage() {
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
   const [isTestEvent, setIsTestEvent] = useState(editingEvent?.isTestEvent ?? false);
+  const [isLocked, setIsLocked] = useState(editingEvent?.isLocked ?? false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editDetailsLoading, setEditDetailsLoading] = useState(Boolean(eventId));
@@ -146,6 +147,7 @@ export default function AdminEventCreatePage() {
     setRegion(toRegionOption(editingEvent.location));
     setVenueBooked(editingEvent.venueBooked);
     setIsTestEvent(editingEvent.isTestEvent ?? false);
+    setIsLocked(editingEvent.isLocked ?? false);
     setDeadline(
       editingEvent.applicationDeadline
         ? toDateTimeInputValue(new Date(editingEvent.applicationDeadline))
@@ -180,6 +182,7 @@ export default function AdminEventCreatePage() {
         setVenueDetail(details.venueDetail);
         setVenueBooked(details.venueBooked);
         setIsTestEvent(details.isTestEvent ?? false);
+        setIsLocked(details.isLocked ?? false);
         setDeadline(
           details.applicationDeadline
             ? toDateTimeInputValue(new Date(details.applicationDeadline))
@@ -200,6 +203,10 @@ export default function AdminEventCreatePage() {
   }, [eventId]);
 
   const handleCreate = async () => {
+    if (isLocked) {
+      setSaveError('잠긴 행사는 수정할 수 없습니다. 먼저 잠금을 해제해주세요.');
+      return;
+    }
     if (!editingEvent && eventDate < toDateInputValue(new Date())) {
       setSaveError('행사 날짜는 오늘 이후여야 합니다.');
       return;
@@ -259,6 +266,11 @@ export default function AdminEventCreatePage() {
         <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-4 py-6 shadow-calendar min-[380px]:px-5">
           <h1 className="text-fluid-safe text-[25px] font-black leading-tight">{pageTitle}</h1>
           <p className="mt-3 text-[18px] font-black text-meet-blue">{formatKoreanDate(eventDate)}</p>
+          {isLocked ? (
+            <p className="mt-3 rounded-[16px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">
+              🔒 잠긴 행사입니다. 행사 상세 화면에서 잠금을 해제해야 수정할 수 있어요.
+            </p>
+          ) : null}
 
           <form className="mt-7 w-full max-w-full min-w-0 space-y-5" onSubmit={(event) => event.preventDefault()}>
             <Field label="행사 종류">
@@ -492,7 +504,7 @@ export default function AdminEventCreatePage() {
               >
                 취소
               </button>
-              <PrimaryButton disabled={saving || editDetailsLoading || isPastDateBlocked} onClick={handleCreate}>{saving ? '저장 중' : editDetailsLoading ? '행사 정보 확인 중' : submitLabel}</PrimaryButton>
+              <PrimaryButton disabled={saving || editDetailsLoading || isPastDateBlocked || isLocked} onClick={handleCreate}>{saving ? '저장 중' : editDetailsLoading ? '행사 정보 확인 중' : submitLabel}</PrimaryButton>
             </div>
             {isPastDateBlocked ? (
               <p className="text-fluid-safe text-center text-[13px] font-black leading-snug text-meet-pink">행사 날짜는 오늘 이후여야 합니다.</p>

@@ -1,14 +1,26 @@
 import { useEffect, useState } from 'react';
-import { PROFILE_KEYWORD_CUSTOM_MAX_LENGTH, PROFILE_KEYWORD_OPTIONS } from '../constants/profileKeywords';
-
-const fixedKeySet = new Set<string>(PROFILE_KEYWORD_OPTIONS.map((option) => option.key));
+import { PROFILE_KEYWORD_CUSTOM_MAX_LENGTH, PROFILE_KEYWORD_OPTIONS, type ProfileKeywordOption } from '../constants/profileKeywords';
 
 // HashtagPicker.tsx(상대 평가용 hashtag)와 상호작용 패턴은 같지만, 이건
 // 완전히 다른 개념(본인을 표현하는 키워드)이라 별도 컴포넌트로 둔다.
 // `selected`에는 고정 키워드는 key(예: likes_movies)로, 직접입력은
 // "#"으로 시작하는 정규화된 문구로 저장된다 - 두 경우 모두 그냥 문자열
 // 배열 교집합으로 다른 사람과의 공통 키워드를 판정할 수 있다.
-export default function ProfileKeywordPicker({ selected, onChange }: { onChange: (next: string[]) => void; selected: string[] }) {
+//
+// `options`는 관리자가 콘텐츠 관리에서 관리하는 활성 키워드 목록
+// (get_active_profile_keywords)을 부모가 fetch해 내려준다 - 서버 조회가
+// 실패했거나 아직 로딩 전이면 기존 코드 상수로 폴백해 화면이 완전히
+// 비어보이지 않게 한다.
+export default function ProfileKeywordPicker({
+  onChange,
+  options = PROFILE_KEYWORD_OPTIONS,
+  selected,
+}: {
+  onChange: (next: string[]) => void;
+  options?: ProfileKeywordOption[];
+  selected: string[];
+}) {
+  const fixedKeySet = new Set<string>(options.map((option) => option.key));
   const customTag = selected.find((tag) => !fixedKeySet.has(tag));
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [customDraft, setCustomDraft] = useState(customTag ? customTag.replace(/^#/, '') : '');
@@ -40,13 +52,13 @@ export default function ProfileKeywordPicker({ selected, onChange }: { onChange:
 
   const chipClassName = (isSelected: boolean) =>
     `rounded-full border px-3 py-1.5 text-[13px] font-bold transition ${
-      isSelected ? 'border-meet-blue bg-meet-blueSoft text-meet-blue' : 'border-[#eee] bg-white text-[#777]'
+      isSelected ? 'border-meet-pink bg-meet-pinkSoft text-meet-pink' : 'border-[#eee] bg-white text-[#777]'
     }`;
 
   return (
     <div>
       <div className="flex flex-wrap gap-2">
-        {PROFILE_KEYWORD_OPTIONS.map((option) => (
+        {options.map((option) => (
           <button className={chipClassName(selected.includes(option.key))} key={option.key} onClick={() => toggleFixed(option.key)} type="button">
             {option.label}
           </button>

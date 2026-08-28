@@ -44,7 +44,19 @@ export const PROFILE_KEYWORD_LABEL_BY_KEY = new Map(PROFILE_KEYWORD_OPTIONS.map(
 export const PROFILE_KEYWORD_CUSTOM_MAX_LENGTH = 15;
 
 // 고정 키워드는 key로, 직접입력은 정규화된(#으로 시작하는) 문구로 저장되므로
-// 화면에 보여줄 라벨은 이 함수 하나로 통일해서 구한다.
+// 화면에 보여줄 라벨은 이 함수 하나로 통일해서 구한다. 코드 상수만 보는
+// 폴백 - 관리자가 콘텐츠 관리에서 문구를 바꾼 최신 값을 반영하려면
+// resolveProfileKeywordLabel에 서버에서 받아온 옵션 목록을 넘긴다.
 export function profileKeywordLabel(storedValue: string) {
   return PROFILE_KEYWORD_LABEL_BY_KEY.get(storedValue) ?? storedValue;
+}
+
+// 관리자 키워드 관리에서 label을 바꾼 최신 값을 우선 쓰고, 서버 조회가
+// 실패했거나 옵션 목록에 없는 값(과거에 저장된, 지금은 비활성/삭제된
+// key 포함)은 코드 상수 → 원문 순서로 그대로 폴백한다 - key가 유지되는
+// 한 과거 카드 데이터는 절대 깨지지 않는다.
+export function resolveProfileKeywordLabel(storedValue: string, liveOptions: ProfileKeywordOption[]) {
+  const live = liveOptions.find((option) => option.key === storedValue);
+  if (live) return live.label;
+  return profileKeywordLabel(storedValue);
 }

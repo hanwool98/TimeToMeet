@@ -174,6 +174,15 @@ export default function MyEventsPage() {
                         이번 행사 참가 신청이 승인되지 않았습니다. 자세히 보기 →
                       </button>
                     ) : null}
+                    {ticket.status === '참가 확정' && hasEventEnded(ticket.eventDate, ticket.endTime) ? (
+                      <button
+                        className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-meet-blue p-4 text-[14px] font-black text-meet-blue transition active:scale-[0.99]"
+                        onClick={() => navigate(`/my-events/ticket/${ticket.eventId}/review`)}
+                        type="button"
+                      >
+                        {ticket.eventReviewSubmittedAt ? '후기 보기/수정' : '후기 작성'}
+                      </button>
+                    ) : null}
                   </section>
                 );
               })}
@@ -275,6 +284,14 @@ function extractErrorMessage(caughtError: unknown): string {
     if (typeof message === 'string' && message.trim()) return message;
   }
   return '알 수 없는 오류';
+}
+
+// 행사 종료(event_date + end_time이 이미 지남) 여부 - 별도 ended_at 필드를
+// 새로 내려받지 않고, 티켓에 이미 있는 날짜/시간만으로 판단한다.
+function hasEventEnded(eventDateValue: string, endTimeValue: string) {
+  const kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const eventEnd = new Date(`${eventDateValue}T${endTimeValue}:00`);
+  return kstNow.getTime() >= eventEnd.getTime();
 }
 
 // Tickets stop appearing in "내 행사" 3 days after their event (kept in sync
