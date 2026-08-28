@@ -90,7 +90,11 @@ Deno.serve(async (request) => {
   let representativePhotoPath = '';
   let voiceIntroPath: string | null = null;
   const uploadedPaths: string[] = [];
-  const basePath = `emergency/${payload.eventId}/${crypto.randomUUID()}`;
+  // 행사 이름이 한글이면 이벤트 id 자체에도 한글이 그대로 들어간다
+  // (createEventId가 유니코드 글자를 보존함) - Storage 오브젝트 key는
+  // 비-ASCII 문자를 거부하므로("Invalid key") 그대로 못 쓴다.
+  const safeEventId = await sanitizeIdForStoragePath(payload.eventId);
+  const basePath = `emergency/${safeEventId}/${crypto.randomUUID()}`;
 
   try {
     representativePhotoPath = await uploadPrivateFileWithRetry(
@@ -336,6 +340,15 @@ async function sha256(value: string) {
   const data = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// id가 이미 Storage key로 안전하면(영문/숫자/._-) 그대로 쓰고(기존에 이미
+// 업로드된 경로와 계속 호환), 그렇지 않으면(한글 등 비-ASCII 포함) 결정적
+// 해시로 치환한다 - 같은 eventId는 항상 같은 경로를 가리키므로 이후
+// 업로드/조회가 서로 어긋나지 않는다.
+async function sanitizeIdForStoragePath(id: string) {
+  if (/^[A-Za-z0-9_.-]+$/.test(id)) return id;
+  return sha256(id);
 }
 
 function json(body: Record<string, unknown>, status = 200) {
