@@ -45,16 +45,15 @@ import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from
 
 const progressPollIntervalMs = 4_000;
 
-// 프로필 키워드 목록(관리자 콘텐츠 관리에서 관리)은 세션 중 자주 바뀌지
-// 않으므로, 같은 페이지 방문 동안은 한 번만 서버에서 받아와 캐시한다 -
-// 프로필카드 작성 화면과 대화 중 화면(공통 키워드 라벨 표시)이 각각 다시
-// fetch하지 않게. 실패하면 코드 상수로 폴백해 화면이 비어보이지 않는다.
-let cachedProfileKeywordOptionsPromise: Promise<ProfileKeywordOption[]> | null = null;
+// 프로필 키워드 목록(관리자 콘텐츠 관리에서 관리)은 화면(프로필카드 작성,
+// 대화 중, 최종선택)을 열 때마다 매번 새로 받아온다 - 과거엔 브라우저 탭당
+// 한 번만 받아와 계속 재사용하는 캐시가 있었는데, 그러면 참가자가 탭을
+// 새로고침하지 않는 이상 관리자가 그 사이 키워드를 수정해도 절대 반영되지
+// 않는 문제가 있었다. 이 목록은 자주 바뀌지도 않고 응답도 가벼워서, 매번
+// 새로 받아오는 비용보다 최신 상태를 보장하는 쪽이 더 중요하다. 실패하면
+// 코드 상수로 폴백해 화면이 비어보이지 않는다.
 function loadProfileKeywordOptions() {
-  if (!cachedProfileKeywordOptionsPromise) {
-    cachedProfileKeywordOptionsPromise = fetchActiveProfileKeywords().catch(() => PROFILE_KEYWORD_OPTIONS);
-  }
-  return cachedProfileKeywordOptionsPromise;
+  return fetchActiveProfileKeywords().catch(() => PROFILE_KEYWORD_OPTIONS);
 }
 
 // html-to-image(toPng)는 캡처 시점에 아직 로드/디코딩이 끝나지 않은 <img>는

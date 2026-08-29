@@ -4,7 +4,7 @@ import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import HeartRating from '../components/HeartRating';
 import ParticipantPhoto from '../components/ParticipantPhoto';
-import { profileKeywordLabel } from '../constants/profileKeywords';
+import { resolveProfileKeywordLabel, type ProfileKeywordOption } from '../constants/profileKeywords';
 import useOperationalData from '../hooks/useOperationalData';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard, debounce } from '../utils/requestGuard';
@@ -12,6 +12,7 @@ import {
   controlEventIntroVideo,
   controlRoundTimer,
   endAdminEvent,
+  fetchActiveProfileKeywords,
   fetchAdminEventModeSummaries,
   fetchAdminEventParticipantMedia,
   fetchAdminEventProgress,
@@ -1468,6 +1469,23 @@ const adminProfileCardFields: Array<{ key: keyof AdminParticipantEventProfileCar
 // admin-participant-event-profile-card Edge Function이 이미 구현하므로
 // 여기서는 결과를 그대로 표시만 한다.
 function AdminParticipantProfileCardView({ card }: { card: AdminParticipantEventProfileCard }) {
+  // 이 화면은 코드에 박힌 키워드 상수만 봐서, 관리자가 콘텐츠 관리에서
+  // 키워드 문구를 바꿔도 절대 반영되지 않던 화면이었다 - 열릴 때마다
+  // 최신 키워드 목록을 받아와 우선 사용하고, 실패하거나 목록에 없는
+  // key(과거 저장된 값)는 그대로 코드 상수로 폴백한다.
+  const [liveKeywordOptions, setLiveKeywordOptions] = useState<ProfileKeywordOption[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetchActiveProfileKeywords()
+      .then((options) => {
+        if (active) setLiveKeywordOptions(options);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const filledFields = adminProfileCardFields.filter((field) => card[field.key]);
   if (!card.hasSubmittedCard) {
     return <p className="mt-4 text-[13px] font-bold text-[#bbb]">아직 행사 프로필 카드를 작성하지 않았습니다</p>;
@@ -1497,7 +1515,7 @@ function AdminParticipantProfileCardView({ card }: { card: AdminParticipantEvent
         <div className="mt-3 flex flex-wrap gap-1.5">
           {card.keywords.map((keyword) => (
             <span className="rounded-full border border-[#eee] bg-white px-2.5 py-1 text-[11px] font-bold text-[#777]" key={keyword}>
-              {profileKeywordLabel(keyword)}
+              {resolveProfileKeywordLabel(keyword, liveKeywordOptions)}
             </span>
           ))}
         </div>
