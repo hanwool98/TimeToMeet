@@ -99,8 +99,11 @@ export default function AdminTabletSeatPage() {
   const roundGuardRef = useRef(createRequestGuard());
 
   // 태블릿은 행사 내내 테이블 위에 놓여있고 터치 없이 오래 방치되므로,
-  // 화면이 꺼지지 않게 이 화면에 머무는 동안 항상 켜둔다.
-  useScreenWakeLock(true);
+  // 화면이 꺼지지 않게 이 화면에 머무는 동안 항상 켜둔다. Wake Lock API가
+  // 없는 구형 Android WebView(예: Android 6.0.1급)를 위해 영상 기반
+  // fallback을 허용한다 - 참가자 화면(EventModePage)에는 필요 없어서 켜지
+  // 않는다.
+  useScreenWakeLock(true, { allowVideoFallback: true });
 
   // Always-on 1s tick for the connection-status banner, independent of the
   // round-stage-gated countdown tick below.

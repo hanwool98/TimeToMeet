@@ -127,16 +127,19 @@ export default function ReviewFormPage() {
   const canAddMore = images.length < maxReviewImages;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-white px-4 pt-12 text-black min-[380px]:px-5">
-      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-10rem)] flex-col gap-6 pb-8">
-        <button
-          aria-label="뒤로가기"
-          className="grid h-10 w-10 place-items-center rounded-full text-[#333] transition active:scale-[0.95]"
-          onClick={() => navigate('/my-events')}
-          type="button"
-        >
-          <BackGlyph />
-        </button>
+    <main className="min-h-screen overflow-x-hidden bg-white px-4 pt-6 text-black min-[380px]:px-5">
+      <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col gap-5 pb-8">
+        <header className="relative grid h-12 place-items-center border-b border-[#f1f1f1]">
+          <button
+            aria-label="뒤로가기"
+            className="absolute left-0 grid h-10 w-10 place-items-center rounded-full text-[#333] transition active:scale-[0.95]"
+            onClick={() => navigate('/my-events')}
+            type="button"
+          >
+            <BackGlyph />
+          </button>
+          <h1 className="text-[18px] font-black">후기 작성</h1>
+        </header>
 
         {loading ? (
           <div className="grid min-h-[calc(100dvh-16rem)] place-items-center">
@@ -148,10 +151,7 @@ export default function ReviewFormPage() {
           </div>
         ) : (
           <>
-            <header>
-              <h1 className="text-[26px] font-black leading-tight">후기 작성</h1>
-              {eventTitle ? <p className="mt-1.5 text-[14px] font-bold text-[#999]">{eventTitle}</p> : null}
-            </header>
+            {eventTitle ? <p className="-mt-2 text-center text-[13px] font-bold text-[#999]">{eventTitle}</p> : null}
 
             <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
               <textarea
@@ -165,7 +165,7 @@ export default function ReviewFormPage() {
                 {content.length} / {reviewMaxLength}
               </p>
 
-              <div className="mt-4">
+              <div className="mt-5">
                 <p className="text-[13px] font-black text-[#666]">사진 추가 (선택)</p>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {images.map((image) => (
@@ -200,18 +200,18 @@ export default function ReviewFormPage() {
               </div>
 
               {submittedAt && !justSaved ? (
-                <p className="mt-4 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
+                <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
                   이전에 작성한 후기예요 · 언제든 수정할 수 있어요
                 </p>
               ) : null}
               {justSaved ? (
-                <p className="mt-4 rounded-[14px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">
+                <p className="mt-5 rounded-[14px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">
                   후기가 저장됐어요. 소중한 의견 감사합니다 💗
                 </p>
               ) : null}
-              {saveError ? <p className="mt-4 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
+              {saveError ? <p className="mt-5 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
 
-              <div className="mt-4">
+              <div className="mt-6">
                 <PrimaryButton disabled={saving || !content.trim()} onClick={() => void handleSubmit()}>
                   {saving ? '저장하는 중' : submittedAt ? '후기 수정하기' : '후기 남기기'}
                 </PrimaryButton>

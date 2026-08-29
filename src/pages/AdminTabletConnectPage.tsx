@@ -11,6 +11,7 @@ import {
   type AdminEventTabletStatus,
 } from '../services/supabaseApplications';
 import { unlockTabletAlertAudio } from '../utils/tabletAlertAudio';
+import { primeTabletWakeLockFallback } from '../utils/tabletWakeLockFallback';
 
 const KOREA_TIME_ZONE = 'Asia/Seoul';
 
@@ -155,7 +156,11 @@ export default function AdminTabletConnectPage() {
     // tap is the one guaranteed user gesture the tablet gets all event, and
     // later timer-alert playback needs audio already unlocked by then (old
     // Android/autoplay policies block .play() outside a gesture call stack).
+    // Same reasoning for the wake-lock video fallback: it's an SPA route
+    // change to the seat screen next, not a full page reload, so priming it
+    // here on this tap carries forward instead of starting cold mid-event.
     unlockTabletAlertAudio();
+    primeTabletWakeLockFallback();
     setConnectError('');
     setConnectingNumber(tableNumber);
     try {
@@ -241,6 +246,7 @@ export default function AdminTabletConnectPage() {
               className="mt-8 h-14 w-full rounded-[16px] bg-[#ef4039] text-[17px] font-black text-white"
               onClick={() => {
                 unlockTabletAlertAudio();
+                primeTabletWakeLockFallback();
                 navigate(`/admin/events/${eventId}/tablet/${connectedInfo.tableNumber}/seat`);
               }}
               type="button"

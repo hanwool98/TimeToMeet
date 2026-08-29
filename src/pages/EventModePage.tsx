@@ -111,6 +111,12 @@ async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promi
       if (!originalSrc || originalSrc.startsWith('blob:') || originalSrc.startsWith('data:')) return;
       try {
         const response = await fetch(originalSrc, { cache: 'no-store' });
+        // 서명 URL이 만료되면(카드 작성에 시간이 걸려 발급 당시의 짧은
+        // 만료시간을 넘긴 경우 등) Storage가 200이 아닌 응답(에러 본문)을
+        // 준다 - 이걸 그대로 blob으로 바꿔 <img>에 넣으면 깨진 이미지가
+        // 캡처되거나 decode()가 실패해 카드 사진만 빈 채로 저장되는데,
+        // 상태 자체를 확인하지 않으면 이 실패가 조용히 묻혀버린다.
+        if (!response.ok) throw new Error(`signed url fetch failed: ${response.status}`);
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
         createdObjectUrls.push(objectUrl);
@@ -118,10 +124,11 @@ async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promi
         if (typeof img.decode === 'function') {
           await img.decode().catch(() => undefined);
         }
-      } catch {
+      } catch (swapError) {
         // 실패하면 원래 src(서명 URL)를 그대로 둔다 - 최소한 이전과 같은
         // 동작(성공할 수도, 빈 채로 캡처될 수도)으로 되돌아갈 뿐 더
         // 나빠지지는 않는다.
+        console.debug('[PROFILE_CARD_EXPORT] image_swap_failed', { message: String(swapError), src: originalSrc });
       }
     }),
   );
@@ -707,23 +714,39 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       // 아직 디코딩 중인 상태에서 버튼을 누르면 화면엔 보여도 캡처에는
       // 빠질 수 있다. 캡처 직전에 카드 안의 모든 이미지가 실제로 로드+
       // 디코딩까지 끝났는지 기다린다.
-      await waitForImagesToLoad(cardCaptureRef.current);
+      console.debug('[PROFILE_CARD_EXPORT] images_ready');
       const dataUrl = await withCaptureSafeImages(cardCaptureRef.current, () =>
         toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', cacheBust: true, pixelRatio: 2 }),
       );
+      console.debug('[PROFILE_CARD_EXPORT] capture_done');
       const fileName = `${nickname || '프로필카드'}.png`;
 
       // iOS/Safari는 <a download>가 이미지 저장으로 이어지지 않는 경우가
       // 많아, Web Share API가 있으면 공유 시트(사진 앱에 저장 포함)를
-      // 우선 시도하고, 없거나 파일 공유를 지원하지 않으면 일반 다운로드로
+      // 우선 시도한다. 단, share()는 캡처 과정의 여러 await(이미지 로드
+      // 대기, 캔버스 변환, blob 변환)를 거친 뒤 호출되는데, 일부 브라우저는
+      // 클릭 시점의 user gesture(활성화 상태)가 그 사이 만료됐다고 보고
+      // NotAllowedError로 거부하거나, 공유를 받을 앱이 없어 실패하기도
+      // 한다 - 이런 실패까지 전부 "저장 실패"로 끝내지 않고, 사용자가
+      // 명시적으로 취소한 것(AbortError)이 아니라면 일반 다운로드로
       // 대체한다.
       const canShareFiles = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
       if (canShareFiles) {
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], fileName, { type: 'image/png' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] });
-          return;
+        try {
+          const blob = await (await fetch(dataUrl)).blob();
+          const file = new File([blob], fileName, { type: 'image/png' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            console.debug('[PROFILE_CARD_EXPORT] share_succeeded');
+            return;
+          }
+          console.debug('[PROFILE_CARD_EXPORT] canShare_false_falling_back_to_download');
+        } catch (shareError) {
+          if (shareError instanceof Error && shareError.name === 'AbortError') {
+            console.debug('[PROFILE_CARD_EXPORT] share_cancelled_by_user');
+            return;
+          }
+          console.debug('[PROFILE_CARD_EXPORT] share_failed_falling_back_to_download', { message: String(shareError) });
         }
       }
 
@@ -733,8 +756,13 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       document.body.appendChild(link);
       link.click();
       link.remove();
+      console.debug('[PROFILE_CARD_EXPORT] download_triggered');
     } catch (caughtError) {
       if (caughtError instanceof Error && caughtError.name === 'AbortError') return;
+      console.debug('[PROFILE_CARD_EXPORT] failed', {
+        message: caughtError instanceof Error ? caughtError.message : String(caughtError),
+        name: caughtError instanceof Error ? caughtError.name : undefined,
+      });
       setCardImageSaveError('프로필 카드를 저장하지 못했습니다.');
     } finally {
       setCardImageSaving(false);
