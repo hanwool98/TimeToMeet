@@ -248,6 +248,7 @@ export interface MyEventTicket {
   bankAccountNumber: string;
   bankAccountHolder: string;
   eventReviewSubmittedAt?: string;
+  eventEndedAt?: string;
 }
 
 interface MyEventTicketRow {
@@ -285,6 +286,7 @@ interface MyEventTicketRow {
   bank_account_number: string;
   bank_account_holder: string;
   event_review_submitted_at: string | null;
+  event_ended_at: string | null;
 }
 
 export interface AdminCheckInResult {
@@ -2982,6 +2984,34 @@ export async function fetchAdminParticipantEventProfileCard(eventId: string, app
   };
 }
 
+// 콘텐츠 관리 > 후기 관리 목록 - 사진은 admin-participant-event-profile
+// -card와 동일한 우선순위(행사 카드 사진 > 기본 대표사진)로 서명됨.
+export interface AdminEventReview {
+  age: number | null;
+  applicationId: string;
+  content: string;
+  eventId: string;
+  eventTitle: string;
+  job: string;
+  nickname: string;
+  photoUrl: string | null;
+  submittedAt: string;
+}
+
+export async function fetchAdminEventReviews(eventId?: string): Promise<AdminEventReview[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-list-event-reviews', {
+    body: { eventId: eventId ?? null, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(data?.message || '후기 목록을 불러오지 못했습니다.');
+  }
+  return (data.reviews ?? []) as AdminEventReview[];
+}
+
 // 행사 잠금 - 관리자 행사 수정 화면의 자물쇠 버튼에서 호출.
 export async function setEventLock(eventId: string, isLocked: boolean) {
   if (!supabase) throw new Error('Supabase is not configured.');
@@ -3136,8 +3166,24 @@ export async function fetchFinalSelectionCandidates(eventId: string): Promise<Fi
   };
 }
 
-export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promise<Map<string, ParticipantPhotoInfo>> {
-  const photoMap = new Map<string, ParticipantPhotoInfo>();
+// 최종선택 "프로필 보기"에서 상대의 행사 프로필카드 전체를 보여주기 위한
+// 형태 - PartnerEventProfileCard와 필드 구성은 같지만 myKeywords(공통
+// 키워드 강조)는 최종선택 화면에서 쓰지 않으므로 제외.
+export interface FinalSelectionCandidateProfile extends ParticipantPhotoInfo {
+  contactStyle: string;
+  dateDestination: string;
+  dateStyle: string;
+  drinking: string;
+  hasSubmittedCard: boolean;
+  hobby: string;
+  idealType: string;
+  keywords: string[];
+  mbti: string;
+  smoking: string;
+}
+
+export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promise<Map<string, FinalSelectionCandidateProfile>> {
+  const photoMap = new Map<string, FinalSelectionCandidateProfile>();
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) return photoMap;
@@ -3148,10 +3194,37 @@ export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promi
   if (error) throw error;
   const row = data as {
     ok: boolean;
-    photos?: Array<{ applicationId: string; photoUrl: string | null; representativeCrop?: RepresentativeCrop | null }>;
+    photos?: Array<{
+      applicationId: string;
+      contactStyle?: string | null;
+      dateDestination?: string | null;
+      dateStyle?: string | null;
+      drinking?: string | null;
+      hasSubmittedCard?: boolean;
+      hobby?: string | null;
+      idealType?: string | null;
+      keywords?: string[] | null;
+      mbti?: string | null;
+      photoUrl: string | null;
+      representativeCrop?: RepresentativeCrop | null;
+      smoking?: string | null;
+    }>;
   };
   for (const photo of row?.photos ?? []) {
-    if (photo.photoUrl) photoMap.set(photo.applicationId, { photoUrl: photo.photoUrl, representativeCrop: photo.representativeCrop ?? undefined });
+    photoMap.set(photo.applicationId, {
+      contactStyle: photo.contactStyle ?? '',
+      dateDestination: photo.dateDestination ?? '',
+      dateStyle: photo.dateStyle ?? '',
+      drinking: photo.drinking ?? '',
+      hasSubmittedCard: Boolean(photo.hasSubmittedCard),
+      hobby: photo.hobby ?? '',
+      idealType: photo.idealType ?? '',
+      keywords: photo.keywords ?? [],
+      mbti: photo.mbti ?? '',
+      photoUrl: photo.photoUrl,
+      representativeCrop: photo.representativeCrop ?? undefined,
+      smoking: photo.smoking ?? '',
+    });
   }
   return photoMap;
 }
@@ -3386,6 +3459,7 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     transferIntentConfirmed: Boolean(row.transfer_intent_confirmed),
     endTime: row.end_time.slice(0, 5),
     eventDate: row.event_date,
+    eventEndedAt: row.event_ended_at ?? undefined,
     eventId: row.event_id,
     eventReviewSubmittedAt: row.event_review_submitted_at ?? undefined,
     eventTitle: row.event_title,

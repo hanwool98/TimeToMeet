@@ -174,7 +174,7 @@ export default function MyEventsPage() {
                         이번 행사 참가 신청이 승인되지 않았습니다. 자세히 보기 →
                       </button>
                     ) : null}
-                    {ticket.status === '참가 확정' && hasEventEnded(ticket.eventDate, ticket.endTime) ? (
+                    {ticket.status === '참가 확정' && (Boolean(ticket.eventEndedAt) || hasEventEnded(ticket.eventDate, ticket.endTime)) ? (
                       <button
                         className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-meet-blue p-4 text-[14px] font-black text-meet-blue transition active:scale-[0.99]"
                         onClick={() => navigate(`/my-events/ticket/${ticket.eventId}/review`)}

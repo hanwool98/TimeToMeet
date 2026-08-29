@@ -441,7 +441,24 @@ export default function AdminTabletSeatPage() {
       ? [eventId, effectiveStage, roundProgress.currentRound ?? '', roundProgress.isBonusRound ? 1 : 0, roundProgress.roundPhase ?? ''].join(':')
       : '';
 
+  // 진단 로그용 - 서버가 이 phase를 끝내기로 계산한 예상 시각(running일
+  // 때만 의미 있음, paused면 고정된 종료 시각이 없으므로 null).
+  const timerServerEndAt =
+    hasTimerPhase && roundProgress?.timerStatus === 'running' && roundProgress.timerUpdatedAt
+      ? new Date(
+          new Date(roundProgress.timerUpdatedAt).getTime() + (timerPhaseDuration - (roundProgress.timerPositionSeconds ?? 0)) * 1000,
+        ).toISOString()
+      : null;
+
   const timerAlertToast = useTabletTimerAlerts({
+    debugContext: {
+      eventId: eventId ?? '',
+      isBonusRound: Boolean(roundProgress?.isBonusRound),
+      phase: [effectiveStage, roundProgress?.roundPhase].filter(Boolean).join('/'),
+      round: roundProgress?.currentRound ?? null,
+      serverEndAt: timerServerEndAt,
+      timerRunning: roundProgress?.timerStatus === 'running',
+    },
     enabled: hasTimerPhase && Boolean(roundProgress) && Boolean(timerNotificationKey),
     notificationKey: timerNotificationKey,
     playWarning: shouldWarnForPhase,

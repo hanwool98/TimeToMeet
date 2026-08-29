@@ -84,12 +84,15 @@ Deno.serve(async (request) => {
 
   if (partnersError) return json({ ok: true, photos: [] });
 
-  // 후보 전원의 이번 행사 전용 프로필 카드 사진을 한 번에 조회해, 카드에
-  // 사진이 지정된 사람은 그 사진을, 없는 사람은 기존 기본 대표사진을
-  // 쓰도록 우선순위만 바꾼다(다른 필드는 최종선택 화면에서 쓰지 않음).
+  // 후보 전원의 이번 행사 전용 프로필 카드를 한 번에 조회해, 사진은 카드
+  // 지정 사진 우선(없으면 기본 대표사진)으로, 그 외 필드(취미/MBTI/...)는
+  // 최종선택 "프로필 보기"에서 그대로 표시한다 - admin-participant-event
+  // -profile-card와 동일한 select 컬럼/formatDrinkingDisplay를 재사용.
   const { data: cards } = await supabase
     .from('event_profile_cards')
-    .select('application_id, photo_path, photo_crop')
+    .select(
+      'application_id, photo_path, photo_crop, hobby, mbti, ideal_type, contact_style, date_style, date_destination, smoking, drinking_frequency, drinking_amount, keywords, submitted_at',
+    )
     .eq('event_id', payload.eventId)
     .in('application_id', partnerIds);
   const cardByApplicationId = new Map((cards ?? []).map((card) => [card.application_id as string, card]));
@@ -103,7 +106,21 @@ Deno.serve(async (request) => {
       const photoPath = card?.photo_path ?? fallbackPhotoPath;
       const representativeCrop = card?.photo_path ? card.photo_crop : partner.representative_crop;
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
-      return { applicationId: partner.id as string, photoUrl, representativeCrop: representativeCrop ?? null };
+      return {
+        applicationId: partner.id as string,
+        contactStyle: card?.contact_style ?? '',
+        dateDestination: card?.date_destination ?? '',
+        dateStyle: card?.date_style ?? '',
+        drinking: formatDrinkingDisplay(card?.drinking_frequency, card?.drinking_amount),
+        hasSubmittedCard: Boolean(card?.submitted_at),
+        hobby: card?.hobby ?? '',
+        idealType: card?.ideal_type ?? '',
+        keywords: Array.isArray(card?.keywords) ? card.keywords : [],
+        mbti: card?.mbti ?? '',
+        photoUrl,
+        representativeCrop: representativeCrop ?? null,
+        smoking: card?.smoking ?? '',
+      };
     }),
   );
 
@@ -113,6 +130,19 @@ Deno.serve(async (request) => {
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {
   const { data } = await supabase.storage.from('application-files').createSignedUrl(path, signedUrlExpirySeconds);
   return data?.signedUrl ?? null;
+}
+
+// save_event_profile_card_for_session이 legacy drinking 컬럼에 합성해
+// 넣는 것과 동일한 형식("빈도 / 주량 N병") - participant-partner-photo/
+// admin-participant-event-profile-card의 동일 헬퍼와 로직을 반드시
+// 맞춰야 한다.
+function formatDrinkingDisplay(frequency?: string | null, amount?: string | null) {
+  const hasFrequency = Boolean(frequency);
+  const hasAmount = Boolean(amount);
+  if (hasFrequency && hasAmount) return `${frequency} / 주량 ${amount}`;
+  if (hasFrequency) return frequency as string;
+  if (hasAmount) return `주량 ${amount}`;
+  return '';
 }
 
 function json(body: Record<string, unknown>, status = 200) {

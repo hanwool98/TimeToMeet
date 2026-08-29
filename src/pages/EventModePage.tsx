@@ -30,6 +30,7 @@ import {
   submitRoundRating,
   uploadEventProfileCardPhoto,
   type FinalSelectionCandidate,
+  type FinalSelectionCandidateProfile,
   type FinalSelectionData,
   type MyEventProfileCard,
   type MyEventTicket,
@@ -828,7 +829,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           <div className="mt-6 grid grid-cols-2 gap-3 text-left">
             <CardField label="취미" onChange={setHobby} placeholder="예) 영화 감상, 요가" value={hobby} />
             <CardField label="MBTI" onChange={setMbti} placeholder="예) ENFP" value={mbti} />
-            <CardField label="이성을 볼 때 중요하게 생각하는 것" onChange={setIdealType} placeholder="예) 따뜻하고 유머있는 사람" value={idealType} />
+            <CardField label="이성을 볼 때 중요한 것" onChange={setIdealType} placeholder="예) 따뜻하고 유머있는 사람" value={idealType} />
             <CardField label="연락스타일" onChange={setContactStyle} placeholder="예) 바쁘면 가끔, 연락은 자주" value={contactStyle} />
             <CardField label="원하는 데이트 스타일" onChange={setDateStyle} placeholder="예) 맛집 탐방, 영화 데이트" value={dateStyle} />
             <CardField label="연인과 함께 가고 싶은 곳" onChange={setDateDestination} placeholder="예) 한강, 바다, 일본여행" value={dateDestination} />
@@ -1333,7 +1334,7 @@ function ConversationScreen({
 const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: string }> = [
   { key: 'hobby', label: '취미' },
   { key: 'mbti', label: 'MBTI' },
-  { key: 'idealType', label: '이성을 볼 때 중요하게 생각하는 것' },
+  { key: 'idealType', label: '이성을 볼 때 중요한 것' },
   { key: 'contactStyle', label: '연락스타일' },
   { key: 'dateStyle', label: '원하는 데이트 스타일' },
   { key: 'dateDestination', label: '연인과 함께 가고 싶은 곳' },
@@ -2214,7 +2215,7 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
   const navigate = useNavigate();
   const [data, setData] = useState<FinalSelectionData | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [photoMap, setPhotoMap] = useState<Map<string, ParticipantPhotoInfo>>(new Map());
+  const [photoMap, setPhotoMap] = useState<Map<string, FinalSelectionCandidateProfile>>(new Map());
   const [step, setStep] = useState<'announce' | 'pick' | 'review'>('announce');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -2223,6 +2224,20 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [toast, setToast] = useState('');
   const toastTimerRef = useRef<number | undefined>(undefined);
+  // 프로필 상세보기 모달 open/close 상태 - selectedIds/step과 완전히
+  // 독립적이라, 프로필을 열었다 닫아도 최종선택 진행 상태는 그대로다.
+  const [viewingCandidateId, setViewingCandidateId] = useState<string | null>(null);
+  const [keywordOptions, setKeywordOptions] = useState<ProfileKeywordOption[]>(PROFILE_KEYWORD_OPTIONS);
+
+  useEffect(() => {
+    let active = true;
+    void loadProfileKeywordOptions().then((options) => {
+      if (active) setKeywordOptions(options);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2313,10 +2328,19 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
           onBack={() => setStep('announce')}
           onNext={() => setStep('review')}
           onToggle={handleToggle}
+          onViewProfile={setViewingCandidateId}
           photoMap={photoMap}
           selectedIds={selectedIds}
         />
         <ToastBanner toast={toast} />
+        {viewingCandidateId ? (
+          <FinalSelectionProfileModal
+            candidate={data.candidates.find((item) => item.applicationId === viewingCandidateId) ?? null}
+            keywordOptions={keywordOptions}
+            onClose={() => setViewingCandidateId(null)}
+            profile={photoMap.get(viewingCandidateId)}
+          />
+        ) : null}
       </>
     );
   }
@@ -2408,6 +2432,7 @@ function FinalSelectionPickScreen({
   onBack,
   onNext,
   onToggle,
+  onViewProfile,
   photoMap,
   selectedIds,
 }: {
@@ -2416,7 +2441,8 @@ function FinalSelectionPickScreen({
   onBack: () => void;
   onNext: () => void;
   onToggle: (applicationId: string) => void;
-  photoMap: Map<string, ParticipantPhotoInfo>;
+  onViewProfile: (applicationId: string) => void;
+  photoMap: Map<string, FinalSelectionCandidateProfile>;
   selectedIds: string[];
 }) {
   return (
@@ -2435,6 +2461,7 @@ function FinalSelectionPickScreen({
             candidate={candidate}
             key={candidate.applicationId}
             onToggle={() => onToggle(candidate.applicationId)}
+            onViewProfile={() => onViewProfile(candidate.applicationId)}
             photo={photoMap.get(candidate.applicationId)}
             selected={selectedIds.includes(candidate.applicationId)}
           />
@@ -2462,35 +2489,39 @@ function FinalSelectionPickScreen({
 function FinalSelectionCandidateCard({
   candidate,
   onToggle,
+  onViewProfile,
   photo,
   selected,
 }: {
   candidate: FinalSelectionCandidate;
   onToggle: () => void;
-  photo?: ParticipantPhotoInfo;
+  onViewProfile: () => void;
+  photo?: FinalSelectionCandidateProfile;
   selected: boolean;
 }) {
   return (
     <div className="rounded-[20px] border border-[#f0f3f6] bg-white p-3 shadow-calendar">
       <div className="flex items-start gap-3">
-        <ParticipantPhoto
-          className="rounded-full bg-[#f5f7fa]"
-          crop={photo?.representativeCrop}
-          fallback={<PersonPlaceholderGlyph />}
-          photoUrl={photo?.photoUrl}
-          sizePx={64}
-        />
+        <button className="shrink-0" onClick={onViewProfile} type="button">
+          <ParticipantPhoto
+            className="rounded-full bg-[#f5f7fa]"
+            crop={photo?.representativeCrop}
+            fallback={<PersonPlaceholderGlyph />}
+            photoUrl={photo?.photoUrl}
+            sizePx={64}
+          />
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
+            <button className="min-w-0 text-left" onClick={onViewProfile} type="button">
               <div className="flex flex-wrap items-center gap-1.5">
                 <p className="truncate text-[16px] font-black">{candidate.nickname}</p>
               </div>
               <p className="mt-0.5 text-[13px] font-bold text-[#999]">
                 {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
               </p>
-            </div>
+            </button>
 
             <button
               aria-label={selected ? '선택 해제' : '선택하기'}
@@ -2513,6 +2544,99 @@ function FinalSelectionCandidateCard({
           ) : null}
 
           {candidate.memo ? <p className="mt-1.5 line-clamp-2 text-[12px] font-bold leading-snug text-[#888]">{candidate.memo}</p> : null}
+
+          <button className="mt-2 text-[12px] font-black text-meet-blue underline underline-offset-2" onClick={onViewProfile} type="button">
+            프로필 보기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const finalSelectionProfileFields: Array<{ key: keyof FinalSelectionCandidateProfile; label: string }> = [
+  { key: 'hobby', label: '취미' },
+  { key: 'mbti', label: 'MBTI' },
+  { key: 'idealType', label: '이성을 볼 때 중요한 것' },
+  { key: 'contactStyle', label: '연락스타일' },
+  { key: 'dateStyle', label: '원하는 데이트 스타일' },
+  { key: 'dateDestination', label: '연인과 함께 가고 싶은 곳' },
+  { key: 'smoking', label: '흡연' },
+  { key: 'drinking', label: '음주' },
+];
+
+// 최종선택 후보의 행사 프로필카드 상세 - PartnerProfileCardDetails/
+// AdminParticipantProfileCardView와 동일한 필드목록+그리드+키워드칩
+// 패턴을 그대로 재사용한다. 열고 닫아도 selectedIds/step 등 최종선택
+// 진행 상태는 전혀 건드리지 않는(참고용) 모달.
+function FinalSelectionProfileModal({
+  candidate,
+  keywordOptions,
+  onClose,
+  profile,
+}: {
+  candidate: FinalSelectionCandidate | null;
+  keywordOptions: ProfileKeywordOption[];
+  onClose: () => void;
+  profile: FinalSelectionCandidateProfile | undefined;
+}) {
+  const filledFields = profile ? finalSelectionProfileFields.filter((field) => profile[field.key]) : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-[480px] flex-col overflow-hidden rounded-t-[28px] bg-white pb-[calc(20px+env(safe-area-inset-bottom))]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="shrink-0 px-5 pt-5">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+          <div className="mt-4 flex items-center justify-between">
+            <h3 className="text-[18px] font-black">프로필</h3>
+            <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+              닫기
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-5 pb-4 pt-4 text-center">
+          <ParticipantPhoto
+            className="mx-auto rounded-full bg-[#f5f7fa]"
+            crop={profile?.representativeCrop}
+            fallback={<PersonPlaceholderGlyph />}
+            photoUrl={profile?.photoUrl}
+            sizePx={96}
+          />
+          <p className="mt-3 text-[20px] font-black">{candidate?.nickname}</p>
+          <p className="mt-1 text-[14px] font-bold text-[#999]">
+            {[candidate?.age ? `${candidate.age}세` : null, candidate?.job].filter(Boolean).join(' · ')}
+          </p>
+
+          {!profile?.hasSubmittedCard ? (
+            <p className="mt-6 text-[13px] font-bold text-[#bbb]">아직 행사 프로필 카드를 작성하지 않았어요</p>
+          ) : (
+            <>
+              {filledFields.length > 0 ? (
+                <div className="mt-5 grid grid-cols-2 gap-2.5 text-left">
+                  {filledFields.map((field) => (
+                    <div className="rounded-[14px] border border-[#f0f3f6] bg-[#fafbfc] p-3" key={field.key}>
+                      <p className="text-[10.5px] font-black text-[#9aa0a8]">{field.label}</p>
+                      <p className="mt-1 text-[13px] font-bold text-[#333]">{profile[field.key] as string}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {profile.keywords.length > 0 ? (
+                <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                  {profile.keywords.map((keyword) => (
+                    <span className="rounded-full border border-[#eee] bg-white px-2.5 py-1 text-[12px] font-bold text-[#777]" key={keyword}>
+                      {resolveProfileKeywordLabel(keyword, keywordOptions)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -2531,7 +2655,7 @@ function FinalSelectionReviewScreen({
   onBack: () => void;
   onReselect: () => void;
   onSubmitClick: () => void;
-  photoMap: Map<string, ParticipantPhotoInfo>;
+  photoMap: Map<string, FinalSelectionCandidateProfile>;
   selectedCandidates: FinalSelectionCandidate[];
 }) {
   return (

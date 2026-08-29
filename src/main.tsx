@@ -9,6 +9,7 @@ import AdminCheckInPage from './pages/AdminCheckInPage';
 import AdminContentPage from './pages/AdminContentPage';
 import AdminConversationTopicsPage from './pages/AdminConversationTopicsPage';
 import AdminProfileKeywordsPage from './pages/AdminProfileKeywordsPage';
+import AdminReviewsPage from './pages/AdminReviewsPage';
 import AdminEventCreatePage from './pages/AdminEventCreatePage';
 import AdminEventLivePage from './pages/AdminEventLivePage';
 import AdminEventPreparePage from './pages/AdminEventPreparePage';
@@ -82,6 +83,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/content" element={<AdminContentPage />} />
             <Route path="/admin/content/conversation-topics" element={<AdminConversationTopicsPage />} />
             <Route path="/admin/content/profile-keywords" element={<AdminProfileKeywordsPage />} />
+            <Route path="/admin/content/reviews" element={<AdminReviewsPage />} />
             <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
             <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />

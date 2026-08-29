@@ -39,6 +39,11 @@ export default function AdminContentPage() {
             label="키워드 관리"
             onClick={() => navigate('/admin/content/profile-keywords')}
           />
+          <MenuCard
+            icon={<ReviewIcon />}
+            label="후기 관리"
+            onClick={() => navigate('/admin/content/reviews')}
+          />
         </div>
       </div>
     </main>
@@ -82,6 +87,15 @@ function KeywordIcon() {
     <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
       <path d="M6 12a3 3 0 0 1 3-3h9l8 7-8 7H9a3 3 0 0 1-3-3v-8Z" />
       <circle cx="13" cy="16" fill="currentColor" r="1.4" stroke="none" />
+    </svg>
+  );
+}
+
+function ReviewIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <path d="M6 8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H12l-5 5v-5H8a2 2 0 0 1-2-2V8Z" />
+      <path d="M11 13h10M11 17h6" />
     </svg>
   );
 }

@@ -1455,7 +1455,7 @@ function ParticipantListPanel({
 const adminProfileCardFields: Array<{ key: keyof AdminParticipantEventProfileCard; label: string }> = [
   { key: 'hobby', label: '취미' },
   { key: 'mbti', label: 'MBTI' },
-  { key: 'idealType', label: '이성을 볼 때 중요하게 생각하는 것' },
+  { key: 'idealType', label: '이성을 볼 때 중요한 것' },
   { key: 'contactStyle', label: '연락스타일' },
   { key: 'dateStyle', label: '원하는 데이트 스타일' },
   { key: 'dateDestination', label: '연인과 함께 가고 싶은 곳' },
