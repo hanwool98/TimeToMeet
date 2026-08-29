@@ -709,6 +709,25 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
     setCardImageSaving(true);
     setCardImageSaveError('');
     try {
+      // 화면 진입 시 한 번 발급받은 사진 서명 URL은 10분짜리다
+      // (get-my-event-profile-card). 항목이 여러 개라 실제로 다 채우는 데
+      // 그보다 오래 걸리면, 화면엔 브라우저 캐시 덕에 여전히 사진이
+      // 보이지만 캡처 시점엔 이미 만료된 URL이라 fetch/toPng이 조용히
+      // 실패한다(안드로이드/사파리 등 브라우저 종류와 무관하게 동일하게
+      // 발생 - 서버 쪽 만료라서 그렇다). 캡처 직전에 항상 최신 서명 URL을
+      // 다시 받아 갱신한다.
+      if (photoPath) {
+        try {
+          const fresh = await fetchMyEventProfileCard(eventId);
+          if (fresh?.photoUrl) setPhotoUrl(fresh.photoUrl);
+        } catch (refreshError) {
+          console.debug('[PROFILE_CARD_EXPORT] photo_url_refresh_failed', { message: String(refreshError) });
+        }
+        // setPhotoUrl은 다음 렌더에서만 <img src>에 반영된다 -
+        // waitForImagesToLoad가 새 src를 기다리게 하려면 그 커밋이 먼저
+        // 끝나 있어야 한다.
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
       // toPng는 캡처 시점에 <img>가 아직 픽셀을 다 그리지 못했으면 그
       // 자리를 그냥 비워버린다 - 사진을 방금 고른 직후처럼 브라우저가
       // 아직 디코딩 중인 상태에서 버튼을 누르면 화면엔 보여도 캡처에는
