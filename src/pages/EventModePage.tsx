@@ -734,8 +734,15 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       // 빠질 수 있다. 캡처 직전에 카드 안의 모든 이미지가 실제로 로드+
       // 디코딩까지 끝났는지 기다린다.
       console.debug('[PROFILE_CARD_EXPORT] images_ready');
+      // cacheBust: true는 html-to-image가 이미지를 다시 받아올 때 URL 끝에
+      // ?타임스탬프를 붙여 캐시를 무력화하는 옵션인데, withCaptureSafeImages가
+      // 방금 바꿔치기한 <img src>는 blob: URL이라 쿼리스트링이 붙는 순간
+      // 존재하지 않는 다른 주소가 돼버려 net::ERR_FILE_NOT_FOUND로 실패한다
+      // (실제로 이 조합 때문에 저장이 100% 실패하고 있었다). 캡처 직전마다
+      // 매번 새로 만드는 고유 blob: URL을 쓰므로 애초에 캐시 무력화가
+      // 필요 없다 - 아예 끈다.
       const dataUrl = await withCaptureSafeImages(cardCaptureRef.current, () =>
-        toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', cacheBust: true, pixelRatio: 2 }),
+        toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', pixelRatio: 2 }),
       );
       console.debug('[PROFILE_CARD_EXPORT] capture_done');
       const fileName = `${nickname || '프로필카드'}.png`;
