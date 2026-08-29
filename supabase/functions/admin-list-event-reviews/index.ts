@@ -47,7 +47,7 @@ Deno.serve(async (request) => {
 
   let reviewQuery = supabase
     .from('event_reviews')
-    .select('event_id, application_id, content, submitted_at')
+    .select('event_id, application_id, content, image_paths, submitted_at')
     .order('submitted_at', { ascending: false });
   if (payload.eventId) reviewQuery = reviewQuery.eq('event_id', payload.eventId);
 
@@ -86,12 +86,16 @@ Deno.serve(async (request) => {
       const photoPath = card?.photo_path ?? fallbackPhotoPath;
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
 
+      const reviewImagePaths = Array.isArray(review.image_paths) ? (review.image_paths as string[]) : [];
+      const images = await Promise.all(reviewImagePaths.map((path) => signUrl(supabase, path)));
+
       return {
         applicationId: review.application_id,
         age,
         content: review.content,
         eventId: review.event_id,
         eventTitle: event?.title ?? '',
+        images: images.filter((url): url is string => Boolean(url)),
         job: application?.job ?? '',
         nickname: application?.nickname ?? '',
         photoUrl,

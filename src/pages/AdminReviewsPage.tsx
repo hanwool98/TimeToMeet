@@ -14,6 +14,7 @@ export default function AdminReviewsPage() {
   const [loading, setLoading] = useState(true);
   const [eventFilter, setEventFilter] = useState<string>('전체');
   const [imageTarget, setImageTarget] = useState<AdminEventReview | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -107,6 +108,20 @@ export default function AdminReviewsPage() {
                     </div>
                   </div>
                   <p className="mt-3 whitespace-pre-wrap text-[13.5px] font-bold leading-relaxed text-[#333]">{review.content}</p>
+                  {review.images.length > 0 ? (
+                    <div className="mt-3 flex gap-2 overflow-x-auto">
+                      {review.images.map((url, index) => (
+                        <button
+                          className="h-20 w-20 shrink-0 overflow-hidden rounded-[12px] bg-[#f5f7fa]"
+                          key={url}
+                          onClick={() => setLightboxUrl(url)}
+                          type="button"
+                        >
+                          <img alt={`첨부 사진 ${index + 1}`} className="h-full w-full object-cover" src={url} />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-2.5 flex justify-end">
                     <button className="text-[12px] font-black text-meet-blue" onClick={() => setImageTarget(review)} type="button">
                       이미지 저장
@@ -121,6 +136,11 @@ export default function AdminReviewsPage() {
       </div>
 
       {imageTarget ? <ReviewImageExportModal onClose={() => setImageTarget(null)} review={imageTarget} /> : null}
+      {lightboxUrl ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6" onClick={() => setLightboxUrl(null)}>
+          <img alt="" className="max-h-full max-w-full rounded-[12px] object-contain" src={lightboxUrl} />
+        </div>
+      ) : null}
     </main>
   );
 }

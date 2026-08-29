@@ -2841,21 +2841,60 @@ export async function uploadEventProfileCardPhoto(eventId: string, file: File): 
 // 최종선택 완료 후 후기 작성 안내 화면 + 종료 티켓의 "후기 작성" 버튼에서
 // 쓰인다. final_selections/final_selection_submissions와 완전히 분리된
 // 테이블이라 후기 미작성/삭제가 최종선택 결과에 영향을 주지 않는다.
-export async function fetchMyEventReview(eventId: string): Promise<{ content: string; submittedAt?: string }> {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  const session = getAppSession();
-  if (!session?.token) return { content: '' };
-
-  const { data, error } = await supabase.rpc('get_my_event_review_for_session', {
-    event_id_value: eventId,
-    session_token: session.token,
-  });
-  if (error) throw new Error(error.message || '후기 정보를 불러오지 못했습니다.');
-  const row = data as { content?: string; submittedAt?: string | null };
-  return { content: row?.content ?? '', submittedAt: row?.submittedAt ?? undefined };
+export interface MyEventReviewImage {
+  path: string;
+  url: string | null;
 }
 
-export async function saveEventReview(eventId: string, content: string): Promise<{ submittedAt?: string }> {
+// get_my_event_review_for_session RPC는 Storage 서명이 불가능해 텍스트만
+// 내려줬다 - 기존 첨부 사진 미리보기가 필요해져 Edge Function으로 교체.
+export async function fetchMyEventReview(eventId: string): Promise<{ content: string; images: MyEventReviewImage[]; submittedAt?: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return { content: '', images: [] };
+
+  const { data, error } = await supabase.functions.invoke('get-my-event-review', {
+    body: { eventId, sessionToken: session.token },
+  });
+  if (error || data?.ok !== true) throw new Error(data?.message || '후기 정보를 불러오지 못했습니다.');
+  return {
+    content: data.content ?? '',
+    images: (data.images ?? []) as MyEventReviewImage[],
+    submittedAt: data.submittedAt ?? undefined,
+  };
+}
+
+export async function uploadEventReviewPhoto(eventId: string, file: File): Promise<{ photoPath: string; photoUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  // 행사 전용 프로필카드 사진과 동일한 압축 경로 재사용(1600px 리사이즈+
+  // JPEG 재인코딩) - 후기 사진만을 위한 별도 압축 로직을 새로 만들지 않는다.
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-event-review-photo', {
+    body: { eventId, photo, sessionToken: session.token },
+  });
+  if (error || data?.ok !== true) {
+    let message = '사진 업로드에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body (infra/gateway page) - keep the generic message.
+      }
+    }
+    throw new Error(message);
+  }
+  return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
+}
+
+export async function saveEventReview(eventId: string, content: string, imagePaths: string[] = []): Promise<{ submittedAt?: string }> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
@@ -2863,10 +2902,33 @@ export async function saveEventReview(eventId: string, content: string): Promise
   const { data, error } = await supabase.rpc('save_event_review_for_session', {
     content_value: content,
     event_id_value: eventId,
+    image_paths_value: imagePaths,
     session_token: session.token,
   });
   if (error) throw new Error(error.message || '후기 저장에 실패했습니다.');
-  const row = data as { ok: boolean; submittedAt?: string | null };
+  const row = data as { ok: boolean; removedImagePaths?: string[]; submittedAt?: string | null };
+
+  // 수정 시 목록에서 뺀 사진은 Storage에서도 정리한다 - 실패해도 저장
+  // 자체는 이미 성공했으니 에러 로그만 남기고 조용히 넘어간다(다른
+  // Storage cleanup들과 동일한 best-effort 패턴).
+  const removedImagePaths = row?.removedImagePaths ?? [];
+  if (removedImagePaths.length > 0) {
+    try {
+      const { data: cleanupData, error: cleanupError } = await supabase.functions.invoke('delete-event-review-photos', {
+        body: { eventId, paths: removedImagePaths, sessionToken: session.token },
+      });
+      if (cleanupError || cleanupData?.ok !== true) {
+        void logClientError('saveEventReview:image-cleanup', cleanupError?.message || '후기 이미지 정리 실패', { eventId });
+      }
+    } catch (cleanupCaughtError) {
+      void logClientError(
+        'saveEventReview:image-cleanup',
+        cleanupCaughtError instanceof Error ? cleanupCaughtError.message : String(cleanupCaughtError),
+        { eventId },
+      );
+    }
+  }
+
   return { submittedAt: row?.submittedAt ?? undefined };
 }
 
@@ -2992,6 +3054,7 @@ export interface AdminEventReview {
   content: string;
   eventId: string;
   eventTitle: string;
+  images: string[];
   job: string;
   nickname: string;
   photoUrl: string | null;
