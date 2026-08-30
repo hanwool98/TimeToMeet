@@ -102,6 +102,14 @@ async function waitForImagesToLoad(container: HTMLElement) {
 async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promise<T>): Promise<T> {
   const images = Array.from(container.querySelectorAll('img'));
   const originalSrcs = images.map((img) => img.src);
+  // ParticipantPhoto는 이 캡처 기능 자체를 위해 사진 <img>에 항상
+  // crossOrigin="anonymous"를 붙여둔다. 그런데 Safari/WebKit은
+  // crossOrigin="anonymous"가 붙은 <img>에 blob: URL을 넣으면 로드가
+  // 조용히 실패하는 버그가 있다 - 안드로이드 Chrome은 문제없이 그려지는데
+  // 아이폰에서만 사진이 빈 칸으로 캡처되는 원인이 이거였다. blob: URL은
+  // 원래 페이지와 같은 출처라 애초에 CORS 모드가 필요 없으므로, 바꿔치기
+  // 하는 동안만 crossOrigin을 지웠다가 끝나면 원래 값으로 되돌린다.
+  const originalCrossOrigins = images.map((img) => img.crossOrigin);
   const createdObjectUrls: string[] = [];
 
   await Promise.all(
@@ -119,6 +127,7 @@ async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promi
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
         createdObjectUrls.push(objectUrl);
+        img.crossOrigin = null;
         img.src = objectUrl;
         if (typeof img.decode === 'function') {
           await img.decode().catch(() => undefined);
@@ -137,6 +146,7 @@ async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promi
   } finally {
     images.forEach((img, index) => {
       img.src = originalSrcs[index];
+      img.crossOrigin = originalCrossOrigins[index];
     });
     createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
   }

@@ -1440,9 +1440,9 @@ export async function resetTestEventData(eventId: string) {
 }
 
 // "행사 전체 테스트 초기화"(resetTestEventData, 신청/체크인/프로필카드까지
-// 전부 삭제)와는 별개 - 신청/참가확정/체크인/태블릿 연결은 그대로 둔 채
-// 프로필카드 작성 단계부터 행사 진행 전체(라운드/호감도/추가시간/최종선택)를
-// 지워서 참가자·체크인·태블릿 연결을 다시 만들 필요 없이 반복 테스트할 수
+// 전부 삭제)와는 별개 - 신청/참가확정/태블릿 연결은 그대로 둔 채 체크인부터
+// 행사 진행 전체(프로필카드/라운드/호감도/추가시간/최종선택)를 지워서
+// 참가자·태블릿 연결을 다시 만들 필요 없이 체크인부터 반복 테스트할 수
 // 있게 한다.
 export async function restartTestEventProgress(eventId: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
