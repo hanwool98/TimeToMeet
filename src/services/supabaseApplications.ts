@@ -1980,6 +1980,13 @@ export interface RoundProgress {
   timerUpdatedAt?: string;
   totalParticipants: number;
   totalRounds: number;
+  unassignedParticipants: RoundUnassignedParticipant[];
+}
+
+export interface RoundUnassignedParticipant {
+  applicationId: string;
+  gender: '남성' | '여성';
+  nickname: string;
 }
 
 interface RoundProgressJson {
@@ -2009,6 +2016,11 @@ interface RoundProgressJson {
   timerUpdatedAt: string | null;
   totalParticipants: number;
   totalRounds: number;
+  unassignedParticipants?: Array<{
+    applicationId: string;
+    gender: '남성' | '여성';
+    nickname: string;
+  }> | null;
 }
 
 // The server timestamp each round-progress RPC now includes lets every
@@ -2054,6 +2066,7 @@ function mapRoundProgressJson(row: RoundProgressJson): RoundProgress {
     timerUpdatedAt: row.timerUpdatedAt ?? undefined,
     totalParticipants: row.totalParticipants,
     totalRounds: row.totalRounds,
+    unassignedParticipants: row.unassignedParticipants ?? [],
   };
 }
 
