@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
 import { toPng } from 'html-to-image';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
@@ -178,6 +178,13 @@ export default function EventModePage() {
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [connTick, setConnTick] = useState(() => Date.now());
   const progressGuardRef = useRef(createRequestGuard());
+  // 추가시간 호감도 제출처럼 "지금 이 화면에서 서버로 뭔가 확정 짓는 중"인
+  // 짧은 구간 동안은 poll이 도착해도 화면을 덮어쓰지 않는다 - 안 그러면
+  // 제출 응답이 오기 전에 poll이 먼저 "다음 단계로 넘어감" 상태를 받아와
+  // 화면이 강제로 넘어가버릴 수 있다(실제 행사에서 발생 확인). 제출이
+  // 끝나면 곧바로 poll을 한 번 더 해서 최신 상태로 따라잡는다.
+  const suspendPollRef = useRef(false);
+  const pollNowRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setConnTick(Date.now()), 1_000);
@@ -214,11 +221,12 @@ export default function EventModePage() {
     if (!eventId || !ticket) return undefined;
     let active = true;
     const poll = async () => {
+      if (suspendPollRef.current) return;
       try {
         await progressGuardRef.current.run(
           () => fetchParticipantRoundProgress(eventId),
           (next) => {
-            if (active) {
+            if (active && !suspendPollRef.current) {
               setProgress(next);
               setLastSuccessAt(Date.now());
             }
@@ -229,6 +237,7 @@ export default function EventModePage() {
         // Keep showing the last known state on a transient failure.
       }
     };
+    pollNowRef.current = () => void poll();
     void poll();
     const intervalId = window.setInterval(() => void poll(), progressPollIntervalMs);
     const handleReconnectSignal = () => void poll();
@@ -271,10 +280,24 @@ export default function EventModePage() {
     );
   }
 
+  const handleCriticalSubmitStart = useCallback(() => {
+    suspendPollRef.current = true;
+  }, []);
+  const handleCriticalSubmitEnd = useCallback(() => {
+    suspendPollRef.current = false;
+    pollNowRef.current();
+  }, []);
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
       <ConnectionStatusBanner visible={isStale} />
-      <ParticipantEventScreen eventId={ticket.eventId} eventTitle={ticket.eventTitle} progress={progress} />
+      <ParticipantEventScreen
+        eventId={ticket.eventId}
+        eventTitle={ticket.eventTitle}
+        onCriticalSubmitEnd={handleCriticalSubmitEnd}
+        onCriticalSubmitStart={handleCriticalSubmitStart}
+        progress={progress}
+      />
     </main>
   );
 }
@@ -282,10 +305,14 @@ export default function EventModePage() {
 function ParticipantEventScreen({
   eventId,
   eventTitle,
+  onCriticalSubmitEnd,
+  onCriticalSubmitStart,
   progress,
 }: {
   eventId: string;
   eventTitle: string;
+  onCriticalSubmitEnd: () => void;
+  onCriticalSubmitStart: () => void;
   progress: ParticipantRoundProgress | null;
 }) {
   const navigate = useNavigate();
@@ -342,7 +369,15 @@ function ParticipantEventScreen({
   // 상대 자리 이동 안내를 한 화면에서 같이 보여준다 - 예전에는 이게
   // bonus_rating(1분, 수정만) + bonus_seat_guide(2분, 안내만) 두 단계였다.
   if (progress.stage === 'bonus_seat_guide') {
-    return <BonusSeatGuideScreen eventId={eventId} onBack={onBack} progress={progress} />;
+    return (
+      <BonusSeatGuideScreen
+        eventId={eventId}
+        onBack={onBack}
+        onCriticalSubmitEnd={onCriticalSubmitEnd}
+        onCriticalSubmitStart={onCriticalSubmitStart}
+        progress={progress}
+      />
+    );
   }
 
   // 성비 불균형으로 이번 라운드에 상대가 배정되지 않은 참가자(순환 휴식) -
@@ -1584,10 +1619,14 @@ function guidanceFontStyle(text: string): CSSProperties {
 function BonusSeatGuideScreen({
   eventId,
   onBack,
+  onCriticalSubmitEnd,
+  onCriticalSubmitStart,
   progress,
 }: {
   eventId: string;
   onBack: () => void;
+  onCriticalSubmitEnd: () => void;
+  onCriticalSubmitStart: () => void;
   progress: ParticipantRoundProgress;
 }) {
   const [photo, setPhoto] = useState<ParticipantPhotoInfo | null>(null);
@@ -1682,6 +1721,11 @@ function BonusSeatGuideScreen({
     if (score === null || submitting) return;
     setSubmitting(true);
     setSubmitError('');
+    // 제출 응답이 오기 전에 poll이 먼저 도착해 "다음 단계로 넘어감"을
+    // 받아오면, 방금 누른 제출이 채 끝나기도 전에 화면이 강제로 넘어가
+    // 버릴 수 있다(실제 행사에서 발생 확인) - 응답이 올 때까지 poll이
+    // 화면을 덮어쓰지 않게 잠깐 막아둔다.
+    onCriticalSubmitStart();
     try {
       await submitMyBonusRating(eventId, score, memo);
       setLocallySubmitted(true);
@@ -1689,19 +1733,26 @@ function BonusSeatGuideScreen({
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
     } finally {
       setSubmitting(false);
+      onCriticalSubmitEnd();
     }
   };
 
   // 2분이 끝나기 전까지 수정하지 않으면 마지막으로 입력한 값을 그대로
   // 저장해둔다(호감도를 아예 고르지 않았다면 0점을 임의로 만들지 않고
-  // 그대로 둔다 - 정규 라운드에서 이미 남긴 원래 점수가 유지된다).
+  // 그대로 둔다 - 정규 라운드에서 이미 남긴 원래 점수가 유지된다). 이
+  // 자동 제출도 handleSubmit과 동일하게 poll을 잠깐 막아둔다 - 오히려
+  // 이 경로가 실제 사고 지점에 더 가깝다: 타이머가 딱 끝나는 그 순간은
+  // poll도 "이제 다음 단계"라고 판단하기 딱 좋은 순간이라, 자동 제출
+  // 요청과 poll이 거의 동시에 서버로 향할 수 있다.
   useEffect(() => {
     if (isReveal || remaining > 0 || autoSubmitted || score === null || submitting) return;
     setAutoSubmitted(true);
+    onCriticalSubmitStart();
     void submitMyBonusRating(eventId, score, memo)
       .then(() => setLocallySubmitted(true))
-      .catch(() => undefined);
-  }, [autoSubmitted, eventId, isReveal, memo, remaining, score, submitting]);
+      .catch(() => undefined)
+      .finally(() => onCriticalSubmitEnd());
+  }, [autoSubmitted, eventId, isReveal, memo, onCriticalSubmitEnd, onCriticalSubmitStart, remaining, score, submitting]);
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
