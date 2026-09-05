@@ -63,7 +63,6 @@ Deno.serve(async (request) => {
   if (applicationError || !application) return json({ message: '참가자를 찾을 수 없습니다.' }, 404);
 
   const { data: event } = await supabase.from('events').select('event_date').eq('id', payload.eventId).maybeSingle();
-  const age = event?.event_date ? computeAge(String(application.birth_date), String(event.event_date)) : null;
 
   const { data: card } = await supabase
     .from('event_profile_cards')
@@ -74,18 +73,29 @@ Deno.serve(async (request) => {
     .eq('application_id', payload.applicationId)
     .maybeSingle();
 
+  // 참가자 계정이 그 사이 정리(게스트 만료 등)돼 applications가 익명화된
+  // 경우, 체크인 시점에 저장해둔 행사 당시 스냅샷을 우선 쓴다.
+  const { data: snapshot } = await supabase
+    .from('event_participant_snapshots')
+    .select('nickname, age, job, photo_path, photo_crop')
+    .eq('event_id', payload.eventId)
+    .eq('application_id', payload.applicationId)
+    .maybeSingle();
+
+  const age = snapshot?.age ?? (event?.event_date ? computeAge(String(application.birth_date), String(event.event_date)) : null);
+
   const ownPhotoPaths = Array.isArray(application.profile_photo_paths) ? (application.profile_photo_paths as string[]) : [];
   const representativeIndex = Number(application.representative_photo_index ?? 0);
   const fallbackPhotoPath = ownPhotoPaths[representativeIndex] ?? null;
-  const photoPath = card?.photo_path ?? fallbackPhotoPath;
-  const representativeCrop = card?.photo_path ? card.photo_crop : application.representative_crop;
+  const photoPath = snapshot?.photo_path ?? card?.photo_path ?? fallbackPhotoPath;
+  const representativeCrop = snapshot?.photo_path ? snapshot.photo_crop : card?.photo_path ? card.photo_crop : application.representative_crop;
   const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
 
   return json({
     ok: true,
-    nickname: application.nickname,
+    nickname: snapshot?.nickname || application.nickname,
     age,
-    job: application.job,
+    job: snapshot?.job || application.job,
     photoUrl,
     representativeCrop: representativeCrop ?? null,
     hasSubmittedCard: Boolean(card?.submitted_at),

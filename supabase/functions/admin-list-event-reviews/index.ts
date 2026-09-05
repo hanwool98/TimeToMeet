@@ -58,32 +58,43 @@ Deno.serve(async (request) => {
   const eventIds = Array.from(new Set(reviews.map((row) => row.event_id as string)));
   const applicationIds = Array.from(new Set(reviews.map((row) => row.application_id as string)));
 
-  const [{ data: events }, { data: applications }, { data: cards }] = await Promise.all([
+  const [{ data: events }, { data: applications }, { data: cards }, { data: snapshots }] = await Promise.all([
     supabase.from('events').select('id, title, event_date').in('id', eventIds),
     supabase
       .from('applications')
       .select('id, nickname, job, birth_date, profile_photo_paths, representative_photo_index, representative_crop')
       .in('id', applicationIds),
     supabase.from('event_profile_cards').select('event_id, application_id, photo_path, photo_crop').in('application_id', applicationIds),
+    // 작성자 계정이 그 사이 정리(게스트 만료 등)돼 applications가 익명화된
+    // 경우, 후기 작성 당시 저장해둔 스냅샷을 우선 쓴다 - 없으면(아직 정리
+    // 안 됐거나 스냅샷 도입 이전 legacy 후기) 기존처럼 applications를 쓴다.
+    supabase
+      .from('event_participant_snapshots')
+      .select('event_id, application_id, nickname, age, job, photo_path, photo_crop')
+      .in('application_id', applicationIds),
   ]);
 
   const eventById = new Map((events ?? []).map((row) => [row.id as string, row]));
   const applicationById = new Map((applications ?? []).map((row) => [row.id as string, row]));
   const cardByCompositeKey = new Map((cards ?? []).map((row) => [`${row.event_id}:${row.application_id}`, row]));
+  const snapshotByCompositeKey = new Map((snapshots ?? []).map((row) => [`${row.event_id}:${row.application_id}`, row]));
 
   const rows = await Promise.all(
     reviews.map(async (review) => {
+      const compositeKey = `${review.event_id}:${review.application_id}`;
       const event = eventById.get(review.event_id as string);
       const application = applicationById.get(review.application_id as string);
-      const card = cardByCompositeKey.get(`${review.event_id}:${review.application_id}`);
+      const card = cardByCompositeKey.get(compositeKey);
+      const snapshot = snapshotByCompositeKey.get(compositeKey);
 
       const age =
-        event?.event_date && application?.birth_date ? computeAge(String(application.birth_date), String(event.event_date)) : null;
+        snapshot?.age ??
+        (event?.event_date && application?.birth_date ? computeAge(String(application.birth_date), String(event.event_date)) : null);
 
       const photoPaths = Array.isArray(application?.profile_photo_paths) ? (application!.profile_photo_paths as string[]) : [];
       const representativeIndex = Number(application?.representative_photo_index ?? 0);
       const fallbackPhotoPath = photoPaths[representativeIndex];
-      const photoPath = card?.photo_path ?? fallbackPhotoPath;
+      const photoPath = snapshot?.photo_path ?? card?.photo_path ?? fallbackPhotoPath;
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
 
       const reviewImagePaths = Array.isArray(review.image_paths) ? (review.image_paths as string[]) : [];
@@ -96,8 +107,8 @@ Deno.serve(async (request) => {
         eventId: review.event_id,
         eventTitle: event?.title ?? '',
         images: images.filter((url): url is string => Boolean(url)),
-        job: application?.job ?? '',
-        nickname: application?.nickname ?? '',
+        job: (snapshot?.job ?? '') !== '' ? snapshot!.job : (application?.job ?? ''),
+        nickname: (snapshot?.nickname ?? '') !== '' ? snapshot!.nickname : (application?.nickname ?? ''),
         photoUrl,
         submittedAt: review.submitted_at,
       };

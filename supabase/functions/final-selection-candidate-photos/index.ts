@@ -97,14 +97,24 @@ Deno.serve(async (request) => {
     .in('application_id', partnerIds);
   const cardByApplicationId = new Map((cards ?? []).map((card) => [card.application_id as string, card]));
 
+  // 후보 계정이 그 사이 정리(게스트 만료 등)돼 applications 대표사진이
+  // 삭제된 경우, 체크인 시점에 저장해둔 스냅샷 사진을 우선 쓴다.
+  const { data: snapshots } = await supabase
+    .from('event_participant_snapshots')
+    .select('application_id, photo_path, photo_crop')
+    .eq('event_id', payload.eventId)
+    .in('application_id', partnerIds);
+  const snapshotByApplicationId = new Map((snapshots ?? []).map((row) => [row.application_id as string, row]));
+
   const photos = await Promise.all(
     (partners ?? []).map(async (partner) => {
       const photoPaths = Array.isArray(partner.profile_photo_paths) ? (partner.profile_photo_paths as string[]) : [];
       const representativeIndex = Number(partner.representative_photo_index ?? 0);
       const fallbackPhotoPath = photoPaths[representativeIndex];
       const card = cardByApplicationId.get(partner.id as string);
-      const photoPath = card?.photo_path ?? fallbackPhotoPath;
-      const representativeCrop = card?.photo_path ? card.photo_crop : partner.representative_crop;
+      const snapshot = snapshotByApplicationId.get(partner.id as string);
+      const photoPath = snapshot?.photo_path ?? card?.photo_path ?? fallbackPhotoPath;
+      const representativeCrop = snapshot?.photo_path ? snapshot.photo_crop : card?.photo_path ? card.photo_crop : partner.representative_crop;
       const photoUrl = photoPath ? await signUrl(supabase, photoPath) : null;
       return {
         applicationId: partner.id as string,
