@@ -52,6 +52,14 @@ export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
     }, tapWindowMs);
   };
 
+  const handleExit = () => {
+    window.close();
+
+    window.setTimeout(() => {
+      if (!window.closed) window.location.replace('about:blank');
+    }, 150);
+  };
+
   return (
     <main className="app-page min-h-[100dvh] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))] text-[#17223c]">
       <div className="mx-auto flex min-h-[calc(100dvh-48px)] w-full max-w-[430px] flex-col items-center">
@@ -140,7 +148,7 @@ export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
 
         <button
           className="mt-7 w-full rounded-[18px] bg-[#3f8ff1] py-4 text-[18px] font-bold text-white shadow-[0_10px_24px_rgba(63,143,241,0.2)]"
-          onClick={() => window.close()}
+          onClick={handleExit}
           type="button"
         >
           앱 종료
