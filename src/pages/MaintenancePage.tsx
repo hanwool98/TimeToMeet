@@ -7,26 +7,6 @@ type MaintenancePageProps = {
   onBypass: () => void;
 };
 
-function MaintenanceIllustration() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-[142px] w-[142px]"
-      fill="none"
-      viewBox="0 0 160 160"
-    >
-      <circle cx="80" cy="80" fill="#F4F8FF" r="72" />
-      <path d="M43 84 86 62v50L43 93V84Z" fill="#9BC5FF" stroke="#6EA9FA" strokeWidth="3" />
-      <path d="M42 94h14l8 29H50L42 94Z" fill="#69A7F7" />
-      <path d="M87 62c12 0 21 11 21 25s-9 25-21 25V62Z" fill="#DCEBFF" />
-      <ellipse cx="104" cy="87" fill="#6EA9FA" rx="13" ry="25" />
-      <ellipse cx="108" cy="87" fill="#3E8EF1" rx="7" ry="16" />
-      <path d="m116 40 6-6 6 6c7 7 1 17-6 22-7-5-13-15-6-22Z" fill="#F7A6BE" />
-      <path d="m132 68 13-7M134 82l15-1M131 96l13 7" stroke="#F28AA9" strokeLinecap="round" strokeWidth="7" />
-    </svg>
-  );
-}
-
 export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
   const tapCountRef = useRef(0);
   const resetTimerRef = useRef<number | null>(null);
@@ -73,7 +53,11 @@ export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
         </button>
 
         <div className="mb-5 flex justify-center">
-          <MaintenanceIllustration />
+          <img
+            alt="확성기 안내 이미지"
+            className="h-[142px] w-[142px] object-contain"
+            src="/assets/maintenance-megaphone.png"
+          />
         </div>
 
         <h1 className="text-center text-[clamp(30px,9vw,40px)] font-black leading-[1.18] tracking-[0]">
