@@ -94,9 +94,19 @@ export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
                 <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
               </svg>
             </span>
-            <p className="min-w-0 text-[15px] font-medium leading-7 text-[#60708f]">
-              이로 인해 9월 13일 행사 참가 신청은 이번에 한해 네이버폼을 통해 진행될 예정입니다.
-            </p>
+            <div className="min-w-0">
+              <p className="text-[15px] font-medium leading-7 text-[#60708f]">
+                이로 인해 9월 13일 행사 참가 신청은 이번에 한해 네이버폼을 통해 진행될 예정입니다.
+              </p>
+              <a
+                className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-[#eaf3ff] px-4 text-[15px] font-bold text-[#3788ed]"
+                href="https://naver.me/FP8oJYIo"
+                rel="noreferrer"
+                target="_blank"
+              >
+                📝 2차 체험단 신청
+              </a>
+            </div>
           </div>
 
           <div className="my-5 h-px bg-[#dce8f8]" />
