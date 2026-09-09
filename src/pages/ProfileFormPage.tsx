@@ -51,7 +51,7 @@ const requiredConsentText = [
   },
 ];
 
-const routeOptions = ['지인', '인스타그램', '검색', '유튜브', '네이버 블로그', '기타'];
+const routeOptions = ['지인', '인스타그램', '검색', '유튜브', '쓰레드', '문토', '프립', '네이버 블로그', '기타'];
 
 function getAgeOnEventDate(birthDate: string, eventDateValue?: string) {
   if (!birthDate) return null;
@@ -287,6 +287,8 @@ export default function ProfileFormPage() {
     return session?.role === 'guest' && session.phoneNormalized ? formatKoreanPhone(session.phoneNormalized) : '';
   });
   const [singleConfirmed, setSingleConfirmed] = useState(false);
+  const [preferredPartnerDescription, setPreferredPartnerDescription] = useState('');
+  const [avoidParticipantNote, setAvoidParticipantNote] = useState('');
   const [idPhoto, setIdPhoto] = useState<File | null>(null);
   const [nickname, setNickname] = useState('');
   const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
@@ -361,6 +363,8 @@ export default function ProfileFormPage() {
         // (possibly a typo from an earlier attempt) override that.
         if (!isGuestSession) setPhone(String(draft.phone ?? ''));
         setSingleConfirmed(Boolean(draft.singleConfirmed));
+        setPreferredPartnerDescription(String(draft.preferredPartnerDescription ?? ''));
+        setAvoidParticipantNote(String(draft.avoidParticipantNote ?? ''));
         setNickname(String(draft.nickname ?? ''));
         setHeight(String(draft.height ?? ''));
         setJob(String(draft.job ?? ''));
@@ -433,6 +437,8 @@ export default function ProfileFormPage() {
         phone,
         refundConsent,
         singleConfirmed,
+        preferredPartnerDescription,
+        avoidParticipantNote,
       }).catch(() => undefined);
     }, 600);
 
@@ -457,6 +463,8 @@ export default function ProfileFormPage() {
     phone,
     refundConsent,
     singleConfirmed,
+    preferredPartnerDescription,
+    avoidParticipantNote,
     eventId,
   ]);
 
@@ -650,6 +658,8 @@ export default function ProfileFormPage() {
           profilePhotos: compressedProfilePhotos,
           refundAgreement: refundConsent,
           relationshipStatus: '미혼이며 교제하는 인원 없음',
+          preferredPartnerDescription,
+          avoidParticipantNote,
           representativeCrop: {
             offsetX: representativeOffsetX,
             offsetY: representativeOffsetY,
@@ -967,6 +977,30 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !singleConfirmed ? '확인이 필요합니다.' : ''}</ErrorText>
           </Section>
 
+          <Section title="이상형 및 만남 참고사항">
+            <label className="block text-[15px] font-black">
+              이상형 또는 호감이 가는 스타일
+              <span className="ml-1 text-[12px] font-bold text-[#999]">(선택)</span>
+            </label>
+            <p className="mb-3 mt-2 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">어떤 스타일의 이성에게 호감이 가는지 간단하게 적어주세요.</p>
+            <textarea
+              className="min-h-28 w-full rounded-[18px] bg-meet-blueSoft p-4 text-[15px] font-bold outline-none"
+              onChange={(event) => setPreferredPartnerDescription(event.target.value)}
+              value={preferredPartnerDescription}
+            />
+
+            <label className="mt-6 block text-[15px] font-black">
+              겹치고 싶지 않은 인원이 있다면 알려주세요
+              <span className="ml-1 text-[12px] font-bold text-[#999]">(선택)</span>
+            </label>
+            <p className="mb-3 mt-2 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">지인, 전 연인 등 행사에서 마주치기 곤란한 사람이 있다면 알려주세요.</p>
+            <textarea
+              className="min-h-28 w-full rounded-[18px] bg-meet-blueSoft p-4 text-[15px] font-bold outline-none"
+              onChange={(event) => setAvoidParticipantNote(event.target.value)}
+              value={avoidParticipantNote}
+            />
+          </Section>
+
           <Section title="9. 본인확인용 신분증 사진 첨부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">민감한 정보는 가려도 되며 이름과 생년월일만 확인되면 됩니다.</p>
             <UploadBox
@@ -981,6 +1015,11 @@ export default function ProfileFormPage() {
           <Section title="10. 닉네임">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">소개팅에서 계속 사용할 닉네임이니 신중하고 개성있는 닉네임을 사용해주세요.</p>
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setNickname(event.target.value)} placeholder="닉네임" value={nickname} />
+            {selectedEvent?.nicknameInstruction ? (
+              <p className="mt-3 whitespace-pre-wrap text-fluid-safe text-[13px] font-extrabold leading-relaxed text-meet-blue">
+                {selectedEvent.nicknameInstruction}
+              </p>
+            ) : null}
             <ErrorText>{touched && !nickname.trim() ? '닉네임을 입력해주세요.' : ''}</ErrorText>
           </Section>
 

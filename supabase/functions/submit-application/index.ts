@@ -31,6 +31,8 @@ type SubmitPayload = {
   profilePhotos: UploadedFile[];
   refundAgreement: boolean;
   relationshipStatus: string;
+  preferredPartnerDescription?: string | null;
+  avoidParticipantNote?: string | null;
   representativeCrop: Record<string, number>;
   representativeIndex: number;
   residence: string;
@@ -246,6 +248,8 @@ Deno.serve(async (request) => {
     profile_photo_paths: profilePhotoPaths,
     refund_agreement: payload.refundAgreement,
     relationship_status: payload.relationshipStatus.trim(),
+    preferred_partner_description: cleanOptionalText(payload.preferredPartnerDescription),
+    avoid_participant_note: cleanOptionalText(payload.avoidParticipantNote),
     representative_crop: payload.representativeCrop,
     representative_photo_index: payload.representativeIndex,
     residence: payload.residence.trim(),
@@ -326,6 +330,12 @@ function validateSubmissionFields(payload: SubmitPayload, eventDate: string) {
   if (age === null || age < 24 || age > 33) return '행사일 기준 만 24~33세만 신청할 수 있습니다.';
 
   return '';
+}
+
+function cleanOptionalText(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const cleaned = value.trim();
+  return cleaned || null;
 }
 
 function validateSubmissionFiles(payload: SubmitPayload) {

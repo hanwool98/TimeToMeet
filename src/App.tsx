@@ -1,63 +1,26 @@
-import { type FormEvent, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
-import Calendar from './components/Calendar';
 import { DataErrorState, DataLoadingState } from './components/DataState';
-import EventCard from './components/EventCard';
+import HomeFieldSketchSection from './components/HomeFieldSketchSection';
+import HomeReasonSection from './components/HomeReasonSection';
+import HomeRecruitmentSection from './components/HomeRecruitmentSection';
+import HomeReviewsSection from './components/HomeReviewsSection';
+import HomeUpcomingEventsSection from './components/HomeUpcomingEventsSection';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
 
-const KOREA_TIME_ZONE = 'Asia/Seoul';
-
-function getKoreaToday() {
-  const formatter = new Intl.DateTimeFormat('en-CA', { day: '2-digit', month: '2-digit', timeZone: KOREA_TIME_ZONE, year: 'numeric' });
-  const parts = formatter.formatToParts(new Date());
-  const year = Number(parts.find((part) => part.type === 'year')?.value ?? '1970');
-  const month = Number(parts.find((part) => part.type === 'month')?.value ?? '1');
-  const day = Number(parts.find((part) => part.type === 'day')?.value ?? '1');
-  return new Date(year, month - 1, day);
-}
-
-function toDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatKoreanDate(date: Date) {
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일(${dayNames[date.getDay()]})`;
-}
-
+// 홈(메인 대시보드) - 캘린더로 날짜를 골라 신청하던 기존 화면은
+// src/pages/CalendarPage.tsx로 그대로 옮기고, "/"는 이제 다가오는 행사 /
+// 사랑받는 이유 / 모집방식 / 현장 스케치 / 참가자 후기 순서의 대시보드다.
+// 로고 5회 탭으로 여는 숨김 관리자 로그인은 기존 그대로 유지한다.
 export default function App() {
   const navigate = useNavigate();
-  const eventCardRef = useRef<HTMLDivElement>(null);
-  const [today] = useState(getKoreaToday);
-  const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selectedDate, setSelectedDate] = useState(() => today);
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminSubmitting, setAdminSubmitting] = useState(false);
   const { error, events, loading, reload } = useOperationalData();
-
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.date === toDateKey(selectedDate)),
-    [events, selectedDate],
-  );
-
-  const handleApply = () => {
-    if (!selectedEvent) return;
-    navigate(`/events/${selectedEvent.id}`);
-  };
-
-  const handleSelectDate = (date: Date) => {
-    setSelectedDate(date);
-    window.setTimeout(() => {
-      eventCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 0);
-  };
 
   const handleLogoSecretTap = () => {
     setLogoTapCount((count) => {
@@ -107,20 +70,12 @@ export default function App() {
             type="button"
           />
         </div>
-        <Calendar
-          currentMonth={currentMonth}
-          events={events}
-          onMonthChange={setCurrentMonth}
-          onSelectDate={handleSelectDate}
-          selectedDate={selectedDate}
-          today={today}
-        />
-        <div className="mt-8 scroll-mt-8" ref={eventCardRef}>
-          <EventCard
-            event={selectedEvent}
-            onApply={handleApply}
-            selectedDateLabel={formatKoreanDate(selectedDate)}
-          />
+        <div className="mt-4 flex flex-col gap-9">
+          <HomeUpcomingEventsSection events={events} />
+          <HomeReasonSection />
+          <HomeRecruitmentSection />
+          <HomeFieldSketchSection />
+          <HomeReviewsSection />
         </div>
       </div>
       {showAdminPrompt ? (

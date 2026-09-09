@@ -20,6 +20,8 @@ interface SubmitApplicationInput {
   residence: string;
   phone: string;
   relationshipStatus: string;
+  preferredPartnerDescription?: string;
+  avoidParticipantNote?: string;
   idPhoto: File;
   nickname: string;
   profilePhotos: File[];
@@ -57,6 +59,8 @@ interface SupabaseApplicationRow {
   residence: string;
   phone: string;
   relationship_status: string;
+  preferred_partner_description: string | null;
+  avoid_participant_note: string | null;
   id_photo_path: string | null;
   nickname: string;
   profile_photo_paths: string[] | null;
@@ -103,6 +107,7 @@ interface PublicEventSummaryRow {
   start_time: string;
   end_time: string;
   location: string;
+  nickname_instruction?: string | null;
   venue_booked: boolean;
   male_price: number | null;
   female_price: number | null;
@@ -131,6 +136,7 @@ interface AdminEventDetailsRow {
   start_time: string;
   end_time: string;
   location: string;
+  nickname_instruction: string | null;
   venue_detail: string;
   application_deadline: string | null;
   venue_booked: boolean;
@@ -251,6 +257,11 @@ export interface MyEventTicket {
   eventEndedAt?: string;
 }
 
+export interface ConfirmedEventVenue {
+  location: string;
+  venueDetail: string;
+}
+
 interface MyEventTicketRow {
   application_id: string;
   application_no: string;
@@ -310,6 +321,7 @@ export interface AdminTicketPreview {
 
 export interface AdminApplicationFiles {
   employmentProof?: SignedApplicationFile;
+  historicalRepresentativePhoto?: SignedApplicationFile;
   idPhoto?: SignedApplicationFile;
   profilePhotos: SignedApplicationFile[];
   representativeIndex: number;
@@ -321,6 +333,44 @@ export interface SignedApplicationFile {
   fileName: string;
   path: string;
   signedUrl?: string;
+}
+
+export interface AdminParticipationHistoryItem {
+  age: number | null;
+  applicationId: string;
+  applicationNo: string;
+  applicationStatus: string;
+  attendanceStatus: string | null;
+  checkedInAt: string | null;
+  endTime: string;
+  eventDate: string;
+  eventId: string;
+  eventTitle: string;
+  finalSelectionSubmitted: boolean;
+  historyStatus: string;
+  job: string;
+  location: string;
+  matched: boolean;
+  nickname: string;
+  paymentStatus: string | null;
+  profileSource: string | null;
+  representativeCrop: RepresentativeCrop | null;
+  representativePhotoPath: string | null;
+  reviewSubmitted: boolean;
+  startTime: string;
+  submittedAt: string;
+}
+
+export interface AdminParticipationHistoryResult {
+  found: boolean;
+  history: AdminParticipationHistoryItem[];
+  summary: {
+    actualParticipations: number;
+    name: string;
+    nickname: string;
+    phone: string;
+    totalApplications: number;
+  } | null;
 }
 
 interface PaymentInvitationRow {
@@ -406,6 +456,8 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
       profilePhotos: await Promise.all(input.profilePhotos.map(fileToPayload)),
       refundAgreement: input.refundAgreement,
       relationshipStatus: input.relationshipStatus,
+      preferredPartnerDescription: input.preferredPartnerDescription?.trim() || null,
+      avoidParticipantNote: input.avoidParticipantNote?.trim() || null,
       representativeCrop: input.representativeCrop,
       representativeIndex: input.representativeIndex,
       residence: input.residence,
@@ -909,11 +961,43 @@ export async function fetchAdminApplicationFiles(application: StoredApplication)
 
   return {
     employmentProof: data.employmentProof ?? undefined,
+    historicalRepresentativePhoto: data.historicalRepresentativePhoto ?? undefined,
     idPhoto: data.idPhoto ?? undefined,
     profilePhotos: Array.isArray(data.profilePhotos) ? data.profilePhotos : [],
     representativeIndex: Number(data.representativeIndex ?? 0),
     voiceIntro: data.voiceIntro ?? undefined,
   } satisfies AdminApplicationFiles;
+}
+
+export async function fetchAdminParticipationHistory(phone: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_participation_history_for_session', {
+    phone_value: phone,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  const result = data as AdminParticipationHistoryResult | null;
+  return {
+    found: Boolean(result?.found),
+    history: Array.isArray(result?.history) ? result.history : [],
+    summary: result?.summary ?? null,
+  } satisfies AdminParticipationHistoryResult;
+}
+
+export async function fetchAdminHistoricalRepresentativePhoto(applicationId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-application-files', {
+    body: { applicationId, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) throw new Error(data?.message || '대표사진을 불러오지 못했습니다.');
+  return (data.historicalRepresentativePhoto as SignedApplicationFile | undefined) ?? undefined;
 }
 
 function readFunctionStatus(error: unknown) {
@@ -947,6 +1031,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     isLocked: event.is_locked ?? false,
     isTestEvent: event.is_test_event ?? false,
     location: event.location,
+    nicknameInstruction: event.nickname_instruction?.trim() || undefined,
     malePrice: event.male_price ?? 50000,
     femalePrice: event.female_price ?? 40000,
     femaleApplications: event.female_applications,
@@ -1017,6 +1102,7 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
     femalePrice: row.female_price,
     id: row.id,
     location: row.location,
+    nicknameInstruction: row.nickname_instruction?.trim() || undefined,
     isLocked: row.is_locked ?? false,
     isTestEvent: row.is_test_event,
     maleCapacity: row.male_capacity,
@@ -1174,6 +1260,7 @@ export async function upsertEventToSupabase(event: EventData) {
     event_id_value: event.id,
     event_is_test_event: event.isTestEvent ?? false,
     event_location: event.location,
+    event_nickname_instruction: event.nicknameInstruction?.trim() || null,
     event_male_price: event.malePrice,
     event_short_name: event.shortName,
     event_start_time: event.startTime,
@@ -1186,6 +1273,40 @@ export async function upsertEventToSupabase(event: EventData) {
   });
 
   if (error) throw error;
+}
+
+export interface AdminNicknameUpdateResult {
+  hasDuplicate: boolean;
+  nickname: string;
+  updated: boolean;
+}
+
+export async function updateAdminApplicationNickname(
+  applicationId: string,
+  nickname: string,
+  allowDuplicate = false,
+) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('update_application_nickname_for_session', {
+    allow_duplicate: allowDuplicate,
+    nickname_value: nickname,
+    session_token: adminSession.token,
+    target_application_id: applicationId,
+  });
+
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { has_duplicate: boolean; nickname: string; updated: boolean }
+    | undefined;
+  if (!row) throw new Error('닉네임 수정 결과를 확인하지 못했습니다.');
+  return {
+    hasDuplicate: Boolean(row.has_duplicate),
+    nickname: row.nickname,
+    updated: Boolean(row.updated),
+  } satisfies AdminNicknameUpdateResult;
 }
 
 export async function deleteEventFromSupabase(eventId: string) {
@@ -1543,6 +1664,25 @@ export async function fetchMyEventTickets() {
 
   if (error) throw error;
   return (data as MyEventTicketRow[]).map(mapMyEventTicketRow);
+}
+
+export async function fetchMyConfirmedEventVenue(eventId: string): Promise<ConfirmedEventVenue | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return null;
+
+  const { data, error } = await supabase.rpc('get_my_confirmed_event_venue', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row) return null;
+  return {
+    location: String(row.location ?? '').trim(),
+    venueDetail: String(row.venue_detail ?? '').trim(),
+  };
 }
 
 export async function requestBankTransferConfirmation(applicationId: string, depositorName: string) {
@@ -2561,17 +2701,17 @@ export async function submitRoundRating(eventId: string, roundNumber: number, sc
   if (error) throw error;
 }
 
-// 추가시간 통합 2분 phase(bonus_seat_guide): 새 라운드 rating을 만드는 게
-// 아니라 정규 라운드에서 이미 이 상대에게 매긴 기존 점수를 서버가 찾아
-// 수정한다 - 그래서 round_number를 클라이언트가 넘기지 않는다(서버가 현재
-// 추가시간 상대를 찾아 그 사람과 만난 정규 라운드를 역으로 찾음).
-export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating> {
+// The round and partner shown by the UI are sent together so a simultaneous
+// server-side phase advance cannot redirect the write to a different pairing.
+export async function fetchMyBonusRating(eventId: string, roundNumber: number, partnerApplicationId: string): Promise<MyRoundRating> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) return {};
 
   const { data, error } = await supabase.rpc('get_my_bonus_rating', {
     event_id_value: eventId,
+    partner_application_id_value: partnerApplicationId,
+    round_number_value: roundNumber,
     session_token: session.token,
   });
   if (error) throw error;
@@ -2580,7 +2720,13 @@ export async function fetchMyBonusRating(eventId: string): Promise<MyRoundRating
   return { memo: row.memo ?? undefined, score: row.score ?? undefined };
 }
 
-export async function submitMyBonusRating(eventId: string, score: number, memo: string): Promise<void> {
+export async function submitMyBonusRating(
+  eventId: string,
+  roundNumber: number,
+  partnerApplicationId: string,
+  score: number,
+  memo: string,
+): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
@@ -2588,6 +2734,8 @@ export async function submitMyBonusRating(eventId: string, score: number, memo: 
   const { error } = await supabase.rpc('submit_bonus_round_rating', {
     event_id_value: eventId,
     memo_value: memo.trim() || null,
+    partner_application_id_value: partnerApplicationId,
+    round_number_value: roundNumber,
     score_value: score,
     session_token: session.token,
   });
@@ -3571,6 +3719,8 @@ function mapProfile(row: SupabaseApplicationRow): ParticipantProfile {
     profilePhotos: `사진 ${row.profile_photo_paths?.length ?? 0}장 업로드 · 대표사진 지정 완료`,
     refundAgreement: row.refund_agreement ? '동의' : '미동의',
     relationshipStatus: row.relationship_status,
+    preferredPartnerDescription: row.preferred_partner_description,
+    avoidParticipantNote: row.avoid_participant_note,
     residence: row.residence,
     reviewNotice: row.review_notice_confirmed ? '확인' : '미확인',
     shootingConsent: row.filming_consent ? '동의' : '미동의',

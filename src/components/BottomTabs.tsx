@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { avatarSheet, getAvatarPosition } from './ParticipantList';
+import ParticipantPhoto from './ParticipantPhoto';
 import { fetchMyTabProfileAvatar, getAppSession } from '../services/appAuth';
 import { usePaymentInvitations } from './PaymentInvitationProvider';
+import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 const tabs = [
-  { icon: 'calendar', label: '캘린더', path: '/' },
-  { icon: 'event', label: '행사 소개', path: '/event-info' },
+  { icon: 'home', label: '홈', path: '/' },
+  { icon: 'calendar', label: '캘린더', path: '/calendar' },
   { icon: 'mail', label: '내 행사', path: '/my-events' },
   { icon: 'person', label: '마이페이지', path: '/mypage' },
 ];
@@ -17,6 +19,7 @@ function TabIcon({
   hasProfile,
   isLoggedIn,
   name,
+  photoCrop,
   photoUrl,
 }: {
   avatarIndex?: number;
@@ -24,6 +27,7 @@ function TabIcon({
   hasProfile?: boolean;
   isLoggedIn?: boolean;
   name: string;
+  photoCrop?: RepresentativeCrop;
   photoUrl?: string;
 }) {
   const common = {
@@ -35,20 +39,22 @@ function TabIcon({
   };
   const iconClassName = "h-8 w-8";
 
+  if (name === 'home') {
+    return (
+      <svg aria-hidden="true" className={iconClassName} viewBox="0 0 24 24">
+        <path d="M4 11.5 12 4l8 7.5" {...common} />
+        <path d="M6 10v9h12v-9" {...common} />
+        <path d="M10 19v-5h4v5" {...common} />
+      </svg>
+    );
+  }
+
   if (name === 'calendar') {
     return (
       <svg aria-hidden="true" className={iconClassName} viewBox="0 0 24 24">
         <rect height="16" rx="3" width="16" x="4" y="5" {...common} />
         <path d="M8 3v4M16 3v4M4 10h16" {...common} />
         <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" {...common} />
-      </svg>
-    );
-  }
-
-  if (name === 'event') {
-    return (
-      <svg aria-hidden="true" className={iconClassName} viewBox="0 0 24 24">
-        <path d="M12 3l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.3 6.8 19l1-5.8-4.2-4.1 5.8-.8L12 3z" {...common} />
       </svg>
     );
   }
@@ -68,13 +74,14 @@ function TabIcon({
   if (name === 'person' && isLoggedIn) {
     if (hasProfile && photoUrl) {
       return (
-        <img
-          alt=""
+        <ParticipantPhoto
           className={[
-            'h-8 w-8 rounded-full bg-cover bg-center bg-no-repeat ring-2',
+            'rounded-full bg-[#d9d9d9] ring-2',
             active ? 'ring-meet-blue/55' : 'ring-[#777]/30 saturate-[0.9]',
           ].join(' ')}
-          src={photoUrl}
+          crop={photoCrop}
+          photoUrl={photoUrl}
+          sizePx={32}
         />
       );
     }
@@ -124,9 +131,21 @@ function DefaultProfileIcon() {
 export default function BottomTabs() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [profileAvatar, setProfileAvatar] = useState<{ avatarIndex: number; hasProfile: boolean; photoUrl?: string } | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState(0);
+  const [profileAvatar, setProfileAvatar] = useState<{
+    avatarIndex: number;
+    hasProfile: boolean;
+    photoCrop?: RepresentativeCrop;
+    photoUrl?: string;
+  } | null>(null);
   const isLoggedIn = Boolean(getAppSession());
   const { unreadCount } = usePaymentInvitations();
+
+  useEffect(() => {
+    const refreshAvatar = () => setAvatarVersion((version) => version + 1);
+    window.addEventListener('time2meet:app-session-changed', refreshAvatar);
+    return () => window.removeEventListener('time2meet:app-session-changed', refreshAvatar);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -146,7 +165,7 @@ export default function BottomTabs() {
     return () => {
       mounted = false;
     };
-  }, [isLoggedIn, location.pathname]);
+  }, [avatarVersion, isLoggedIn, location.pathname]);
 
   return (
     <nav
@@ -180,6 +199,7 @@ export default function BottomTabs() {
                 hasProfile={profileAvatar?.hasProfile}
                 isLoggedIn={isLoggedIn}
                 name={tab.icon}
+                photoCrop={profileAvatar?.photoCrop}
                 photoUrl={profileAvatar?.photoUrl}
               />
               {tab.path === '/my-events' && unreadCount > 0 ? (

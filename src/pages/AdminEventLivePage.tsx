@@ -830,7 +830,7 @@ function RoundProgressSection({
   // (phase 자체가 없음) 별도로 duration/label을 정한다. 그 외에는
   // roundPhase 기반 - 정규는 이벤트에 설정된 대화시간, 추가시간 대화는
   // 7분 고정, reveal(첫 추가시간 진입, 호감도 없음)은 1분 고정, 이동+
-  // 호감도 수정 구간은 다음 추가시간이 있으면 2분·마지막이면 1분.
+  // 추가시간의 reveal과 호감도 수정+이동 구간은 모두 1분이다.
   const hasNextBonusRound = (roundProgress.bonusRoundIndex ?? 0) < (roundProgress.bonusRoundCount ?? 0);
   const phaseDuration =
     roundProgress.stage === 'bonus_rating'

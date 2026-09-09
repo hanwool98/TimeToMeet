@@ -5,28 +5,47 @@ import { TicketQrDisplay } from '../components/EventTicket';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { fetchMyEventTickets, getCachedTestEventPreviewToken, type MyEventTicket } from '../services/supabaseApplications';
+import {
+  fetchMyConfirmedEventVenue,
+  fetchMyEventTickets,
+  getCachedTestEventPreviewToken,
+  type ConfirmedEventVenue,
+  type MyEventTicket,
+} from '../services/supabaseApplications';
 
 export default function TicketDetailPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [ticket, setTicket] = useState<MyEventTicket | null>(null);
+  const [venue, setVenue] = useState<ConfirmedEventVenue | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
 
     const load = async () => {
+      setVenue(null);
       try {
         const tickets = await fetchMyEventTickets();
         if (!active) return;
-        setTicket(
-          tickets.find(
-            (item) =>
-              item.eventId === eventId &&
-              (item.status === '참가 확정' || item.status === '참여 보류' || item.status === '결제 대기'),
-          ) ?? null,
-        );
+        const nextTicket = tickets.find(
+          (item) =>
+            item.eventId === eventId &&
+            (item.status === '참가 확정' || item.status === '참여 보류' || item.status === '결제 대기'),
+        ) ?? null;
+        setTicket(nextTicket);
+
+        if (nextTicket?.status === '참가 확정') {
+          try {
+            const latestVenue = await fetchMyConfirmedEventVenue(nextTicket.eventId);
+            if (active) setVenue(latestVenue);
+          } catch (venueError) {
+            // The existing ticket RPC already returns the latest protected
+            // venue text. Keep the ticket usable if the structured lookup is
+            // temporarily unavailable, while retaining the same status gate.
+            console.error('Confirmed event venue lookup failed', venueError);
+          }
+        }
       } catch {
         if (active) setTicket(null);
       } finally {
@@ -55,6 +74,12 @@ export default function TicketDetailPage() {
     );
   }
 
+  const venueDetail = venue?.venueDetail || ticket.location.trim();
+  const publicLocation = venue?.location && venue.location !== venueDetail ? venue.location : '';
+  const naverMapUrl = ticket.status === '참가 확정'
+    ? createNaverMapSearchUrl(venueDetail, publicLocation)
+    : null;
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-4 with-bottom-tabs pt-12 text-black min-[380px]:px-5">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-10rem)] flex-col gap-6 pb-8">
@@ -74,7 +99,19 @@ export default function TicketDetailPage() {
 
             <section className="rounded-[24px] bg-meet-blueSoft p-5">
               <h2 className="text-[15px] font-black text-[#555]">행사 장소</h2>
-              <p className="mt-2 text-[18px] font-black text-black">{ticket.location}</p>
+              {venueDetail ? <p className="mt-2 break-words text-[18px] font-black text-black">{venueDetail}</p> : null}
+              {publicLocation ? <p className="mt-1 break-words text-[13px] font-bold text-[#777]">{publicLocation}</p> : null}
+              {naverMapUrl ? (
+                <a
+                  aria-label="네이버지도에서 행사 장소 보기"
+                  className="mt-3 inline-flex min-h-10 items-center text-[13px] font-black text-meet-blue underline underline-offset-4"
+                  href={naverMapUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  네이버지도에서 보기&nbsp;&gt;
+                </a>
+              ) : null}
             </section>
 
             <div className="space-y-2">
@@ -99,6 +136,11 @@ export default function TicketDetailPage() {
       <BottomTabs />
     </main>
   );
+}
+
+function createNaverMapSearchUrl(venueDetail: string, publicLocation: string) {
+  const query = [venueDetail.trim(), publicLocation.trim()].filter(Boolean).join(' ');
+  return query ? `https://map.naver.com/p/search/${encodeURIComponent(query)}` : null;
 }
 
 // Tickets stop appearing in "내 행사" 3 days after their event (kept in sync

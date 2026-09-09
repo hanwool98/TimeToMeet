@@ -141,6 +141,17 @@ button {
   padding-bottom: calc(108px + env(safe-area-inset-bottom));
 }
 
+/* 홈 대시보드의 가로 캐러셀(다가오는 행사/사랑받는 이유/모집방식) 전용 -
+   스크롤은 그대로 두고 스크롤바만 숨긴다. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .payment-invitation-fade {
   animation: paymentInvitationFade 180ms ease-out both;
 }

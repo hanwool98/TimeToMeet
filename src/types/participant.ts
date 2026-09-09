@@ -17,6 +17,8 @@ export interface ParticipantProfile {
   residence: string;
   phone: string;
   relationshipStatus: string;
+  preferredPartnerDescription?: string | null;
+  avoidParticipantNote?: string | null;
   idPhotoStatus: string;
   nickname: string;
   profilePhotos: string;

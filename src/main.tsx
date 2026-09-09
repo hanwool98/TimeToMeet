@@ -20,9 +20,11 @@ import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
 import AdminFinalSelectionsPage from './pages/AdminFinalSelectionsPage';
 import AdminPage from './pages/AdminPage';
+import AdminParticipationHistoryPage from './pages/AdminParticipationHistoryPage';
 import AdminPreroundSeatsPage from './pages/AdminPreroundSeatsPage';
 import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
 import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
+import CalendarPage from './pages/CalendarPage';
 import EmergencyProfileFormPage from './pages/EmergencyProfileFormPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
@@ -77,6 +79,7 @@ createRoot(document.getElementById('root')!).render(
         <PaymentInvitationProvider>
           <Routes>
             <Route path="/" element={<App />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/guest-phone" element={<GuestPhoneAuthPage />} />
             <Route element={<AdminRoute />}>
@@ -89,6 +92,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
               <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
               <Route path="/admin/applications" element={<AdminApplicationsPage />} />
+              <Route path="/admin/participation-history" element={<AdminParticipationHistoryPage />} />
               <Route path="/admin/events" element={<AdminEventManagementPage />} />
               <Route path="/admin/events/new" element={<AdminEventCreatePage />} />
               <Route path="/admin/event-mode" element={<AdminEventModeHomePage />} />

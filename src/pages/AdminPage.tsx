@@ -82,7 +82,7 @@ export default function AdminPage() {
               label="행사 모드"
               onClick={() => navigate('/admin/event-mode')}
             />
-            <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="회원 관리" onClick={showPreparing} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="참여이력 조회" onClick={() => navigate('/admin/participation-history')} />
             <MenuCard icon={<Icon className="h-5 w-5" name="shield" />} label="신고 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="video" />} label="콘텐츠 관리" onClick={() => navigate('/admin/content')} />
             <MenuCard icon={<Icon className="h-5 w-5" name="alert" />} label="오류 로그" onClick={() => navigate('/admin/application-errors')} />

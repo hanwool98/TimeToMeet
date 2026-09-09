@@ -106,6 +106,7 @@ export default function AdminEventCreatePage() {
 
   const [eventType, setEventType] = useState(eventTypes[0]);
   const [eventName, setEventName] = useState(editingEvent?.title ?? '');
+  const [nicknameInstruction, setNicknameInstruction] = useState(editingEvent?.nicknameInstruction ?? '');
   const [eventDate, setEventDate] = useState(toDateInputValue(selectedDate));
   const [startTime, setStartTime] = useState(editingEvent?.startTime ?? '15:00');
   const [endTime, setEndTime] = useState(editingEvent?.endTime ?? '18:00');
@@ -134,6 +135,7 @@ export default function AdminEventCreatePage() {
     if (!editingEvent) return;
     setEventType(editingEvent.shortName.includes('로테이션') ? eventTypes[0] : editingEvent.shortName);
     setEventName(editingEvent.title);
+    setNicknameInstruction(editingEvent.nicknameInstruction ?? '');
     setEventDate(editingEvent.date);
     setStartTime(editingEvent.startTime);
     setEndTime(editingEvent.endTime);
@@ -168,6 +170,7 @@ export default function AdminEventCreatePage() {
         if (!active || !details) return;
         setEventType(details.shortName.includes('로테이션') ? eventTypes[0] : details.shortName);
         setEventName(details.title);
+        setNicknameInstruction(details.nicknameInstruction ?? '');
         setEventDate(details.date);
         setStartTime(details.startTime);
         setEndTime(details.endTime);
@@ -224,6 +227,7 @@ export default function AdminEventCreatePage() {
       startTime,
       endTime,
       location: region.replace(/시$/, ''),
+      nicknameInstruction: nicknameInstruction.trim() || undefined,
       venueBooked,
       venueDetail: venueDetail.trim(),
       isTestEvent,
@@ -285,6 +289,18 @@ export default function AdminEventCreatePage() {
 
             <Field label="행사명">
               <input className={inputClassName} onChange={(event) => setEventName(event.target.value)} value={eventName} />
+            </Field>
+
+            <Field label="닉네임 안내 문구 (선택)">
+              <textarea
+                className="min-h-24 w-full max-w-full min-w-0 resize-y rounded-[18px] bg-meet-blueSoft px-4 py-3 text-left text-[15px] font-bold leading-relaxed text-black outline-none focus:ring-2 focus:ring-meet-blue"
+                onChange={(event) => setNicknameInstruction(event.target.value)}
+                placeholder="이번 행사는 과자 특집입니다. 과자 이름으로 닉네임을 작성해주세요."
+                value={nicknameInstruction}
+              />
+              <span className="mt-2 block text-[12px] font-bold leading-relaxed text-[#777]">
+                참가자가 닉네임을 정할 때 표시되는 안내입니다.
+              </span>
             </Field>
 
             <Field label="행사 날짜">

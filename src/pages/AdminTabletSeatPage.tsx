@@ -569,7 +569,7 @@ export default function AdminTabletSeatPage() {
     );
   }
 
-  // 추가시간 통합 2분 - 참가자 폰에서는 방금 상대 호감도 수정 + 다음 상대
+  // 추가시간 통합 1분 - 참가자 폰에서는 방금 상대 호감도 수정 + 다음 상대
   // 안내를 같이 보여주지만, 태블릿은 원래도 이름을 노출하지 않던 화면이라
   // 문구만 "다음 라운드가 있는지"에 따라 조건 분기한다. current_round는
   // 이 phase 동안 아직 방금 끝난 라운드를 가리키므로 bonusRoundIndex도
@@ -582,7 +582,7 @@ export default function AdminTabletSeatPage() {
       ? '1분 안에 자리 이동을 완료해주세요'
       : isLastBonusRound
         ? '곧 최종 선택으로 넘어갑니다'
-        : '2분 안에 자리 이동을 완료해주세요';
+        : '1분 안에 자리 이동을 완료해주세요';
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden text-[#1f292d]" style={{ ...tabletBackground, ...landscapeRotateStyle }}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />

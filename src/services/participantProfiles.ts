@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { getAppSession } from './appAuth';
+import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 export interface MyPageSummary {
   accountType: 'member' | 'guest' | null;
@@ -8,6 +9,7 @@ export interface MyPageSummary {
   hasProfile: boolean;
   nickname: string;
   phoneMasked: string;
+  profilePhotoCrop?: RepresentativeCrop;
   profilePhotoUrl?: string;
 }
 
@@ -84,7 +86,7 @@ export async function fetchMyPageSummary(): Promise<MyPageSummary | null> {
   const row = (Array.isArray(data) ? data[0] : data) as MyPageSummaryRow | undefined;
   if (!row?.account_type) return null;
 
-  const profilePhotoUrl = Boolean(row.has_profile) ? await fetchMyProfilePhotoUrl(session.token) : undefined;
+  const profilePhoto = Boolean(row.has_profile) ? await fetchMyProfilePhoto(session.token) : undefined;
   const phoneFallback =
     row.account_type === 'guest' && (!row.phone_masked || !row.guest_display_id)
       ? await fetchMySessionPhone(session.token)
@@ -97,7 +99,8 @@ export async function fetchMyPageSummary(): Promise<MyPageSummary | null> {
     hasProfile: Boolean(row.has_profile),
     nickname: row.nickname || (row.account_type === 'member' ? '회원' : '비회원'),
     phoneMasked: row.phone_masked || phoneFallback?.phoneMasked || '',
-    profilePhotoUrl,
+    profilePhotoCrop: profilePhoto?.crop,
+    profilePhotoUrl: profilePhoto?.photoUrl,
   };
 }
 
@@ -118,7 +121,7 @@ export async function fetchMySessionPhone(sessionToken?: string): Promise<Pick<M
   };
 }
 
-async function fetchMyProfilePhotoUrl(sessionToken: string) {
+async function fetchMyProfilePhoto(sessionToken: string) {
   if (!supabase) return undefined;
 
   const { data, error } = await supabase.functions.invoke('my-profile-photo', {
@@ -126,7 +129,20 @@ async function fetchMyProfilePhotoUrl(sessionToken: string) {
   });
 
   if (error || data?.ok !== true || typeof data.signedUrl !== 'string') return undefined;
-  return data.signedUrl;
+  return {
+    crop: normalizeRepresentativeCrop(data.representativeCrop),
+    photoUrl: data.signedUrl,
+  };
+}
+
+function normalizeRepresentativeCrop(value: unknown): RepresentativeCrop | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const crop = value as Partial<Record<keyof RepresentativeCrop, unknown>>;
+  const scale = Number(crop.scale);
+  const offsetX = Number(crop.offsetX);
+  const offsetY = Number(crop.offsetY);
+  if (![scale, offsetX, offsetY].every(Number.isFinite)) return undefined;
+  return { offsetX, offsetY, scale };
 }
 
 export async function fetchMyParticipantProfile(): Promise<MyParticipantProfile | null> {

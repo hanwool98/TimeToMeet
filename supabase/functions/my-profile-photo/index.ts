@@ -39,7 +39,7 @@ Deno.serve(async (request) => {
   // so the photo shown always matches the profile currently on display.
   const { data: activeProfile } = await supabase
     .from('participant_profiles')
-    .select('profile_photo_paths, representative_photo_index')
+    .select('profile_photo_paths, representative_photo_index, representative_crop')
     .eq('user_id', session.user_id)
     .eq('is_active', true)
     .order('updated_at', { ascending: false })
@@ -48,14 +48,16 @@ Deno.serve(async (request) => {
 
   let photoPaths: string[] = [];
   let representativeIndex = 0;
+  let representativeCrop: Record<string, number> | null = null;
 
   if (activeProfile) {
     photoPaths = Array.isArray(activeProfile.profile_photo_paths) ? activeProfile.profile_photo_paths as string[] : [];
     representativeIndex = Number(activeProfile.representative_photo_index ?? 0);
+    representativeCrop = normalizeCrop(activeProfile.representative_crop);
   } else {
     const { data: latestApplication } = await supabase
       .from('applications')
-      .select('profile_photo_paths, representative_photo_index')
+      .select('profile_photo_paths, representative_photo_index, representative_crop')
       .eq('user_id', session.user_id)
       .order('submitted_at', { ascending: false })
       .limit(1)
@@ -64,6 +66,7 @@ Deno.serve(async (request) => {
     if (latestApplication) {
       photoPaths = Array.isArray(latestApplication.profile_photo_paths) ? latestApplication.profile_photo_paths as string[] : [];
       representativeIndex = Number(latestApplication.representative_photo_index ?? 0);
+      representativeCrop = normalizeCrop(latestApplication.representative_crop);
     }
   }
 
@@ -76,8 +79,18 @@ Deno.serve(async (request) => {
 
   if (signError || !signed?.signedUrl) return json({ ok: true, signedUrl: null });
 
-  return json({ ok: true, signedUrl: signed.signedUrl });
+  return json({ ok: true, representativeCrop, signedUrl: signed.signedUrl });
 });
+
+function normalizeCrop(value: unknown) {
+  if (!value || typeof value !== 'object') return null;
+  const crop = value as Record<string, unknown>;
+  const scale = Number(crop.scale);
+  const offsetX = Number(crop.offsetX);
+  const offsetY = Number(crop.offsetY);
+  if (![scale, offsetX, offsetY].every(Number.isFinite)) return null;
+  return { offsetX, offsetY, scale };
+}
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import useOperationalData from '../hooks/useOperationalData';
-import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateAdminApplicationNickname, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -20,6 +20,8 @@ const filterOptions = ['성별', '나이', '재참여 여부', '심사대기', '
 
 export default function AdminApplicationsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const openedApplicationRef = useRef<string | null>(null);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true });
   const [activeTab, setActiveTab] = useState<ApplicationTab>('review');
   const [dateFilter, setDateFilter] = useState('전체');
@@ -72,6 +74,20 @@ export default function AdminApplicationsPage() {
   const paymentCount = applications.filter((item) => item.status === '결제 대기' || item.status === '결제중' || item.status === '입금 확인 중' || item.status === '환불 완료' || item.status === '자동 취소').length;
   const completedCount = applications.filter((item) => item.status === '참가 확정' || item.status === '반려' || item.status === '신청 취소').length;
   const newReviewCount = applications.filter((item) => item.status === '심사 대기' && item.isNew).length;
+
+  useEffect(() => {
+    const applicationId = searchParams.get('applicationId');
+    if (!applicationId || openedApplicationRef.current === applicationId) return;
+    const application = applications.find((item) => item.id === applicationId);
+    if (!application) return;
+
+    openedApplicationRef.current = applicationId;
+    if (application.status === '참여 보류') setActiveTab('waiting');
+    else if (['결제 대기', '결제중', '입금 확인 중', '환불 완료', '자동 취소'].includes(application.status)) setActiveTab('payment');
+    else if (['참가 확정', '반려', '신청 취소'].includes(application.status)) setActiveTab('completed');
+    else setActiveTab('review');
+    setReviewingApplication(application);
+  }, [applications, searchParams]);
 
   // Occupied = anyone who has already claimed a seat of this gender for the
   // event, whether or not they've finished paying yet - matches the same
@@ -269,6 +285,12 @@ export default function AdminApplicationsPage() {
           isTestEvent={events.find((event) => event.id === reviewingApplication.eventId)?.isTestEvent ?? false}
           onClose={() => setReviewingApplication(null)}
           onDecide={decideReview}
+          onNicknameUpdated={(nickname) => {
+            setReviewingApplication((current) => current?.profile
+              ? { ...current, profile: { ...current.profile, nickname } }
+              : current);
+            void reload();
+          }}
         />
       ) : null}
     </main>
@@ -436,6 +458,7 @@ export function ReviewProfileModal({
   isTestEvent,
   onClose,
   onDecide,
+  onNicknameUpdated,
 }: {
   application: StoredApplication;
   capacityInfo?: { capacity: number; isFull: boolean; occupied: number } | null;
@@ -443,6 +466,7 @@ export function ReviewProfileModal({
   isTestEvent?: boolean;
   onClose: () => void;
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
+  onNicknameUpdated?: (nickname: string) => void;
 }) {
   const profile = application.profile;
   const [files, setFiles] = useState<AdminApplicationFiles | null>(null);
@@ -451,6 +475,11 @@ export function ReviewProfileModal({
   const [expandedPhoto, setExpandedPhoto] = useState<{ photos: SignedApplicationFile[]; index: number; title: string } | null>(null);
   const [deciding, setDeciding] = useState(false);
   const canReview = application.status === '심사 대기' || application.status === '참여 보류';
+  const [nickname, setNickname] = useState(profile?.nickname ?? '');
+  const [nicknameDraft, setNicknameDraft] = useState(profile?.nickname ?? '');
+  const [nicknameEditing, setNicknameEditing] = useState(false);
+  const [nicknameError, setNicknameError] = useState('');
+  const [nicknameSaving, setNicknameSaving] = useState(false);
   const [resettingPin, setResettingPin] = useState(false);
   const capacityBlocksApproval = Boolean(capacityInfo?.isFull);
 
@@ -487,6 +516,38 @@ export function ReviewProfileModal({
   useEffect(() => {
     void loadFiles();
   }, [application.dbId]);
+
+  useEffect(() => {
+    const nextNickname = profile?.nickname ?? '';
+    setNickname(nextNickname);
+    setNicknameDraft(nextNickname);
+    setNicknameEditing(false);
+    setNicknameError('');
+  }, [application.dbId, profile?.nickname]);
+
+  const saveNickname = async () => {
+    const nextNickname = nicknameDraft.trim();
+    if (!application.dbId || !nextNickname || nicknameSaving) return;
+    setNicknameSaving(true);
+    setNicknameError('');
+    try {
+      let result = await updateAdminApplicationNickname(application.dbId, nextNickname);
+      if (result.hasDuplicate && !result.updated) {
+        const confirmed = window.confirm('현재 행사에 동일한 닉네임이 있습니다. 그래도 이 닉네임으로 저장할까요?');
+        if (!confirmed) return;
+        result = await updateAdminApplicationNickname(application.dbId, nextNickname, true);
+      }
+      if (!result.updated) throw new Error('닉네임을 저장하지 못했습니다.');
+      setNickname(result.nickname);
+      setNicknameDraft(result.nickname);
+      setNicknameEditing(false);
+      onNicknameUpdated?.(result.nickname);
+    } catch (caughtError) {
+      setNicknameError(getActionErrorMessage(caughtError, '닉네임을 저장하지 못했습니다.'));
+    } finally {
+      setNicknameSaving(false);
+    }
+  };
 
   const requestDecision = async (status: '결제 대기' | '참여 보류' | '반려') => {
     if (!canDecide || deciding) return;
@@ -559,7 +620,52 @@ export function ReviewProfileModal({
                   <div className="flex min-w-0 items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-[22px] font-black">{profile.name}</p>
-                      <p className="mt-1 text-[15px] font-extrabold text-[#747b84]">{profile.nickname}</p>
+                      {nicknameEditing ? (
+                        <div className="mt-2 min-w-0">
+                          <input
+                            autoFocus
+                            className="h-10 w-full min-w-0 rounded-[12px] bg-meet-blueSoft px-3 text-[14px] font-black outline-none focus:ring-2 focus:ring-meet-blue"
+                            onChange={(event) => setNicknameDraft(event.target.value)}
+                            value={nicknameDraft}
+                          />
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              className="h-8 rounded-[10px] bg-meet-blue px-3 text-[12px] font-black text-white disabled:bg-[#d8dee6]"
+                              disabled={!nicknameDraft.trim() || nicknameSaving}
+                              onClick={() => void saveNickname()}
+                              type="button"
+                            >
+                              {nicknameSaving ? '저장 중' : '저장'}
+                            </button>
+                            <button
+                              className="h-8 rounded-[10px] bg-[#eef0f3] px-3 text-[12px] font-black text-[#555]"
+                              disabled={nicknameSaving}
+                              onClick={() => {
+                                setNicknameDraft(nickname);
+                                setNicknameEditing(false);
+                                setNicknameError('');
+                              }}
+                              type="button"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-1 flex min-w-0 items-center gap-2">
+                          <p className="min-w-0 break-words text-[15px] font-extrabold text-[#747b84]">{nickname}</p>
+                          {canReview ? (
+                            <button
+                              className="shrink-0 text-[12px] font-black text-meet-blue underline underline-offset-2"
+                              onClick={() => setNicknameEditing(true)}
+                              type="button"
+                            >
+                              수정
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                      {nicknameError ? <p className="mt-2 text-[12px] font-black leading-relaxed text-meet-pink">{nicknameError}</p> : null}
                     </div>
                     <p className="shrink-0 text-[15px] font-black text-[#263149]">{profile.phone}</p>
                   </div>
@@ -642,7 +748,9 @@ export function ReviewProfileModal({
                   <ReviewField label="6. 거주지" value={profile.residence} />
                   <ReviewField label="7. 전화번호" value={profile.phone} />
                   <ReviewField label="8. 결혼 및 교제 여부" value={profile.relationshipStatus} />
-                  <ReviewField label="10. 닉네임" value={profile.nickname} />
+                  <ReviewField label="이상형 / 호감 스타일" value={profile.preferredPartnerDescription || '미입력'} />
+                  <ReviewField label="겹치고 싶지 않은 인원" value={profile.avoidParticipantNote || '미입력'} />
+                  <ReviewField label="10. 닉네임" value={nickname} />
                   <ReviewField label="13. 키" value={`${profile.height}cm`} />
                   <ReviewField label="14. 직업" value={profile.job} />
                   <ReviewField label="16. 접속 경로" value={profile.accessRoute} />

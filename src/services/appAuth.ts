@@ -94,6 +94,7 @@ export async function fetchMyTabProfileAvatar() {
     return {
       avatarIndex: summary.avatarIndex,
       hasProfile: true,
+      photoCrop: summary.profilePhotoCrop,
       photoUrl: summary.profilePhotoUrl,
     };
   } catch {

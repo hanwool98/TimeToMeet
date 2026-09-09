@@ -605,6 +605,8 @@ export default function AdminEventParticipantsPage() {
                 <ProfileRow label="6. 거주지" value={previewParticipant.profile.residence} />
                 <ProfileRow label="7. 전화번호" value={previewParticipant.profile.phone} />
                 <ProfileRow label="8. 결혼 및 교제 여부" value={previewParticipant.profile.relationshipStatus} />
+                <ProfileRow label="이상형 / 호감 스타일" value={previewParticipant.profile.preferredPartnerDescription || '미입력'} />
+                <ProfileRow label="겹치고 싶지 않은 인원" value={previewParticipant.profile.avoidParticipantNote || '미입력'} />
                 <ProfileImageSection
                   file={previewFiles?.idPhoto}
                   filesError={previewFilesError}

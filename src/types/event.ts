@@ -7,6 +7,7 @@ export interface EventData {
   startTime: string;
   endTime: string;
   location: string;
+  nicknameInstruction?: string;
   venueBooked: boolean;
   venueDetail?: string;
   malePrice: number;

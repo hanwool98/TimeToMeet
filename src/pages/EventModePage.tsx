@@ -365,9 +365,9 @@ function ParticipantEventScreen({
     return <BonusMatchingScreen onBack={onBack} />;
   }
 
-  // 추가시간 통합 phase: 방금 끝난 상대에 대한 호감도 수정과(있다면) 다음
+  // 추가시간 통합 1분 phase: 방금 끝난 상대에 대한 호감도 수정과(있다면) 다음
   // 상대 자리 이동 안내를 한 화면에서 같이 보여준다 - 예전에는 이게
-  // bonus_rating(1분, 수정만) + bonus_seat_guide(2분, 안내만) 두 단계였다.
+  // bonus_rating(수정만) + bonus_seat_guide(안내만) 두 단계였다.
   if (progress.stage === 'bonus_seat_guide') {
     return (
       <BonusSeatGuideScreen
@@ -1606,12 +1606,12 @@ function guidanceFontStyle(text: string): CSSProperties {
   return { fontSize };
 }
 
-// 첨부 와이어프레임이 이 화면(자리 이동 2분 phase)의 최종 디자인이므로
+// 첨부 와이어프레임이 이 화면(자리 이동 1분 phase)의 최종 디자인이므로
 // 카드 구조/색감/배치를 그대로 재현한다. 남/여 안내 문구만 성별에 따라
 // 분기하고, 참가자에게는 숫자 테이블 번호를 절대 노출하지 않는다 -
 // event_table_assignments.table_number는 useHelpRequest로 운영자 호출
 // 컨텍스트에만 조용히 전달된다.
-// 추가시간 통합 2분 phase: 방금 끝난 대화 상대에 대한 호감도/메모/해시태그
+// 추가시간 통합 1분 phase: 방금 끝난 대화 상대에 대한 호감도/메모/해시태그
 // 수정(RatingForm, submitMyBonusRating이 원래 정규 라운드 행을 그대로
 // upsert)과, 다음 추가시간이 남아있을 때만 그 상대의 자리 이동 안내를 한
 // 화면에서 같이 보여준다. 마지막 추가시간이면(progress.nextPartnerNickname
@@ -1643,7 +1643,7 @@ function BonusSeatGuideScreen({
 
   // reveal(자리이동 안내 전용, 첫 추가시간 진입 시) 동안에는 호감도를
   // 수정할 대상 자체가 없으므로 폼을 절대 보여주지 않는다. transition
-  // (2분, 두 번째 추가시간부터) 동안은 제출 여부에 따라 폼과 "행운의
+  // (1분, 두 번째 추가시간부터) 동안은 제출 여부에 따라 폼과 "행운의
   // 상대" 리빌을 배타적으로 보여준다 - 서버가 계산해 내려주는
   // hasSubmittedBonusRating이 새로고침에도 살아남는 기준이고,
   // locallySubmitted는 제출 버튼을 누른 즉시 다음 폴링을 기다리지 않고
@@ -1673,7 +1673,8 @@ function BonusSeatGuideScreen({
         if (active) setPhoto(result);
       })
       .catch(() => undefined);
-    void fetchMyBonusRating(eventId)
+    if (!progress.currentRound || !progress.partnerApplicationId) return undefined;
+    void fetchMyBonusRating(eventId, progress.currentRound, progress.partnerApplicationId)
       .then((existing) => {
         if (!active) return;
         if (existing.score !== undefined) setScore(existing.score);
@@ -1683,7 +1684,7 @@ function BonusSeatGuideScreen({
     return () => {
       active = false;
     };
-  }, [eventId, isReveal, progress.partnerApplicationId]);
+  }, [eventId, isReveal, progress.currentRound, progress.partnerApplicationId]);
 
   useEffect(() => {
     let active = true;
@@ -1727,7 +1728,8 @@ function BonusSeatGuideScreen({
     // 화면을 덮어쓰지 않게 잠깐 막아둔다.
     onCriticalSubmitStart();
     try {
-      await submitMyBonusRating(eventId, score, memo);
+      if (!progress.currentRound || !progress.partnerApplicationId) throw new Error('추가시간 상대 정보를 찾을 수 없습니다.');
+      await submitMyBonusRating(eventId, progress.currentRound, progress.partnerApplicationId, score, memo);
       setLocallySubmitted(true);
     } catch (caughtError) {
       setSubmitError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
@@ -1737,7 +1739,7 @@ function BonusSeatGuideScreen({
     }
   };
 
-  // 2분이 끝나기 전까지 수정하지 않으면 마지막으로 입력한 값을 그대로
+  // 1분이 끝나기 전까지 수정하지 않으면 마지막으로 입력한 값을 그대로
   // 저장해둔다(호감도를 아예 고르지 않았다면 0점을 임의로 만들지 않고
   // 그대로 둔다 - 정규 라운드에서 이미 남긴 원래 점수가 유지된다). 이
   // 자동 제출도 handleSubmit과 동일하게 poll을 잠깐 막아둔다 - 오히려
@@ -1746,13 +1748,14 @@ function BonusSeatGuideScreen({
   // 요청과 poll이 거의 동시에 서버로 향할 수 있다.
   useEffect(() => {
     if (isReveal || remaining > 0 || autoSubmitted || score === null || submitting) return;
+    if (!progress.currentRound || !progress.partnerApplicationId) return;
     setAutoSubmitted(true);
     onCriticalSubmitStart();
-    void submitMyBonusRating(eventId, score, memo)
+    void submitMyBonusRating(eventId, progress.currentRound, progress.partnerApplicationId, score, memo)
       .then(() => setLocallySubmitted(true))
       .catch(() => undefined)
       .finally(() => onCriticalSubmitEnd());
-  }, [autoSubmitted, eventId, isReveal, memo, onCriticalSubmitEnd, onCriticalSubmitStart, remaining, score, submitting]);
+  }, [autoSubmitted, eventId, isReveal, memo, onCriticalSubmitEnd, onCriticalSubmitStart, progress.currentRound, progress.partnerApplicationId, remaining, score, submitting]);
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">

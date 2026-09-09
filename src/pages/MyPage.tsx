@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
+import ParticipantPhoto from '../components/ParticipantPhoto';
 import { clearAppSession, getAppSession } from '../services/appAuth';
 import { fetchMyPageSummary, fetchMySessionPhone, type MyPageSummary } from '../services/participantProfiles';
+import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 const menuItems = [
   { icon: 'profile', label: '참가 프로필', path: '/mypage/profile' },
@@ -116,7 +118,7 @@ export default function MyPage() {
         <section className="rounded-[24px] border border-[#eaf3fb] bg-white p-4 shadow-calendar min-[380px]:p-5">
           {loggedIn ? (
             <div className="grid min-w-0 grid-cols-[78px_minmax(0,1fr)] items-center gap-4">
-              <ProfileAvatar hasProfile={Boolean(summary?.hasProfile)} photoUrl={summary?.profilePhotoUrl} />
+              <ProfileAvatar crop={summary?.profilePhotoCrop} hasProfile={Boolean(summary?.hasProfile)} photoUrl={summary?.profilePhotoUrl} />
               <div className="min-w-0">
                 <h2 className="overflow-hidden text-ellipsis whitespace-nowrap text-[22px] font-black leading-tight">
                   {loading ? '불러오는 중' : summary?.nickname || '프로필 없음'}
@@ -178,7 +180,7 @@ export default function MyPage() {
   );
 }
 
-function ProfileAvatar({ hasProfile, photoUrl }: { hasProfile: boolean; photoUrl?: string }) {
+function ProfileAvatar({ crop, hasProfile, photoUrl }: { crop?: RepresentativeCrop; hasProfile: boolean; photoUrl?: string }) {
   if (!hasProfile || !photoUrl) {
     return (
       <span className="grid h-[78px] w-[78px] place-items-center rounded-full bg-[#d9d9d9] text-white ring-4 ring-white shadow-sm">
@@ -187,13 +189,7 @@ function ProfileAvatar({ hasProfile, photoUrl }: { hasProfile: boolean; photoUrl
     );
   }
 
-  return (
-    <img
-      alt="내 대표사진"
-      className="h-[78px] w-[78px] rounded-full object-cover ring-4 ring-white shadow-sm"
-      src={photoUrl}
-    />
-  );
+  return <ParticipantPhoto className="rounded-full bg-[#d9d9d9] ring-4 ring-white shadow-sm" crop={crop} photoUrl={photoUrl} sizePx={78} />;
 }
 
 function MenuIcon({ name }: { name: string }) {
