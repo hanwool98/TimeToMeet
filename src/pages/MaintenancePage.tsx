@@ -120,7 +120,7 @@ export default function MaintenancePage({ onBypass }: MaintenancePageProps) {
             </span>
             <div className="min-w-0">
               <p className="text-[15px] font-medium text-[#71809f]">예상 패치 종료 시간</p>
-              <p className="mt-1 break-keep text-[20px] font-extrabold leading-8 text-[#17223c]">2026년 9월 8일 (화) 12:00</p>
+              <p className="mt-1 break-keep text-[20px] font-extrabold leading-8 text-[#17223c]">2026년 9월 10일 (목) 오후 12:00</p>
             </div>
           </div>
 
