@@ -157,7 +157,7 @@ export default function ReviewFormPage() {
           <>
             {eventTitle ? <p className="-mt-2 text-center text-[13px] font-bold text-[#999]">{eventTitle}</p> : null}
 
-            <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+            <section className="rounded-[24px] bg-white p-5 shadow-calendar">
               <div className="mb-5">
                 <p className="text-[13px] font-black text-[#666]">별점</p>
                 <div className="mt-2 flex items-center gap-1.5">

@@ -55,7 +55,7 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
           trackClassName="-mr-5 pr-5"
           renderItem={(event) => (
             <button
-              className="flex w-full items-stretch gap-3.5 rounded-[18px] border border-[#eef0f2] bg-white p-3.5 text-left shadow-[0_8px_22px_rgba(30,43,63,0.07)] transition active:scale-[0.99]"
+              className="flex w-full items-stretch gap-3.5 rounded-[18px] bg-white p-3.5 text-left shadow-card transition active:scale-[0.99]"
               onClick={() => navigate(`/events/${event.id}`)}
               type="button"
             >

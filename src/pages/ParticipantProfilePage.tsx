@@ -87,7 +87,7 @@ export default function ParticipantProfilePage() {
       <div className="mobile-container mx-auto w-full max-w-full min-w-0">
         <ShellHeader onBack={() => navigate(-1)} />
 
-        <section className="mt-8 rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+        <section className="mt-8 rounded-[24px] bg-white p-5 shadow-calendar">
           <h1 className="text-[28px] font-black leading-tight">참가 프로필</h1>
           <p className="mt-3 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#777]">
             {isMember
@@ -108,7 +108,7 @@ export default function ParticipantProfilePage() {
           />
         ) : (
           <div className="mt-7 space-y-6">
-            <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+            <section className="rounded-[24px] bg-white p-5 shadow-calendar">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[13px] font-black text-meet-blue">
@@ -164,7 +164,7 @@ export default function ParticipantProfilePage() {
               </div>
             </section>
 
-            <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+            <section className="rounded-[24px] bg-white p-5 shadow-calendar">
               <h2 className="text-[21px] font-black">주요 정보 변경</h2>
               <p className="mt-3 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#777]">
                 주요 정보가 변경되었다면 새 프로필을 작성해주세요.
@@ -196,7 +196,7 @@ function ShellHeader({ onBack }: { onBack: () => void }) {
 
 function EmptyCard({ buttonLabel, message, onClick }: { buttonLabel?: string; message: string; onClick?: () => void }) {
   return (
-    <section className="mt-7 rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+    <section className="mt-7 rounded-[24px] bg-white p-6 text-center shadow-calendar">
       <p className="text-fluid-safe text-[16px] font-black text-[#777]">{message}</p>
       {buttonLabel && onClick ? (
         <PrimaryButton className="mt-5" onClick={onClick}>

@@ -36,7 +36,7 @@ export default function HomeReasonSection() {
           trackClassName="-mr-5 pr-5"
           renderItem={(content, index) => (
             <ParticipantPhoto
-              className="w-full rounded-[16px] shadow-[0_8px_22px_rgba(30,43,63,0.08)]"
+              className="w-full rounded-[16px] shadow-card"
               crop={content.cropPosition}
               fallback={<span className="text-[11px] font-bold">이미지 {index + 1}</span>}
               photoUrl={content.imageUrl}
@@ -56,7 +56,7 @@ export default function HomeReasonSection() {
 function ReasonHeroCard({ loading }: { loading: boolean }) {
   return (
     <div
-      className="relative w-[87vw] max-w-[372px] overflow-hidden rounded-[16px] shadow-[0_8px_22px_rgba(30,43,63,0.08)]"
+      className="relative w-[87vw] max-w-[372px] overflow-hidden rounded-[16px] shadow-card"
       style={{ aspectRatio: HOME_BANNER_ASPECT }}
     >
       <img alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" src={heroImage} />

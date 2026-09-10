@@ -67,7 +67,7 @@ export default function ParticipantList({ title, participants, capacity, onProfi
   const currentlyPlayingId = useSyncExternalStore(subscribePlayback, getPlayingParticipantId);
 
   return (
-    <section className="min-w-0 flex-1 rounded-[24px] border border-[#f0f3f6] bg-white px-1.5 py-3 shadow-calendar">
+    <section className="min-w-0 flex-1 rounded-[24px] bg-white px-1.5 py-3 shadow-calendar">
       <h2 className="mx-auto mb-2 grid h-8 w-14 place-items-center rounded-full bg-meet-blueSoft text-center text-[18px] font-black text-black">
         {title}
       </h2>

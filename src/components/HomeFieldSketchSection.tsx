@@ -31,7 +31,7 @@ export default function HomeFieldSketchSection() {
       {preview.length > 0 ? (
         <div className="grid grid-cols-3 gap-2">
           {preview.map((sketch) => (
-            <div className="relative overflow-hidden rounded-[12px] shadow-[0_5px_14px_rgba(30,43,63,0.09)]" key={sketch.id}>
+            <div className="relative overflow-hidden rounded-[12px] shadow-card" key={sketch.id}>
               <ParticipantPhoto
                 className="w-full bg-[#f1f3f5]"
                 crop={sketch.cropPosition}

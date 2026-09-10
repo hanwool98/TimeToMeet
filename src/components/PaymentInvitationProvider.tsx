@@ -198,7 +198,7 @@ function InvitationModal({
       role="dialog"
     >
       <section
-        className="relative w-full max-w-[330px] rounded-[30px] bg-white px-5 pb-5 pt-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.22)] outline-none payment-invitation-card min-[390px]:max-w-[360px] min-[390px]:px-6"
+        className="relative w-full max-w-[330px] rounded-[24px] bg-white px-5 pb-5 pt-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.22)] outline-none payment-invitation-card min-[390px]:max-w-[360px] min-[390px]:px-6"
         onClick={(event) => event.stopPropagation()}
         ref={refTarget}
         tabIndex={-1}

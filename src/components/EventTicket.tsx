@@ -148,7 +148,7 @@ export function QrModal({ onClose, ticket }: { onClose: () => void; ticket: MyEv
 
   return (
     <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onClose} role="dialog">
-      <section className="w-full max-w-[340px] rounded-[28px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
+      <section className="w-full max-w-[340px] rounded-[24px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
         <button aria-label="QR 닫기" className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-[#f2f2f2] text-[20px] font-black" onClick={onClose} type="button">
           ×
         </button>

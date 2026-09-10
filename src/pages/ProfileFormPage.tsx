@@ -158,7 +158,7 @@ function Section({ children, title, numbered = true }: { children: React.ReactNo
     heading = `${counter.current}. ${title}`;
   }
   return (
-    <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
+    <section className="w-full max-w-full min-w-0 rounded-[24px] bg-white p-4 shadow-calendar min-[380px]:p-5">
       <h2 className="mb-5 text-fluid-safe text-[22px] font-black leading-tight">{heading}</h2>
       {children}
     </section>
@@ -834,7 +834,7 @@ export default function ProfileFormPage() {
     return (
       <main className="app-page min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black">
         <div className="mobile-container mx-auto">
-          <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <section className="rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <h1 className="text-[24px] font-black leading-tight">신청할 행사를 찾을 수 없습니다</h1>
             <p className="mt-4 text-[14px] font-extrabold leading-relaxed text-[#777]">
               행사 선택 화면에서 신청할 날짜를 다시 선택해주세요. 임의의 행사로 신청되지는 않습니다.
@@ -852,7 +852,7 @@ export default function ProfileFormPage() {
     return (
       <main className="app-page min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black">
         <div className="mobile-container mx-auto">
-          <section className="rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <section className="rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <h1 className="text-[24px] font-black leading-tight">신청이 마감되었습니다</h1>
             <p className="mt-4 text-[14px] font-extrabold leading-relaxed text-[#777]">이 행사는 신청 접수가 종료되었습니다. 다른 행사 일정을 확인해주세요.</p>
             <Link className="mt-6 block h-14 rounded-[18px] bg-meet-blue px-5 py-4 text-[16px] font-extrabold text-white" to="/">
@@ -867,7 +867,7 @@ export default function ProfileFormPage() {
   return (
     <main className="app-page min-h-screen w-full max-w-full min-w-0 overflow-x-hidden bg-white px-3 py-12 text-black min-[380px]:px-4">
       <div className="mobile-container mx-auto w-full max-w-full min-w-0">
-        <header className="relative mb-8 rounded-[30px] border border-[#f0f3f6] bg-white px-4 pb-7 pt-16 text-center shadow-calendar min-[380px]:px-5">
+        <header className="relative mb-8 rounded-[24px] bg-white px-4 pb-7 pt-16 text-center shadow-calendar min-[380px]:px-5">
           <button aria-label="뒤로 가기" className="absolute left-5 top-5 grid h-10 w-10 place-items-center text-black" onClick={() => navigate(-1)} type="button">
             <BackIcon />
           </button>

@@ -64,7 +64,7 @@ export default function DateTimePicker({ min, onChange, placeholder = '날짜/�
           onClick={() => setOpen(false)}
           role="dialog"
         >
-          <section className="w-full max-w-[360px] rounded-[28px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
+          <section className="w-full max-w-[360px] rounded-[24px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-[18px] font-black text-black">날짜/시간 선택</h2>
               <button

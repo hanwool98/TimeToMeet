@@ -111,7 +111,7 @@ export default function PaymentPendingPage() {
 
               <MiniTicket ticket={ticket} />
 
-              <section className="rounded-[16px] border border-[#f0f3f6] bg-white p-4 shadow-sm">
+              <section className="rounded-[16px] bg-white p-4 shadow-sm">
                 <p className="text-[14px] font-black text-[#777]">결제 금액</p>
                 <p className="mt-3 text-[31px] font-black">{formatWon(ticket.paymentAmount)}</p>
               </section>

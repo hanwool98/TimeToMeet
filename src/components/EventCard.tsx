@@ -15,7 +15,7 @@ export default function EventCard({ selectedDateLabel, event, onApply, blockedMe
   const isBlocked = Boolean(blockedMessage);
 
   return (
-    <section className="w-full rounded-[28px] bg-meet-blueSoft px-4 py-6 min-[380px]:px-5">
+    <section className="w-full rounded-[24px] bg-meet-blueSoft px-4 py-6 min-[380px]:px-5">
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px] font-extrabold text-[#8a8a8a] min-[380px]:text-[15px]">
         <span className="min-w-0 text-fluid-safe">{hasEvent ? selectedDateLabel : '선택된 날짜'}</span>
         {event ? <span>{event.startTime}</span> : null}

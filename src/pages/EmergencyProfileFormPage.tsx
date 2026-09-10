@@ -194,7 +194,7 @@ export default function EmergencyProfileFormPage() {
   if (!token || !event) {
     return (
       <main className="grid min-h-screen w-full place-items-center bg-white px-4 text-center text-black">
-        <section className="w-full max-w-[390px] rounded-[30px] border border-[#f0f3f6] bg-white p-6 shadow-calendar">
+        <section className="w-full max-w-[390px] rounded-[24px] bg-white p-6 shadow-calendar">
           <p className="text-[18px] font-black">링크가 만료되었거나 유효하지 않습니다</p>
           <p className="mt-3 text-[14px] font-bold text-[#888]">운영자에게 새 링크를 요청해주세요.</p>
         </section>
@@ -205,7 +205,7 @@ export default function EmergencyProfileFormPage() {
   if (submitted) {
     return (
       <main className="grid min-h-screen w-full place-items-center bg-white px-4 text-center text-black">
-        <section className="w-full max-w-[390px] rounded-[30px] border border-[#f0f3f6] bg-white p-6 shadow-calendar">
+        <section className="w-full max-w-[390px] rounded-[24px] bg-white p-6 shadow-calendar">
           <p className="text-[18px] font-black">제출이 완료되었습니다</p>
           <p className="mt-3 text-[14px] font-bold text-[#888]">운영자가 확인하는 대로 바로 행사에 참여하실 수 있어요. 잠시만 기다려주세요.</p>
           <button
@@ -223,7 +223,7 @@ export default function EmergencyProfileFormPage() {
   return (
     <main className="min-h-screen w-full max-w-full min-w-0 bg-white px-2 py-10 text-black">
       <div className="mobile-container mx-auto flex w-full max-w-full min-w-0 flex-col gap-4">
-        <section className="relative w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-14 shadow-calendar">
+        <section className="relative w-full max-w-full min-w-0 rounded-[24px] bg-white px-2.5 pb-6 pt-14 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[70px] w-[70px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[16px] font-black text-black shadow-sm">
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
@@ -236,7 +236,7 @@ export default function EmergencyProfileFormPage() {
           </div>
         </section>
 
-        <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
+        <section className="w-full max-w-full min-w-0 rounded-[24px] bg-white p-4 shadow-calendar min-[380px]:p-5">
           <FormField label="닉네임">
             <input
               className="h-12 w-full rounded-[14px] bg-meet-blueSoft px-4 text-[15px] font-bold outline-none"

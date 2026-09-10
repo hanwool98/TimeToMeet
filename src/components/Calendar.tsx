@@ -60,22 +60,22 @@ export default function Calendar({
   };
 
   return (
-    <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-5 pt-5 shadow-calendar min-[380px]:px-4 sm:px-6">
-      <div className="mb-6 flex items-center justify-between gap-2">
+    <section className="w-full rounded-[24px] bg-white px-2.5 pb-5 pt-5 shadow-calendar min-[380px]:px-4 sm:px-6">
+      <div className="mb-5 flex items-center justify-between gap-2">
         <button
           aria-label="이전 달 보기"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f7f7f7] text-3xl font-bold text-black transition hover:bg-slate-100 min-[380px]:h-11 min-[380px]:w-11"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f4f4f4] text-xl font-bold text-[#666] transition hover:bg-slate-100 min-[380px]:h-8 min-[380px]:w-8"
           onClick={() => moveMonth(-1)}
           type="button"
         >
           ‹
         </button>
-        <h2 className="min-w-0 text-center text-[21px] font-black tracking-normal text-black min-[380px]:text-[23px]">
+        <h2 className="min-w-0 text-center text-[19px] font-black tracking-normal text-black min-[380px]:text-[20px]">
           {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
         </h2>
         <button
           aria-label="다음 달 보기"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f7f7f7] text-3xl font-bold text-black transition hover:bg-slate-100 min-[380px]:h-11 min-[380px]:w-11"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f4f4f4] text-xl font-bold text-[#666] transition hover:bg-slate-100 min-[380px]:h-8 min-[380px]:w-8"
           onClick={() => moveMonth(1)}
           type="button"
         >
@@ -114,10 +114,8 @@ export default function Calendar({
             <button
               aria-label={`${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 선택`}
               className={[
-                'mx-auto flex w-full max-w-[46px] flex-col items-center justify-start px-0.5 pt-2 transition min-[380px]:max-w-[50px]',
-                selected
-                  ? 'h-[68px] rounded-[18px] bg-meet-blue text-white min-[380px]:h-[74px] min-[380px]:rounded-[20px]'
-                  : 'h-[68px] rounded-[18px] bg-transparent hover:bg-slate-50 min-[380px]:h-[74px] min-[380px]:rounded-[20px]',
+                'mx-auto flex h-[68px] w-full max-w-[46px] flex-col items-center justify-start px-0.5 pt-1.5 transition min-[380px]:h-[74px] min-[380px]:max-w-[50px]',
+                selected ? '' : 'rounded-[13px] hover:bg-slate-50',
               ].join(' ')}
               key={dateKey}
               onClick={() => onSelectDate(date)}
@@ -125,27 +123,34 @@ export default function Calendar({
             >
               <span
                 className={[
-                  'grid h-7 min-w-7 place-items-center rounded-full text-[18px] font-black leading-none min-[380px]:h-8 min-[380px]:min-w-8 min-[380px]:text-[20px]',
-                  current && !selected ? 'bg-black text-white' : '',
-                  selected ? 'text-white' : '',
-                  !selected && !current && isSunday ? 'text-meet-pink' : '',
-                  !selected && !current && isSaturday ? 'text-meet-blue' : '',
-                  !selected && !current && !isSunday && !isSaturday ? 'text-black' : '',
+                  'flex w-full flex-col items-center rounded-[13px] px-1 pb-1.5 pt-1 min-[380px]:rounded-[14px]',
+                  selected ? 'bg-meet-blue text-white' : '',
                 ].join(' ')}
               >
-                {date.getDate()}
-              </span>
-              {event ? (
                 <span
                   className={[
-                    'mt-1 flex min-h-[28px] w-full flex-col items-center justify-center rounded-[11px] px-0.5 text-center text-[7px] font-extrabold leading-[1.08] min-[380px]:min-h-[31px] min-[380px]:rounded-[12px] min-[380px]:text-[8px]',
-                    selected ? 'bg-white/20 text-white' : 'bg-meet-pinkSoft text-meet-pink',
+                    'grid h-7 min-w-7 place-items-center rounded-full text-[18px] font-black leading-none min-[380px]:h-8 min-[380px]:min-w-8 min-[380px]:text-[20px]',
+                    current && !selected ? 'bg-black text-white' : '',
+                    selected ? 'text-white' : '',
+                    !selected && !current && isSunday ? 'text-meet-pink' : '',
+                    !selected && !current && isSaturday ? 'text-meet-blue' : '',
+                    !selected && !current && !isSunday && !isSaturday ? 'text-black' : '',
                   ].join(' ')}
                 >
-                  <span>{event.shortName}</span>
-                  <span>({event.currentParticipants}/{event.targetParticipants})</span>
+                  {date.getDate()}
                 </span>
-              ) : null}
+                {event ? (
+                  <span
+                    className={[
+                      'mt-1 flex min-h-[28px] w-full flex-col items-center justify-center rounded-[11px] px-0.5 text-center text-[7px] font-extrabold leading-[1.08] min-[380px]:min-h-[31px] min-[380px]:rounded-[12px] min-[380px]:text-[8px]',
+                      selected ? 'bg-white/25 text-white' : 'bg-meet-pinkSoft text-meet-pink',
+                    ].join(' ')}
+                  >
+                    <span>{event.shortName}</span>
+                    <span>({event.currentParticipants}/{event.targetParticipants})</span>
+                  </span>
+                ) : null}
+              </span>
             </button>
           );
         })}

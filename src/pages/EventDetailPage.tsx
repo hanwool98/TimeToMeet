@@ -28,7 +28,7 @@ export default function EventDetailPage() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
-        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
+        <section className="relative rounded-[24px] bg-white px-2.5 pb-6 pt-16 shadow-calendar">
           <div className="absolute left-1/2 top-0 grid h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-meet-blueSoft text-[18px] font-black text-black shadow-sm">
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
@@ -41,7 +41,7 @@ export default function EventDetailPage() {
             </p>
           </div>
 
-          <div className="mt-5 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="mt-5 rounded-[16px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             {!event ? (
               <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
             ) : isParticipantListPublic(event.date, event.startTime) ? (

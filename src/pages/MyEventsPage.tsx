@@ -236,7 +236,7 @@ function ReasonModal({
   return (
     <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onClose} role="dialog">
       <section
-        className="flex max-h-[85dvh] w-full max-w-[340px] flex-col overflow-hidden rounded-[28px] bg-white shadow-calendar"
+        className="flex max-h-[85dvh] w-full max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-white shadow-calendar"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="min-h-0 overflow-y-auto p-6 text-center">

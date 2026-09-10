@@ -32,7 +32,7 @@ export default function HomeRecruitmentSection() {
           trackClassName="-mr-5 pr-5"
           renderItem={(content, index) => (
             <ParticipantPhoto
-              className="w-full rounded-[16px] shadow-[0_8px_22px_rgba(30,43,63,0.08)]"
+              className="w-full rounded-[16px] shadow-card"
               crop={content.cropPosition}
               fallback={<span className="text-[11px] font-bold">이미지 {index + 1}</span>}
               photoUrl={content.imageUrl}
@@ -42,7 +42,7 @@ export default function HomeRecruitmentSection() {
         />
       ) : (
         <div
-          className="relative -mr-5 overflow-hidden rounded-[16px] bg-[#efe7da] shadow-[0_8px_22px_rgba(30,43,63,0.08)]"
+          className="relative -mr-5 overflow-hidden rounded-[16px] bg-[#efe7da] shadow-card"
           style={{ aspectRatio: HOME_BANNER_ASPECT }}
         >
           <span className="pointer-events-none absolute -bottom-3 right-10 text-[64px] leading-none text-[#e3dbcc]">♥</span>

@@ -59,7 +59,7 @@ function ReviewCard({ onOpen, review }: { onOpen: () => void; review: PublicHome
 
   return (
     <div
-      className={`flex ${REVIEW_CARD_HEIGHT} w-full flex-col rounded-[16px] bg-white p-4 shadow-[0_6px_16px_rgba(30,43,63,0.08)] ring-1 ring-[#f0f1f3]`}
+      className={`flex ${REVIEW_CARD_HEIGHT} w-full flex-col rounded-[16px] bg-white p-4 shadow-card`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-[11px] font-black text-meet-pink">{formatWho(review)}</p>

@@ -94,11 +94,11 @@ export default function TicketDetailPage() {
 
         {ticket.status === '참가 확정' ? (
           <>
-            <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-6 shadow-calendar">
+            <section className="rounded-[24px] bg-white p-6 shadow-calendar">
               <TicketQrDisplay ticket={ticket} />
             </section>
 
-            <section className="rounded-[24px] bg-meet-blueSoft p-5">
+            <section className="rounded-[16px] bg-meet-blueSoft p-5">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="shrink-0 text-[15px] font-black text-[#555]">행사 장소</h2>
                 {naverMapUrl ? (
@@ -169,7 +169,7 @@ function TicketParticipantPreview({ eventId }: { eventId: string }) {
   return (
     <section>
       <h2 className="px-1 text-[15px] font-black text-[#555]">참가자리스트</h2>
-      <div className="mt-3 rounded-[26px] bg-meet-blueSoft p-1.5">
+      <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-1.5">
         {isParticipantListPublic(event?.date, event?.startTime) ? (
           <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
             <ParticipantList capacity={maleCapacity} participants={participants.filter((participant) => participant.gender === 'male')} title="남" />

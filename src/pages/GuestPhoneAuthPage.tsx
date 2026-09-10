@@ -81,7 +81,7 @@ export default function GuestPhoneAuthPage() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-4 py-12 text-black min-[380px]:px-5">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] flex-col justify-center">
-        <section className="relative rounded-[30px] border border-[#f0f3f6] bg-white px-7 pb-9 pt-28 shadow-calendar">
+        <section className="relative rounded-[24px] bg-white px-7 pb-9 pt-28 shadow-calendar">
           <button
             aria-label="뒤로 가기"
             className="absolute left-5 top-5 grid h-11 w-11 place-items-center text-black transition hover:opacity-70"

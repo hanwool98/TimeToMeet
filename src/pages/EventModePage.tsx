@@ -267,7 +267,7 @@ export default function EventModePage() {
     return (
       <main className="min-h-screen overflow-x-hidden bg-white px-4 pt-12 text-black min-[380px]:px-5">
         <div className="mobile-container mx-auto grid min-h-[calc(100dvh-6rem)] place-items-center">
-          <section className="w-full rounded-[30px] bg-white p-6 text-center shadow-calendar">
+          <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <p className="text-[14px] font-black text-meet-blue">입장 확인 필요</p>
             <h1 className="mt-3 text-[27px] font-black leading-tight">아직 입장할 수 없어요</h1>
             <p className="mt-4 text-[15px] font-extrabold leading-relaxed text-[#777]">행사 당일 운영자의 QR 인증 후 입장할 수 있어요.</p>
@@ -388,7 +388,7 @@ function ParticipantEventScreen({
       <div className="px-4 pt-12 min-[380px]:px-5">
         <ScreenHeader onBack={onBack} />
         <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
-          <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <p className="text-[18px] font-black leading-tight">이번 라운드는 잠시 쉬어가는 시간이에요</p>
             <p className="mt-3 text-[14px] font-extrabold text-[#888]">다음 라운드부터 다시 만남이 이어집니다</p>
           </section>
@@ -421,7 +421,7 @@ function ParticipantEventScreen({
       <div className="px-4 pt-12 min-[380px]:px-5">
         <ScreenHeader onBack={onBack} />
         <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
-          <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+          <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <p className="text-[18px] font-black leading-tight">잠시 쉬어가는 시간이에요</p>
             <p className="mt-3 text-[14px] font-extrabold text-[#888]">곧 다음 안내가 시작됩니다</p>
           </section>
@@ -434,7 +434,7 @@ function ParticipantEventScreen({
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} />
       <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
-        <section className="w-full rounded-[30px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+        <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
           <p className="text-[18px] font-black leading-tight">행사가 마무리되었습니다</p>
           <p className="mt-3 text-[14px] font-extrabold text-[#888]">잠시만 기다려주세요</p>
         </section>
@@ -446,7 +446,7 @@ function ParticipantEventScreen({
 function ScreenHeader({ onBack, title }: { onBack: () => void; title?: string }) {
   const navigate = useNavigate();
   return (
-    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2 rounded-[20px] border border-[#f0f3f6] bg-white px-2 py-2 shadow-calendar">
+    <header className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2 rounded-[20px] bg-white px-2 py-2 shadow-calendar">
       <button aria-label="뒤로가기" className="grid h-10 w-10 shrink-0 place-items-center text-[#333]" onClick={onBack} type="button">
         <BackIcon />
       </button>
@@ -895,7 +895,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-6 text-center shadow-calendar">
+        <section className="rounded-[24px] bg-white p-6 text-center shadow-calendar">
           <div ref={cardCaptureRef}>
           <div className="relative mx-auto w-fit rounded-full bg-gradient-to-br from-meet-pinkSoft via-white to-meet-blueSoft p-[3px]">
             <ParticipantPhoto
@@ -933,7 +933,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
             <CardField label="연인과 함께 가고 싶은 곳" onChange={setDateDestination} placeholder="예) 한강, 바다, 일본여행" value={dateDestination} />
           </div>
 
-          <div className="mt-3 rounded-[16px] border border-[#f0f3f6] bg-white p-3 text-left shadow-sm">
+          <div className="mt-3 rounded-[16px] bg-white p-3 text-left shadow-sm">
             <p className="text-[12px] font-black text-[#888]">흡연 및 음주</p>
             <input
               className="mt-1.5 h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2.5 text-[13px] font-bold outline-none"
@@ -1004,7 +1004,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           </button>
         </section>
 
-        <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-4 shadow-calendar">
+        <section className="rounded-[24px] bg-white p-4 shadow-calendar">
           <p className="mb-2 flex items-center gap-2 text-[12px] font-bold text-[#999]">
             <CalendarGlyph />
             {eventTitle}
@@ -1079,7 +1079,7 @@ function CardField({
   value: string;
 }) {
   return (
-    <div className="rounded-[16px] border border-[#f0f3f6] bg-white p-3 shadow-sm">
+    <div className="rounded-[16px] bg-white p-3 shadow-sm">
       <p className="text-[11.5px] font-black text-[#9aa0a8]">{label}</p>
       <input
         className="mt-1.5 h-9 w-full rounded-[10px] bg-[#f7f8fa] px-2.5 text-[13px] font-bold text-[#222] outline-none"
@@ -1357,7 +1357,7 @@ function ConversationScreen({
       <ScreenHeader onBack={onBack} />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-8 text-center shadow-calendar">
+        <section className="rounded-[24px] bg-white px-6 py-8 text-center shadow-calendar">
           <p className="text-[15px] font-black text-meet-blue">현재 대화 중</p>
           <ParticipantPhoto
             className="mx-auto mt-4 rounded-full bg-[#f5f7fa]"
@@ -1384,7 +1384,7 @@ function ConversationScreen({
           {card ? <PartnerProfileCardDetails card={card} keywordOptions={keywordOptions} /> : null}
         </section>
 
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+        <section className="rounded-[24px] bg-white p-5 shadow-calendar">
           <h2 className="text-[16px] font-black">도움이 필요할 때</h2>
 
           <div className="mt-4 space-y-1.5">
@@ -1455,7 +1455,7 @@ function PartnerProfileCardDetails({ card, keywordOptions }: { card: PartnerEven
       {filledFields.length > 0 ? (
         <div className="grid grid-cols-2 gap-2.5">
           {filledFields.map((field) => (
-            <div className="rounded-[14px] border border-[#f0f3f6] bg-[#fafbfc] p-3" key={field.key}>
+            <div className="rounded-[14px] bg-[#fafbfc] p-3" key={field.key}>
               <p className="text-[10.5px] font-black text-[#9aa0a8]">{field.label}</p>
               <p className="mt-1 text-[13px] font-bold text-[#333]">{card[field.key] as string}</p>
             </div>
@@ -1492,7 +1492,7 @@ function BonusMatchingScreen({ onBack }: { onBack: () => void }) {
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} title="보너스 매칭" />
       <div className="mobile-container mx-auto mt-6 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+        <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
           <BonusMatchingIllustration />
 
           <p className="mt-8 text-[24px] font-black leading-tight">
@@ -1791,7 +1791,7 @@ function BonusSeatGuideScreen({
             }
           />
         ) : hasNextPartner ? (
-          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-8 text-center shadow-calendar">
+          <section className="rounded-[24px] bg-white px-6 py-8 text-center shadow-calendar">
             <span className="mx-auto flex w-fit items-center rounded-full bg-meet-blueSoft px-4 py-1.5 text-[13px] font-black text-meet-blue">
               추가시간
             </span>
@@ -1836,7 +1836,7 @@ function BonusSeatGuideScreen({
             </div>
           </section>
         ) : (
-          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+          <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
             <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
             <p className="mt-3 break-keep text-[18px] font-black leading-tight">곧 최종 선택으로 넘어갑니다</p>
           </section>
@@ -1850,7 +1850,7 @@ function BonusSeatGuideScreen({
           </p>
         ) : null}
 
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+        <section className="rounded-[24px] bg-white p-5 shadow-calendar">
           <h2 className="text-[16px] font-black">도움이 필요하신가요?</h2>
           <div className="mt-4">
             <button
@@ -1964,7 +1964,7 @@ function RatingForm({
   const copy = score !== null ? ratingCopy(score) : null;
 
   return (
-    <section className="rounded-[28px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+    <section className="rounded-[24px] bg-white p-5 shadow-calendar">
       <p className="text-center text-[17px] font-black leading-snug">{title}</p>
 
       <ParticipantPhoto
@@ -2304,7 +2304,7 @@ function RatingCompleteScreen({ onBack }: { onBack: () => void }) {
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} title="호감도 작성" />
       <div className="mobile-container mx-auto mt-6 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-14 text-center shadow-calendar">
+        <section className="rounded-[24px] bg-white px-6 py-14 text-center shadow-calendar">
           <img alt="" className="mx-auto h-[200px] w-[200px] object-contain" src="/assets/rating-complete-heart.png" />
           <p className="mt-6 text-[26px] font-black leading-tight">
             <span style={{ color: '#1c2541' }}>호감도 제출 </span>
@@ -2490,7 +2490,7 @@ function FinalSelectionAnnounceScreen({ limit, onBack, onStart }: { limit: numbe
     <div className="px-4 pt-12 min-[380px]:px-5">
       <ScreenHeader onBack={onBack} />
       <div className="mobile-container mx-auto mt-6 pb-8">
-        <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-10 text-center shadow-calendar">
+        <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
           <p className="text-[15px] font-black text-meet-blue">이제 마지막 단계예요!</p>
           <h1 className="mt-3 break-keep text-[26px] font-black leading-tight">
             마음에 드는 분을
@@ -2617,7 +2617,7 @@ function FinalSelectionCandidateCard({
   selected: boolean;
 }) {
   return (
-    <div className="rounded-[20px] border border-[#f0f3f6] bg-white p-3 shadow-calendar">
+    <div className="rounded-[20px] bg-white p-3 shadow-calendar">
       <div className="flex items-start gap-3">
         <button className="shrink-0" onClick={onViewProfile} type="button">
           <ParticipantPhoto
@@ -2735,7 +2735,7 @@ function FinalSelectionProfileModal({
               {filledFields.length > 0 ? (
                 <div className="mt-5 grid grid-cols-2 gap-2.5 text-left">
                   {filledFields.map((field) => (
-                    <div className="rounded-[14px] border border-[#f0f3f6] bg-[#fafbfc] p-3" key={field.key}>
+                    <div className="rounded-[14px] bg-[#fafbfc] p-3" key={field.key}>
                       <p className="text-[10.5px] font-black text-[#9aa0a8]">{field.label}</p>
                       <p className="mt-1 text-[13px] font-bold text-[#333]">{profile[field.key] as string}</p>
                     </div>
@@ -2781,13 +2781,13 @@ function FinalSelectionReviewScreen({
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
         {selectedCandidates.length === 0 ? (
-          <section className="rounded-[28px] border border-[#f0f3f6] bg-white px-6 py-12 text-center shadow-calendar">
+          <section className="rounded-[24px] bg-white px-6 py-12 text-center shadow-calendar">
             <p className="text-[15px] font-extrabold text-[#888]">선택한 분이 없어요</p>
           </section>
         ) : (
           <div className="flex flex-col gap-2.5">
             {selectedCandidates.map((candidate) => (
-              <div className="flex items-center gap-3 rounded-[18px] border border-[#f0f3f6] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
+              <div className="flex items-center gap-3 rounded-[18px] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
                 <ParticipantPhoto
                   className="rounded-full bg-[#f5f7fa]"
                   crop={photoMap.get(candidate.applicationId)?.representativeCrop}
