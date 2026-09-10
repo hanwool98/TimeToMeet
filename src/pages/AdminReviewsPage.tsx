@@ -3,7 +3,7 @@ import { toPng } from 'html-to-image';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import ParticipantPhoto from '../components/ParticipantPhoto';
-import { fetchAdminEventReviews, type AdminEventReview } from '../services/supabaseApplications';
+import { fetchAdminEventReviews, setReviewRating, type AdminEventReview } from '../services/supabaseApplications';
 
 // 콘텐츠 관리 > 후기 관리. AdminProfileKeywordsPage/AdminConversationTopicsPage와
 // 동일한 목록+필터 스타일을 재사용한다(읽기 전용 + 이미지 저장만, CRUD 아님).
@@ -15,6 +15,21 @@ export default function AdminReviewsPage() {
   const [eventFilter, setEventFilter] = useState<string>('전체');
   const [imageTarget, setImageTarget] = useState<AdminEventReview | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [savingRatingId, setSavingRatingId] = useState<string | null>(null);
+
+  const changeRating = async (review: AdminEventReview, rating: number) => {
+    if (savingRatingId || rating === review.rating) return;
+    setSavingRatingId(review.id);
+    setReviews((current) => current?.map((item) => (item.id === review.id ? { ...item, rating } : item)) ?? null);
+    try {
+      await setReviewRating(review.id, rating);
+    } catch (caughtError) {
+      setReviews((current) => current?.map((item) => (item.id === review.id ? { ...item, rating: review.rating } : item)) ?? null);
+      window.alert(caughtError instanceof Error ? caughtError.message : '별점 저장에 실패했습니다.');
+    } finally {
+      setSavingRatingId(null);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -107,6 +122,14 @@ export default function AdminReviewsPage() {
                       </div>
                     </div>
                   </div>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <RatingStars
+                      disabled={savingRatingId === review.id}
+                      onChange={(rating) => void changeRating(review, rating)}
+                      value={review.rating}
+                    />
+                    <span className="text-[12px] font-black text-[#888]">{review.rating}점</span>
+                  </div>
                   <p className="mt-3 whitespace-pre-wrap text-[13.5px] font-bold leading-relaxed text-[#333]">{review.content}</p>
                   {review.images.length > 0 ? (
                     <div className="mt-3 flex gap-2 overflow-x-auto">
@@ -142,6 +165,29 @@ export default function AdminReviewsPage() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+// #4 관리자 후기 별점 입력/수정 컨트롤. 별을 누르면 그 점수로 저장된다.
+function RatingStars({ disabled, onChange, value }: { disabled?: boolean; onChange: (rating: number) => void; value: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          aria-label={`${star}점`}
+          className={[
+            'text-[18px] leading-none transition disabled:opacity-50',
+            star <= value ? 'text-meet-pink' : 'text-[#d6d9dd]',
+          ].join(' ')}
+          disabled={disabled}
+          key={star}
+          onClick={() => onChange(star)}
+          type="button"
+        >
+          ★
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -42,6 +42,7 @@ interface SubmitApplicationInput {
   interviewConsent: string;
   refundAgreement: boolean;
   inquiry: string;
+  kakaoId?: string;
   consents: Record<string, boolean>;
 }
 
@@ -68,6 +69,7 @@ interface SupabaseApplicationRow {
   voice_intro_path: string | null;
   height: string;
   job: string;
+  kakao_id: string | null;
   employment_proof_path: string | null;
   access_route: string;
   filming_consent: boolean;
@@ -449,6 +451,7 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
       inquiry: input.inquiry,
       interviewConsent: input.interviewConsent,
       job: input.job,
+      kakaoId: input.kakaoId?.trim() || null,
       name: input.name,
       nickname: input.nickname,
       phone: input.phone,
@@ -1279,6 +1282,58 @@ export interface AdminNicknameUpdateResult {
   hasDuplicate: boolean;
   nickname: string;
   updated: boolean;
+}
+
+export interface AdminApplicationProfileEdit {
+  name: string;
+  phone: string;
+  birthDate: string;
+  gender: string;
+  residence: string;
+  job: string;
+  height: string;
+  accessRoute: string;
+  interviewConsent: string;
+  kakaoId: string;
+}
+
+// #3 관리자 참가신청 심사 화면에서 참가자 프로필 정보를 직접 수정한다.
+// "첫 참여(is_returning)"는 여기에 없어 관리자가 바꿀 수 없다. 저장 후 값은
+// applications 테이블에 반영되고, 같은 컬럼을 읽는 다른 화면에도 그대로 쓰인다.
+export async function updateAdminApplicationProfile(applicationDbId: string, edit: AdminApplicationProfileEdit) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_application_profile_for_session', {
+    access_route_value: edit.accessRoute,
+    birth_date_value: edit.birthDate || null,
+    gender_value: edit.gender,
+    height_value: edit.height,
+    interview_consent_value: edit.interviewConsent,
+    job_value: edit.job,
+    kakao_id_value: edit.kakaoId,
+    name_value: edit.name,
+    phone_value: edit.phone,
+    residence_value: edit.residence,
+    session_token: adminSession.token,
+    target_application_id: applicationDbId,
+  });
+  if (error) throw error;
+}
+
+// #4 관리자 후기 별점 입력/수정
+export async function setReviewRating(reviewId: string, rating: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_review_rating_for_session', {
+    rating_value: rating,
+    review_id_value: reviewId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
 }
 
 export async function updateAdminApplicationNickname(
@@ -3223,6 +3278,7 @@ export interface AdminEventReview {
   job: string;
   nickname: string;
   photoUrl: string | null;
+  rating: number;
   submittedAt: string;
 }
 
@@ -3717,6 +3773,7 @@ function mapProfile(row: SupabaseApplicationRow): ParticipantProfile {
     inquiry: row.inquiry || '특이사항 없음',
     interviewConsent: row.interview_consent,
     job: row.job,
+    kakaoId: row.kakao_id ?? '',
     name: row.name,
     nickname: row.nickname,
     phone: row.phone,

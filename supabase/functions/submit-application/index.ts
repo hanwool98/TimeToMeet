@@ -25,6 +25,7 @@ type SubmitPayload = {
   inquiry: string;
   interviewConsent: string;
   job: string;
+  kakaoId?: string | null;
   name: string;
   nickname: string;
   phone: string;
@@ -241,6 +242,7 @@ Deno.serve(async (request) => {
     inquiry: payload.inquiry?.trim() ?? '',
     interview_consent: payload.interviewConsent.trim(),
     job: payload.job.trim(),
+    kakao_id: cleanOptionalText(payload.kakaoId),
     name: payload.name.trim(),
     nickname: payload.nickname.trim(),
     payment_amount: paymentAmount,

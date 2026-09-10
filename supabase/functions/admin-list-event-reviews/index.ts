@@ -47,7 +47,7 @@ Deno.serve(async (request) => {
 
   let reviewQuery = supabase
     .from('event_reviews')
-    .select('id, event_id, application_id, content, image_paths, submitted_at, home_featured, home_sort_order')
+    .select('id, event_id, application_id, content, image_paths, submitted_at, home_featured, home_sort_order, rating')
     .order('submitted_at', { ascending: false });
   if (payload.eventId) reviewQuery = reviewQuery.eq('event_id', payload.eventId);
 
@@ -114,6 +114,7 @@ Deno.serve(async (request) => {
         job: (snapshot?.job ?? '') !== '' ? snapshot!.job : (application?.job ?? ''),
         nickname: (snapshot?.nickname ?? '') !== '' ? snapshot!.nickname : (application?.nickname ?? ''),
         photoUrl,
+        rating: Number(review.rating ?? 5),
         submittedAt: review.submitted_at,
       };
     }),

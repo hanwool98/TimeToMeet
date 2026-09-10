@@ -1,4 +1,4 @@
-import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, type PointerEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BirthDateSelect from '../components/BirthDateSelect';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
@@ -138,10 +138,28 @@ function BackIcon() {
   );
 }
 
-function Section({ children, title }: { children: React.ReactNode; title: string }) {
+// 프로필 작성 항목 번호는 각 Section 문자열에 "7. " 처럼 직접 박혀 있어서,
+// 중간 항목("이상형 및 만남 참고사항")에 번호를 빠뜨리면 그 뒤로 전부
+// 어긋났다. 이제 번호를 하드코딩하지 않고 렌더 순서대로 자동 부여한다.
+// (Provider가 렌더마다 새 카운터 객체를 만들고, 하위 Section들이 순서대로
+//  읽어가며 증가시킨다. StrictMode 이중 렌더에서도 매번 0에서 시작하므로
+//  결과가 항상 동일하다.)
+const SectionCounterContext = createContext<{ current: number }>({ current: 0 });
+
+function NumberedSections({ children }: { children: React.ReactNode }) {
+  return <SectionCounterContext.Provider value={{ current: 0 }}>{children}</SectionCounterContext.Provider>;
+}
+
+function Section({ children, title, numbered = true }: { children: React.ReactNode; numbered?: boolean; title: string }) {
+  const counter = useContext(SectionCounterContext);
+  let heading = title;
+  if (numbered) {
+    counter.current += 1;
+    heading = `${counter.current}. ${title}`;
+  }
   return (
     <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
-      <h2 className="mb-5 text-fluid-safe text-[22px] font-black leading-tight">{title}</h2>
+      <h2 className="mb-5 text-fluid-safe text-[22px] font-black leading-tight">{heading}</h2>
       {children}
     </section>
   );
@@ -319,6 +337,7 @@ export default function ProfileFormPage() {
   const [interview, setInterview] = useState('');
   const [refundConsent, setRefundConsent] = useState(false);
   const [inquiry, setInquiry] = useState('');
+  const [kakaoId, setKakaoId] = useState('');
   const [finalNoticeConfirmed, setFinalNoticeConfirmed] = useState(false);
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -374,6 +393,7 @@ export default function ProfileFormPage() {
         setInterview(String(draft.interview ?? ''));
         setRefundConsent(Boolean(draft.refundConsent));
         setInquiry(String(draft.inquiry ?? ''));
+        setKakaoId(String(draft.kakaoId ?? ''));
         setFinalNoticeConfirmed(Boolean(draft.finalNoticeConfirmed));
       } catch {
         // Draft loading is best-effort; the form remains usable without it.
@@ -431,6 +451,7 @@ export default function ProfileFormPage() {
         inquiry,
         interview,
         job,
+        kakaoId,
         location,
         name,
         nickname,
@@ -457,6 +478,7 @@ export default function ProfileFormPage() {
     inquiry,
     interview,
     job,
+    kakaoId,
     location,
     name,
     nickname,
@@ -652,6 +674,7 @@ export default function ProfileFormPage() {
           inquiry,
           interviewConsent: interview,
           job,
+          kakaoId,
           name,
           nickname,
           phone: normalizedContactPhone,
@@ -855,7 +878,8 @@ export default function ProfileFormPage() {
         </header>
 
         <form className="w-full max-w-full min-w-0 space-y-8" onSubmit={(event) => event.preventDefault()}>
-          <Section title="1. 참가 전 꼭 확인해주세요">
+          <NumberedSections>
+          <Section title="참가 전 꼭 확인해주세요">
             <div className="rounded-[22px] border-4 border-meet-blue bg-[#f8fbff] p-3 text-[13px] font-extrabold leading-relaxed text-[#777] min-[380px]:p-4">
               <ol className="text-fluid-safe list-decimal space-y-2 pl-4">
                 <li>타임투밋은 여러 참가자와 정해진 시간 동안 1:1로 대화하며 새로운 인연을 만나는 로테이션 소개팅입니다.</li>
@@ -877,7 +901,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !guideConfirmed ? '참가 안내 확인이 필요합니다.' : ''}</ErrorText>
           </Section>
 
-          <Section title="2. 필수 동의">
+          <Section title="필수 동의">
             <p className="mb-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#777]">동의를 거부할 수 있으나, 거부 시 행사 신청 및 참가가 제한됩니다.</p>
             <div className="rounded-[22px] bg-meet-blueSoft p-4">
               {requiredConsentText.map((consent) => (
@@ -919,12 +943,12 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && (!consents.privacy || !consents.thirdParty) ? '필수 동의가 필요합니다.' : ''}</ErrorText>
           </Section>
 
-          <Section title="3. 이름">
+          <Section title="이름">
             <input className="h-12 w-full border-b-2 border-[#aaa] bg-transparent px-1 text-[17px] font-bold outline-none focus:border-meet-blue" onChange={(event) => setName(event.target.value)} placeholder="이름" value={name} />
             <ErrorText>{touched && !name.trim() ? '이름을 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="4. 생년월일">
+          <Section title="생년월일">
             <BirthDateSelect
               className="flex h-12 w-full items-center justify-center gap-1.5 rounded-[18px] bg-meet-blueSoft px-2"
               onChange={setBirthDate}
@@ -935,7 +959,7 @@ export default function ProfileFormPage() {
             <ErrorText>{ageError || (touched && !birthDate ? '생년월일을 선택해주세요.' : '')}</ErrorText>
           </Section>
 
-          <Section title="5. 성별">
+          <Section title="성별">
             <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               {['남성', '여성'].map((option) => (
                 <button className={`h-12 rounded-[18px] text-[16px] font-black ${gender === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setGender(option)} type="button">
@@ -946,12 +970,12 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !gender ? '성별을 선택해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="6. 거주지">
+          <Section title="거주지">
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setLocation(event.target.value)} placeholder="ex) 성남시 수정구" value={location} />
             <ErrorText>{touched && !location.trim() ? '거주지를 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="7. 전화번호">
+          <Section title="전화번호">
             <input
               className={`h-12 w-full rounded-[18px] px-4 text-[16px] font-bold outline-none ${isGuestSession ? 'bg-[#eef1f4] text-[#777]' : 'bg-meet-blueSoft'}`}
               inputMode="tel"
@@ -968,7 +992,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !phone.trim() ? '전화번호를 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="8. 결혼 및 교제 여부">
+          <Section title="결혼 및 교제 여부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">허위 응답 시 이후 행사 참여 제한 및 법적 조치가 이루어질 수 있습니다.</p>
             <label className="flex items-start gap-2 text-fluid-safe text-[14px] font-black">
               <input checked={singleConfirmed} onChange={(event) => setSingleConfirmed(event.target.checked)} type="checkbox" />
@@ -1001,7 +1025,7 @@ export default function ProfileFormPage() {
             />
           </Section>
 
-          <Section title="9. 본인확인용 신분증 사진 첨부">
+          <Section title="본인확인용 신분증 사진 첨부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">민감한 정보는 가려도 되며 이름과 생년월일만 확인되면 됩니다.</p>
             <UploadBox
               label="본인확인용 신분증 사진 첨부"
@@ -1012,7 +1036,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !idPhoto ? '신분증 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="10. 닉네임">
+          <Section title="닉네임">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">소개팅에서 계속 사용할 닉네임이니 신중하고 개성있는 닉네임을 사용해주세요.</p>
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setNickname(event.target.value)} placeholder="닉네임" value={nickname} />
             {selectedEvent?.nicknameInstruction ? (
@@ -1023,7 +1047,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !nickname.trim() ? '닉네임을 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="11. 프로필 사진">
+          <Section title="프로필 사진">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">최대 3장까지 첨부할 수 있으며, 전신 사진을 최소 1장 포함해주세요. 대표사진으로 지정한 사진은 모자이크 처리된 상태로 참가자 리스트에 공개됩니다.</p>
             {photoPreviews[representativeIndex] ? (
               <div className="relative aspect-square w-full overflow-hidden rounded-[22px] bg-meet-blueSoft" ref={representativePreviewRef}>
@@ -1075,7 +1099,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && profilePhotos.length === 0 ? '프로필 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="12. 목소리로 첫인상을 남겨보세요 (선택)">
+          <Section title="목소리로 첫인상을 남겨보세요 (선택)">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">3초면 충분해요. 짧은 인사 한마디를 남겨보세요.</p>
             {recordingState === 'recording' ? (
               <PrimaryButton onClick={stopRecording}>녹음 중 {countdown}초</PrimaryButton>
@@ -1086,18 +1110,18 @@ export default function ProfileFormPage() {
             <ErrorText>{micError}</ErrorText>
           </Section>
 
-          <Section title="13. 키">
+          <Section title="키">
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" inputMode="numeric" onChange={(event) => setHeight(event.target.value)} placeholder="ex) 172cm" value={height} />
             <ErrorText>{touched && !height.trim() ? '키를 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="14. 직업">
+          <Section title="직업">
             <input className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none" onChange={(event) => setJob(event.target.value)} placeholder="ex) 초등학교 교사, 자영업, 의사, 프리랜서" value={job} />
             <p className="mt-1.5 text-[12px] font-bold text-[#999]">기업명이 아닌 직업을 작성해주세요. (예: 삼성전자 X, 마케터 O)</p>
             <ErrorText>{touched && !job.trim() ? '직업을 입력해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="15. 재직 증명">
+          <Section title="재직 증명">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">사원증, 명함 등 본인의 재직사실을 증명할 수 있는 사진을 첨부해주세요.</p>
             <UploadBox
               label="재직 증명 사진 첨부"
@@ -1108,7 +1132,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !employmentProof ? '재직 증명 사진을 첨부해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="16. 접속 경로">
+          <Section title="접속 경로">
             <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
               {routeOptions.map((option) => (
                 <button className={`h-11 rounded-[16px] text-[13px] font-black ${accessRoute === option ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-black'}`} key={option} onClick={() => setAccessRoute(option)} type="button">
@@ -1120,7 +1144,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && (!accessRoute || (accessRoute === '기타' && !accessRouteEtc.trim())) ? '접속 경로를 선택해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="17. 촬영 동의 (모자이크)">
+          <Section title="촬영 동의 (모자이크)">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">소개팅 현장을 인스타 홍보 및 후기 작성 목적으로 촬영하며 모자이크를 보장합니다.</p>
             <label className="flex items-start gap-2 text-fluid-safe text-[14px] font-black">
               <input checked={filmingConsent} onChange={(event) => setFilmingConsent(event.target.checked)} type="checkbox" />
@@ -1129,7 +1153,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !filmingConsent ? '촬영 동의가 필요합니다.' : ''}</ErrorText>
           </Section>
 
-          <Section title="18. 인터뷰 여부">
+          <Section title="인터뷰 여부">
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">더 나은 소개팅, 고객 경험 개선을 위해서 행사 종료 후에 짧은 인터뷰를 진행합니다. 원하시면 모자이크 또는 얼굴 아래로 촬영을 할 예정입니다.</p>
             <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               {['참여', '미참여'].map((option) => (
@@ -1141,7 +1165,7 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !interview ? '인터뷰 여부를 선택해주세요.' : ''}</ErrorText>
           </Section>
 
-          <Section title="19. 환불규정">
+          <Section title="환불규정">
             <RefundPolicyBox />
             <label className="mt-4 flex items-start gap-2 text-fluid-safe text-[14px] font-black">
               <input checked={refundConsent} onChange={(event) => setRefundConsent(event.target.checked)} type="checkbox" />
@@ -1150,11 +1174,11 @@ export default function ProfileFormPage() {
             <ErrorText>{touched && !refundConsent ? '환불규정 확인이 필요합니다.' : ''}</ErrorText>
           </Section>
 
-          <Section title="20. 타임투밋 문의사항">
+          <Section title="타임투밋 문의사항">
             <textarea className="min-h-32 w-full rounded-[18px] bg-meet-blueSoft p-4 text-[15px] font-bold outline-none" onChange={(event) => setInquiry(event.target.value)} placeholder="운영진 측에서 알아야 할 정보가 있다면 알려주세요!" value={inquiry} />
           </Section>
 
-          <Section title="21. 심사 후 개별 연락 안내">
+          <Section title="심사 후 개별 연락 안내">
             <p className="text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#666]">
               프로필에 누락된 내용이 있을 시 참여가 제한될 수 있으며, 신청 현황과 성비 등을 종합적으로 고려해 일부 신청자는 대기 명단으로 안내될 수 있습니다.
             </p>
@@ -1167,6 +1191,19 @@ export default function ProfileFormPage() {
             </label>
             <ErrorText>{touched && !finalNoticeConfirmed ? '심사 안내 확인이 필요합니다.' : ''}</ErrorText>
           </Section>
+
+          <Section title="카카오톡 ID">
+            <p className="mb-3 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">
+              행사 정보 및 안내사항을 카카오톡으로 보내드려요
+            </p>
+            <input
+              className="h-12 w-full rounded-[18px] bg-meet-blueSoft px-4 text-[16px] font-bold outline-none"
+              onChange={(event) => setKakaoId(event.target.value)}
+              placeholder="카카오톡 ID"
+              value={kakaoId}
+            />
+          </Section>
+          </NumberedSections>
 
           <div className="sticky bottom-4 z-10">
             {isMemberSession ? (

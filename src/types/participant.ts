@@ -25,6 +25,7 @@ export interface ParticipantProfile {
   voiceIntro: string;
   height: string;
   job: string;
+  kakaoId?: string;
   employmentProof: string;
   accessRoute: string;
   shootingConsent: string;

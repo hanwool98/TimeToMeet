@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import useOperationalData from '../hooks/useOperationalData';
-import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateAdminApplicationNickname, updateApplicationReviewInSupabase } from '../services/supabaseApplications';
+import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateAdminApplicationNickname, updateAdminApplicationProfile, updateApplicationReviewInSupabase, type AdminApplicationProfileEdit } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -291,6 +291,29 @@ export default function AdminApplicationsPage() {
               : current);
             void reload();
           }}
+          onProfileUpdated={(edit) => {
+            setReviewingApplication((current) =>
+              current?.profile
+                ? {
+                    ...current,
+                    profile: {
+                      ...current.profile,
+                      accessRoute: edit.accessRoute,
+                      birthDate: edit.birthDate,
+                      genderLabel: edit.gender,
+                      height: edit.height,
+                      interviewConsent: edit.interviewConsent,
+                      job: edit.job,
+                      kakaoId: edit.kakaoId,
+                      name: edit.name,
+                      phone: edit.phone,
+                      residence: edit.residence,
+                    },
+                  }
+                : current,
+            );
+            void reload();
+          }}
         />
       ) : null}
     </main>
@@ -359,7 +382,7 @@ function ApplicationCard({
           </p>
           <p className="mt-2 text-fluid-safe text-[13px] font-extrabold leading-snug text-[#263149]">
             {application.appliedAt}
-            <span className="ml-3 rounded-[8px] bg-[#f1f3f5] px-2 py-1 text-[11px] font-black text-[#555]">{application.returning}</span>
+            <ReturningBadge className="ml-3" returning={application.returning} />
           </p>
           {application.status === '결제 대기' && application.paymentDeadline ? (
             <div className="mt-3 rounded-[12px] bg-meet-blueSoft px-3 py-2 text-[12px] font-black leading-snug text-[#263149]">
@@ -459,6 +482,7 @@ export function ReviewProfileModal({
   onClose,
   onDecide,
   onNicknameUpdated,
+  onProfileUpdated,
 }: {
   application: StoredApplication;
   capacityInfo?: { capacity: number; isFull: boolean; occupied: number } | null;
@@ -467,6 +491,7 @@ export function ReviewProfileModal({
   onClose: () => void;
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
   onNicknameUpdated?: (nickname: string) => void;
+  onProfileUpdated?: (edit: AdminApplicationProfileEdit) => void;
 }) {
   const profile = application.profile;
   const [files, setFiles] = useState<AdminApplicationFiles | null>(null);
@@ -480,6 +505,31 @@ export function ReviewProfileModal({
   const [nicknameEditing, setNicknameEditing] = useState(false);
   const [nicknameError, setNicknameError] = useState('');
   const [nicknameSaving, setNicknameSaving] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileDraft, setProfileDraft] = useState<AdminApplicationProfileEdit>(() => toProfileDraft(profile));
+
+  const startProfileEdit = () => {
+    setProfileDraft(toProfileDraft(profile));
+    setProfileError('');
+    setProfileEditing(true);
+  };
+
+  const saveProfileEdit = async () => {
+    if (!application.dbId || profileSaving) return;
+    setProfileSaving(true);
+    setProfileError('');
+    try {
+      await updateAdminApplicationProfile(application.dbId, profileDraft);
+      onProfileUpdated?.(profileDraft);
+      setProfileEditing(false);
+    } catch (caughtError) {
+      setProfileError(caughtError instanceof Error ? caughtError.message : '정보 수정에 실패했습니다.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
   const [resettingPin, setResettingPin] = useState(false);
   const capacityBlocksApproval = Boolean(capacityInfo?.isFull);
 
@@ -669,15 +719,97 @@ export function ReviewProfileModal({
                     </div>
                     <p className="shrink-0 text-[15px] font-black text-[#263149]">{profile.phone}</p>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-extrabold text-[#5d6672]">
-                    <span>📅 {formatBirthDate(profile.birthDate)}</span>
-                    <span>{profile.genderLabel}</span>
-                    <span>📍 {profile.residence}</span>
-                    <span>💼 {profile.job}</span>
-                    <span>{profile.height}cm</span>
-                    <span>{application.returning}</span>
-                  </div>
+                  {profileEditing ? null : (
+                    <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-extrabold text-[#5d6672]">
+                      <span>📅 {formatBirthDate(profile.birthDate)}</span>
+                      <span>{profile.genderLabel}</span>
+                      <span>📍 {profile.residence}</span>
+                      <span>💼 {profile.job}</span>
+                      <span>📏 {profile.height}</span>
+                      <span>🔗 {profile.accessRoute || '미입력'}</span>
+                      <span>🎤 인터뷰 {profile.interviewConsent || '미입력'}</span>
+                      {profile.kakaoId ? <span>💬 {profile.kakaoId}</span> : null}
+                      <ReturningBadge returning={application.returning} />
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              {profileEditing ? (
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  <EditInput label="이름" onChange={(v) => setProfileDraft((d) => ({ ...d, name: v }))} value={profileDraft.name} />
+                  <EditInput label="전화번호" onChange={(v) => setProfileDraft((d) => ({ ...d, phone: v }))} value={profileDraft.phone} />
+                  <label className="text-[12px] font-black text-[#8a94a0]">
+                    생년월일
+                    <input
+                      className="mt-1 h-10 w-full rounded-[10px] bg-meet-blueSoft px-2 text-[13px] font-bold outline-none"
+                      onChange={(event) => setProfileDraft((d) => ({ ...d, birthDate: event.target.value }))}
+                      type="date"
+                      value={profileDraft.birthDate}
+                    />
+                  </label>
+                  <label className="text-[12px] font-black text-[#8a94a0]">
+                    성별
+                    <select
+                      className="mt-1 h-10 w-full rounded-[10px] bg-meet-blueSoft px-2 text-[13px] font-bold outline-none"
+                      onChange={(event) => setProfileDraft((d) => ({ ...d, gender: event.target.value }))}
+                      value={profileDraft.gender}
+                    >
+                      <option value="남성">남성</option>
+                      <option value="여성">여성</option>
+                    </select>
+                  </label>
+                  <EditInput label="지역" onChange={(v) => setProfileDraft((d) => ({ ...d, residence: v }))} value={profileDraft.residence} />
+                  <EditInput label="직업" onChange={(v) => setProfileDraft((d) => ({ ...d, job: v }))} value={profileDraft.job} />
+                  <EditInput label="키" onChange={(v) => setProfileDraft((d) => ({ ...d, height: v }))} value={profileDraft.height} />
+                  <EditInput label="접속경로" onChange={(v) => setProfileDraft((d) => ({ ...d, accessRoute: v }))} value={profileDraft.accessRoute} />
+                  <label className="text-[12px] font-black text-[#8a94a0]">
+                    인터뷰 참여 여부
+                    <select
+                      className="mt-1 h-10 w-full rounded-[10px] bg-meet-blueSoft px-2 text-[13px] font-bold outline-none"
+                      onChange={(event) => setProfileDraft((d) => ({ ...d, interviewConsent: event.target.value }))}
+                      value={profileDraft.interviewConsent}
+                    >
+                      <option value="참여">참여</option>
+                      <option value="미참여">미참여</option>
+                    </select>
+                  </label>
+                  <EditInput label="카카오톡 ID" onChange={(v) => setProfileDraft((d) => ({ ...d, kakaoId: v }))} value={profileDraft.kakaoId} />
+                </div>
+              ) : null}
+
+              {profileError ? <p className="mt-2 text-[12px] font-black text-meet-pink">{profileError}</p> : null}
+
+              <div className="mt-3 flex gap-2">
+                {profileEditing ? (
+                  <>
+                    <button
+                      className="h-9 rounded-[10px] bg-meet-blue px-4 text-[12px] font-black text-white disabled:bg-[#d8dee6]"
+                      disabled={profileSaving}
+                      onClick={() => void saveProfileEdit()}
+                      type="button"
+                    >
+                      {profileSaving ? '저장 중' : '저장'}
+                    </button>
+                    <button
+                      className="h-9 rounded-[10px] bg-[#eef0f3] px-4 text-[12px] font-black text-[#555]"
+                      disabled={profileSaving}
+                      onClick={() => setProfileEditing(false)}
+                      type="button"
+                    >
+                      취소
+                    </button>
+                    <span className="self-center text-[11px] font-bold text-[#9aa4ad]">첫 참여 여부는 수정할 수 없습니다.</span>
+                  </>
+                ) : (
+                  <button
+                    className="text-[12px] font-black text-meet-blue underline underline-offset-2"
+                    onClick={startProfileEdit}
+                    type="button"
+                  >
+                    정보 수정
+                  </button>
+                )}
               </div>
             </section>
           ) : null}
@@ -829,6 +961,50 @@ function ReviewSection({ actionText, children, title }: { actionText?: string; c
       </div>
       {children}
     </section>
+  );
+}
+
+// #3 첫 참여는 눈에 띄게 다른 색(핑크)으로, 재참여는 기존 회색으로.
+function ReturningBadge({ className = '', returning }: { className?: string; returning: '첫 참여' | '재참여' }) {
+  const first = returning === '첫 참여';
+  return (
+    <span
+      className={[
+        'inline-flex w-fit items-center rounded-[8px] px-2 py-0.5 text-[11px] font-black',
+        first ? 'bg-meet-pink text-white' : 'bg-[#eef0f3] text-[#555]',
+        className,
+      ].join(' ')}
+    >
+      {first ? '⭐ 첫 참여' : '재참여'}
+    </span>
+  );
+}
+
+function toProfileDraft(profile?: import('../types/participant').ParticipantProfile): AdminApplicationProfileEdit {
+  return {
+    accessRoute: profile?.accessRoute ?? '',
+    birthDate: profile?.birthDate ?? '',
+    gender: profile?.genderLabel === '여성' ? '여성' : '남성',
+    height: profile?.height ?? '',
+    interviewConsent: profile?.interviewConsent ?? '',
+    job: profile?.job ?? '',
+    kakaoId: profile?.kakaoId ?? '',
+    name: profile?.name ?? '',
+    phone: profile?.phone ?? '',
+    residence: profile?.residence ?? '',
+  };
+}
+
+function EditInput({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+  return (
+    <label className="text-[12px] font-black text-[#8a94a0]">
+      {label}
+      <input
+        className="mt-1 h-10 w-full rounded-[10px] bg-meet-blueSoft px-2 text-[13px] font-bold text-black outline-none"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      />
+    </label>
   );
 }
 
