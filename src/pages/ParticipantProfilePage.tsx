@@ -151,6 +151,7 @@ export default function ParticipantProfilePage() {
                 <Info label="전화번호" value={profile.phoneMasked} />
                 <Info label="키" value={profile.height} />
                 <Info label="직업" value={profile.job} />
+                <Info label="카카오톡 ID" value={profile.kakaoId} />
               </div>
 
               <div className="mt-5 rounded-[20px] bg-meet-blueSoft p-4 text-[14px] font-extrabold leading-relaxed text-[#6f7680]">

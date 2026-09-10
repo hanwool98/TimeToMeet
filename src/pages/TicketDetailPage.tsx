@@ -12,6 +12,7 @@ import {
   type ConfirmedEventVenue,
   type MyEventTicket,
 } from '../services/supabaseApplications';
+import { isParticipantListPublic, PARTICIPANT_LIST_LOCKED_NOTICE } from '../utils/participantListGate';
 
 export default function TicketDetailPage() {
   const navigate = useNavigate();
@@ -98,20 +99,23 @@ export default function TicketDetailPage() {
             </section>
 
             <section className="rounded-[24px] bg-meet-blueSoft p-5">
-              <h2 className="text-[15px] font-black text-[#555]">행사 장소</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="shrink-0 text-[15px] font-black text-[#555]">행사 장소</h2>
+                {naverMapUrl ? (
+                  <a
+                    aria-label="네이버지도에서 행사 장소 보기"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-2.5 py-1.5 text-[12px] font-black text-[#03823f] shadow-sm active:scale-[0.98]"
+                    href={naverMapUrl}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <img alt="" aria-hidden="true" className="h-[18px] w-[18px]" src="/assets/naver-map-mark.svg" />
+                    지도에서 보기
+                  </a>
+                ) : null}
+              </div>
               {venueDetail ? <p className="mt-2 break-words text-[18px] font-black text-black">{venueDetail}</p> : null}
               {publicLocation ? <p className="mt-1 break-words text-[13px] font-bold text-[#777]">{publicLocation}</p> : null}
-              {naverMapUrl ? (
-                <a
-                  aria-label="네이버지도에서 행사 장소 보기"
-                  className="mt-3 inline-flex min-h-10 items-center text-[13px] font-black text-meet-blue underline underline-offset-4"
-                  href={naverMapUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  네이버지도에서 보기&nbsp;&gt;
-                </a>
-              ) : null}
             </section>
 
             <div className="space-y-2">
@@ -166,10 +170,16 @@ function TicketParticipantPreview({ eventId }: { eventId: string }) {
     <section>
       <h2 className="px-1 text-[15px] font-black text-[#555]">참가자리스트</h2>
       <div className="mt-3 rounded-[26px] bg-meet-blueSoft p-1.5">
-        <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
-          <ParticipantList capacity={maleCapacity} participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
-          <ParticipantList capacity={femaleCapacity} participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
-        </div>
+        {isParticipantListPublic(event?.date, event?.startTime) ? (
+          <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
+            <ParticipantList capacity={maleCapacity} participants={participants.filter((participant) => participant.gender === 'male')} title="남" />
+            <ParticipantList capacity={femaleCapacity} participants={participants.filter((participant) => participant.gender === 'female')} title="여" />
+          </div>
+        ) : (
+          <p className="px-5 py-12 text-center text-[13px] font-black leading-relaxed text-[#8a94a0]">
+            {PARTICIPANT_LIST_LOCKED_NOTICE}
+          </p>
+        )}
       </div>
     </section>
   );

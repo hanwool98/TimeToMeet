@@ -472,6 +472,7 @@ async function saveMemberDefaultProfile(supabase: ReturnType<typeof createClient
     height: snapshot.height,
     id_photo_path: snapshot.id_photo_path,
     job: snapshot.job,
+    kakao_id: snapshot.kakao_id ?? null,
     name: snapshot.name,
     nickname: snapshot.nickname,
     phone: snapshot.phone,

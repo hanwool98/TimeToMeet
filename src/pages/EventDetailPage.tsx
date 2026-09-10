@@ -6,6 +6,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
 import useOperationalData from '../hooks/useOperationalData';
 import { cacheTestEventPreviewToken, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
+import { isParticipantListPublic, PARTICIPANT_LIST_LOCKED_NOTICE } from '../utils/participantListGate';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
@@ -41,7 +42,9 @@ export default function EventDetailPage() {
           </div>
 
           <div className="mt-5 rounded-[26px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-            {event ? (
+            {!event ? (
+              <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
+            ) : isParticipantListPublic(event.date, event.startTime) ? (
               <div className="grid grid-cols-2 gap-1.5">
                 <ParticipantList
                   capacity={Math.max(1, event.maleCapacity ?? Math.ceil(event.targetParticipants / 2))}
@@ -55,7 +58,9 @@ export default function EventDetailPage() {
                 />
               </div>
             ) : (
-              <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
+              <p className="px-5 py-14 text-center text-[14px] font-black leading-relaxed text-[#8a94a0]">
+                {PARTICIPANT_LIST_LOCKED_NOTICE}
+              </p>
             )}
           </div>
 

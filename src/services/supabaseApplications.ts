@@ -1130,7 +1130,7 @@ export async function fetchPublicParticipantsFromSupabase(eventId: string, previ
 
   const [previewResult, mediaResult] = await Promise.all([
     supabase.rpc('get_public_participant_previews', { preview_token: previewToken ?? null, target_event_id: eventId }),
-    supabase.functions.invoke('public-participant-media', { body: { eventId } }).catch(() => null),
+    supabase.functions.invoke('public-participant-media', { body: { eventId, previewToken: previewToken ?? undefined } }).catch(() => null),
   ]);
 
   if (previewResult.error) throw previewResult.error;

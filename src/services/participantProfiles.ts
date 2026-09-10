@@ -24,6 +24,7 @@ export interface MyParticipantProfile {
   height: string;
   id: string;
   job: string;
+  kakaoId: string;
   name: string;
   nickname: string;
   phoneMasked: string;
@@ -62,6 +63,7 @@ interface MyParticipantProfileRow {
   height: string;
   id: string;
   job: string;
+  kakao_id: string | null;
   name: string;
   nickname: string;
   phone_masked: string;
@@ -169,6 +171,7 @@ export async function fetchMyParticipantProfile(): Promise<MyParticipantProfile 
     height: row.height,
     id: row.id,
     job: row.job,
+    kakaoId: row.kakao_id ?? '',
     name: row.name,
     nickname: row.nickname,
     phoneMasked: row.phone_masked,

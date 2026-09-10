@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
+import MarqueeText from './MarqueeText';
 import type { MyEventTicket } from '../services/supabaseApplications';
 
 interface EventTicketProps {
@@ -20,9 +21,10 @@ export default function EventTicket({ onPay, onQrOpen, ticket }: EventTicketProp
           <span className="h-px min-w-0 flex-1 border-t border-dashed border-meet-pink" />
           <span aria-hidden="true" className="shrink-0 text-[12px] leading-none text-meet-pink min-[390px]:text-[14px]">✈</span>
         </div>
-        <h2 className="mt-1.5 min-w-0 whitespace-nowrap text-fluid-safe font-black leading-tight text-black [font-size:clamp(16px,4.7vw,22px)]">
-          {ticket.eventTitle}
-        </h2>
+        <MarqueeText
+          className="mt-1.5 min-w-0 font-black leading-tight text-black [font-size:clamp(16px,4.7vw,22px)]"
+          text={ticket.eventTitle}
+        />
 
         <dl className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,0.8fr)] gap-1.5 border-b border-meet-pink/25 pb-1.5 min-[390px]:gap-2.5">
           <TicketInfo label="Date" value={formatTicketDate(ticket.eventDate)} />
