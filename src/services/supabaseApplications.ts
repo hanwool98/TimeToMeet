@@ -3836,10 +3836,11 @@ export interface AdminHomeContent extends PublicHomeContent {
   storagePath: string;
 }
 
-// 홈 카드/관리자 크롭 편집기가 공유하는 섹션별 표시 비율(레퍼런스 시안 기준).
-// 사랑받는 이유·모집방식은 가로로 긴 배너(320:116), 현장 스케치는 가로 썸네일(4:3).
+// 홈 카드/관리자 크롭 편집기가 공유하는 섹션별 표시 비율.
+// 사랑받는 이유·모집방식은 통일된 가로 배너(11:4 = 2.75:1, 권장 원본 1100x400),
+// 현장 스케치는 가로 썸네일(4:3).
 export function homeContentAspectRatio(section: HomeContentSection): string {
-  return section === 'field_sketch' ? '4 / 3' : '320 / 116';
+  return section === 'field_sketch' ? '4 / 3' : '11 / 4';
 }
 
 function normalizeHomeContentCrop(value: unknown): HomeContentCrop {

@@ -19,9 +19,9 @@ import {
 const DEFAULT_CROP: HomeContentCrop = { offsetX: 0, offsetY: 0, scale: 1 };
 
 const sections: { key: HomeContentSection; label: string; managed: boolean; hint: string }[] = [
-  { hint: '홈 상단 "타임투밋이 사랑받는 이유" 캐러셀에 노출됩니다.', key: 'love_reason', label: '타임투밋이 사랑받는 이유', managed: true },
-  { hint: '홈 "현장 스케치" 영역에 앞쪽 순서대로 노출됩니다. 캡션(해시태그)을 입력할 수 있습니다.', key: 'field_sketch', label: '현장 스케치', managed: true },
-  { hint: '구조만 준비되어 있습니다. 실제 이미지 콘텐츠 등록은 다음 단계에서 진행됩니다.', key: 'recruitment_application', label: '모집방식 & 신청방식', managed: false },
+  { hint: '홈 "타임투밋이 사랑받는 이유" 캐러셀에 노출됩니다. 권장 이미지 크기 1100 x 400 px (비율 11:4).', key: 'love_reason', label: '타임투밋이 사랑받는 이유', managed: true },
+  { hint: '홈 "모집방식 & 신청방식" 캐러셀에 노출됩니다. "사랑받는 이유"와 같은 크기 — 권장 1100 x 400 px (비율 11:4).', key: 'recruitment_application', label: '모집방식 & 신청방식', managed: true },
+  { hint: '홈 "현장 스케치" 영역에 앞쪽 순서 3개가 노출됩니다. 가로 썸네일(4:3), 캡션(해시태그) 입력 가능.', key: 'field_sketch', label: '현장 스케치', managed: true },
 ];
 
 export default function AdminHomeContentPage() {
