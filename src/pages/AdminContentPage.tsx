@@ -25,6 +25,11 @@ export default function AdminContentPage() {
 
         <div className="mt-5 grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
           <MenuCard
+            icon={<HomeContentIcon />}
+            label="홈 콘텐츠 관리"
+            onClick={() => navigate('/admin/content/home')}
+          />
+          <MenuCard
             icon={<TopicsIcon />}
             label="대화주제 관리"
             onClick={() => navigate('/admin/content/conversation-topics')}
@@ -61,6 +66,16 @@ function MenuCard({ icon, label, onClick }: { icon: ReactNode; label: string; on
       <span className="min-w-0 flex-1 whitespace-nowrap text-[12px] font-black text-black min-[360px]:text-[14px] min-[380px]:text-[16px]">{label}</span>
       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#a7adb5]" />
     </button>
+  );
+}
+
+function HomeContentIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <path d="M5 13 16 5l11 8" />
+      <path d="M8 12v14h16V12" />
+      <rect height="6" rx="1.5" width="10" x="11" y="16" />
+    </svg>
   );
 }
 

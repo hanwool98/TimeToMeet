@@ -3813,6 +3813,197 @@ export async function deleteConversationTopic(topicId: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── 홈 콘텐츠(메인 대시보드 캐러셀) 관리 ──────────────────────────────
+export type HomeContentSection = 'love_reason' | 'field_sketch' | 'recruitment_application';
+
+export interface HomeContentCrop {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface PublicHomeContent {
+  id: string;
+  caption: string;
+  cropPosition: HomeContentCrop;
+  imageUrl: string | null;
+}
+
+export interface AdminHomeContent extends PublicHomeContent {
+  sectionType: HomeContentSection;
+  sortOrder: number;
+  isVisible: boolean;
+  storagePath: string;
+}
+
+// 홈 카드/관리자 크롭 편집기가 공유하는 섹션별 표시 비율. 현장 스케치는
+// 세로형(3:4), 나머지는 캐러셀 카드와 같은 가로형(335:228).
+export function homeContentAspectRatio(section: HomeContentSection): string {
+  return section === 'field_sketch' ? '3 / 4' : '335 / 228';
+}
+
+function normalizeHomeContentCrop(value: unknown): HomeContentCrop {
+  const crop = (value ?? {}) as Partial<HomeContentCrop>;
+  const scale = Number(crop.scale);
+  const offsetX = Number(crop.offsetX);
+  const offsetY = Number(crop.offsetY);
+  return {
+    offsetX: Number.isFinite(offsetX) ? offsetX : 0,
+    offsetY: Number.isFinite(offsetY) ? offsetY : 0,
+    scale: Number.isFinite(scale) && scale >= 1 ? scale : 1,
+  };
+}
+
+// 홈(공개)에서 한 섹션의 노출 이미지만 sort_order 순서로 가져온다. 데이터가
+// 없거나 조회에 실패해도 빈 배열을 돌려줘 홈이 깨지지 않게 한다.
+export async function fetchPublicHomeContents(sectionType: HomeContentSection): Promise<PublicHomeContent[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.functions.invoke('home-contents', { body: { sectionType } });
+    if (error || data?.ok !== true || !Array.isArray(data.contents)) return [];
+    return (data.contents as Record<string, unknown>[]).map((row) => ({
+      caption: (row.caption as string) ?? '',
+      cropPosition: normalizeHomeContentCrop(row.cropPosition),
+      id: row.id as string,
+      imageUrl: (row.imageUrl as string | null) ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchAdminHomeContents(sectionType?: HomeContentSection): Promise<AdminHomeContent[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('home-contents', {
+    body: { sectionType, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(data?.message || (error instanceof Error ? error.message : '홈 콘텐츠를 불러오지 못했습니다.'));
+  }
+  return (data.contents as Record<string, unknown>[]).map((row) => ({
+    caption: (row.caption as string) ?? '',
+    cropPosition: normalizeHomeContentCrop(row.cropPosition),
+    id: row.id as string,
+    imageUrl: (row.imageUrl as string | null) ?? null,
+    isVisible: Boolean(row.isVisible),
+    sectionType: row.sectionType as HomeContentSection,
+    sortOrder: Number(row.sortOrder ?? 0),
+    storagePath: row.storagePath as string,
+  }));
+}
+
+export async function uploadHomeContent(
+  sectionType: HomeContentSection,
+  file: File,
+  caption: string,
+  cropPosition: HomeContentCrop,
+): Promise<AdminHomeContent> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-home-content', {
+    body: { caption, cropPosition, photo, sectionType, sessionToken: adminSession.token },
+  });
+
+  if (error || data?.ok !== true) {
+    let message = '이미지 업로드에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // Non-JSON error body - keep the generic message.
+      }
+    }
+    throw new Error(message);
+  }
+
+  const row = data.content as Record<string, unknown>;
+  return {
+    caption: (row.caption as string) ?? '',
+    cropPosition: normalizeHomeContentCrop(row.cropPosition),
+    id: row.id as string,
+    imageUrl: (row.imageUrl as string | null) ?? null,
+    isVisible: Boolean(row.isVisible),
+    sectionType: row.sectionType as HomeContentSection,
+    sortOrder: Number(row.sortOrder ?? 0),
+    storagePath: row.storagePath as string,
+  };
+}
+
+export async function updateHomeContent(contentId: string, caption: string, cropPosition: HomeContentCrop): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_home_content_for_session', {
+    caption_value: caption,
+    content_id: contentId,
+    crop_position_value: cropPosition,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
+export async function setHomeContentVisible(contentId: string, isVisible: boolean): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_home_content_visible_for_session', {
+    content_id: contentId,
+    is_visible_value: isVisible,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
+export async function reorderHomeContents(sectionType: HomeContentSection, orderedIds: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('reorder_home_contents_for_session', {
+    ordered_ids: orderedIds,
+    section_type_value: sectionType,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
+export async function deleteHomeContent(contentId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data: removedPath, error } = await supabase.rpc('delete_home_content_for_session', {
+    content_id: contentId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  // 행은 지워졌으니 Storage 고아 파일도 정리한다(실패해도 삭제 자체는 성공
+  // 처리 - restartTestEventProgress의 cleanup 패턴과 동일).
+  if (typeof removedPath === 'string' && removedPath) {
+    try {
+      await supabase.functions.invoke('admin-delete-storage-objects', {
+        body: { paths: [removedPath], sessionToken: adminSession.token },
+      });
+    } catch (cleanupError) {
+      void logClientError('home-content:storage-cleanup', cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+    }
+  }
+}
+
 export interface TabletConversationTopic {
   content: string;
   id: string;
