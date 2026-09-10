@@ -6,6 +6,7 @@ import { fetchPublicHomeContents, type PublicHomeContent } from '../services/sup
 // 관리자 "홈 콘텐츠 관리 > 모집방식 & 신청방식"에 등록된 공개 이미지를
 // sort_order 순서대로 좌우 스와이프 배너 캐러셀로 보여준다(사랑받는 이유와
 // 완전히 동일한 크기/구조). 등록 전이면 시안형 안내 배너 1장을 임시 표시.
+// 홈에 노출되는 제목은 "모집방식 & 진행방식"(관리자 메뉴 라벨은 그대로).
 export default function HomeRecruitmentSection() {
   const [contents, setContents] = useState<PublicHomeContent[] | null>(null);
 
@@ -21,10 +22,10 @@ export default function HomeRecruitmentSection() {
 
   return (
     <section>
-      <h2 className="mb-2.5 text-[16px] font-black text-black">모집방식 &amp; 신청방식 💧</h2>
+      <h2 className="mb-2.5 text-[16px] font-black text-black">모집방식 &amp; 진행방식 📋</h2>
       {contents && contents.length > 0 ? (
         <HomeCarousel
-          ariaLabel="모집방식 & 신청방식"
+          ariaLabel="모집방식 & 진행방식"
           dotStyle="windowed"
           getKey={(content) => content.id}
           items={contents}
@@ -52,7 +53,7 @@ export default function HomeRecruitmentSection() {
               <span className="text-black">2</span>
               <span className="text-meet-blue">meet</span>
             </p>
-            <p className="mt-1 text-[20px] font-black leading-tight text-[#1c1c1e]">모집방식 &amp; 신청방식</p>
+            <p className="mt-1 text-[20px] font-black leading-tight text-[#1c1c1e]">모집방식 &amp; 진행방식</p>
             <p className="mt-1 text-[10.5px] font-bold leading-[1.5] text-[#8a8a8a]">
               {contents ? '콘텐츠 준비 중입니다' : '처음이라도, 어렵지 않아요!'}
             </p>

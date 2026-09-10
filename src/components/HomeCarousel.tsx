@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
-// "타임투밋이 사랑받는 이유 / 모집방식 & 신청방식" 배너 카드의 통일 비율.
+// "타임투밋이 사랑받는 이유 / 모집방식 & 진행방식" 배너 카드의 통일 비율.
 // 두 섹션이 반드시 같은 크기로 보이도록 이 한 값만 공유한다.
 // 11:4 = 2.75:1. 권장 원본 이미지: 1100 x 400 px (더 고해상도로 1650 x 600).
 export const HOME_BANNER_ASPECT = '11 / 4';

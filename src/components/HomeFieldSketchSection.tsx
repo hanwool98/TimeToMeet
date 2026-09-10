@@ -25,7 +25,7 @@ export default function HomeFieldSketchSection() {
   return (
     <section>
       <div className="mb-2.5 flex items-center justify-between">
-        <h2 className="text-[16px] font-black text-black">현장 스케치 💧</h2>
+        <h2 className="text-[16px] font-black text-black">현장 스케치 📸</h2>
         <span className="text-[12px] font-bold text-[#9a9a9a]">더보기 ›</span>
       </div>
       {preview.length > 0 ? (

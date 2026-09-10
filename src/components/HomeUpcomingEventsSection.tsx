@@ -4,9 +4,10 @@ import HomeCarousel from './HomeCarousel';
 import { fetchEventCoverUrls } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
-// 관리자가 행사별 대표 이미지를 등록하지 않은 경우에 쓰는 공용 목업
-// ("준비중" 문구 없이 자연스럽게 채워지도록 따뜻한 톤의 추상 배경).
-const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.svg';
+// 관리자가 행사별 대표 이미지를 등록하지 않은 경우에 쓰는 공용 목업.
+// 실제 로테이션 소개팅 현장 사진(대화 장면)을 기본값으로 쓰고, 좁은
+// 썸네일에서는 object-position으로 대화하는 두 사람 위주로 잡아준다.
+const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.jpg';
 
 // 레퍼런스 시안의 다가오는 행사 카드: 세로가 아니라 가로형 - 사진 왼쪽
 // 썸네일, 가운데 제목/날짜/시간/지역, 신청 버튼은 오른쪽 아래.
@@ -54,29 +55,31 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
           trackClassName="-mr-5 pr-5"
           renderItem={(event) => (
             <button
-              className="flex w-full items-stretch gap-3 rounded-[18px] border border-[#eef0f2] bg-white p-3 text-left shadow-[0_8px_22px_rgba(30,43,63,0.07)] transition active:scale-[0.99]"
+              className="flex w-full items-stretch gap-3.5 rounded-[18px] border border-[#eef0f2] bg-white p-3.5 text-left shadow-[0_8px_22px_rgba(30,43,63,0.07)] transition active:scale-[0.99]"
               onClick={() => navigate(`/events/${event.id}`)}
               type="button"
             >
-              <div className="relative w-[92px] shrink-0 self-stretch overflow-hidden rounded-[13px]">
+              <div className="relative w-[108px] shrink-0 self-stretch overflow-hidden rounded-[13px]">
                 <img
                   alt=""
                   aria-hidden="true"
-                  className="absolute inset-0 h-full min-h-[92px] w-full object-cover"
+                  className={`absolute inset-0 h-full min-h-[108px] w-full object-cover ${
+                    covers[event.id] ? 'object-center' : 'object-[center_30%]'
+                  }`}
                   src={covers[event.id] ?? eventCoverPlaceholder}
                 />
                 <span className="absolute left-1.5 top-1.5 rounded-full bg-meet-pink px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
                   {formatDDay(getDaysUntilEvent(event.date))}
                 </span>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <h3 className="truncate text-[13.5px] font-black text-black">{event.title}</h3>
-                <p className="mt-1 text-[10.5px] font-bold leading-[1.65] text-[#8a8a8a]">
+              <div className="flex min-w-0 flex-1 flex-col py-0.5">
+                <h3 className="truncate text-[14.5px] font-black text-black">{event.title}</h3>
+                <p className="mt-1.5 text-[11px] font-bold leading-[1.7] text-[#8a8a8a]">
                   📅 {formatKoreanDate(event.date)}
                   <br />🕐 {formatTimeRange(event.startTime, event.endTime)}
                   <br />📍 {event.location}
                 </p>
-                <span className="mt-auto ml-auto rounded-[12px] bg-meet-blueSoft px-3 py-1.5 text-[11px] font-black text-meet-blue">
+                <span className="mt-auto ml-auto rounded-[12px] bg-meet-blueSoft px-3.5 py-2 text-[11.5px] font-black text-meet-blue">
                   소개팅 신청하기 ›
                 </span>
               </div>
