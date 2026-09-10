@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
-// 홈 대시보드의 "다가오는 행사 / 타임투밋이 사랑받는 이유 / 모집방식 & 신청방식"
-// 세 캐러셀이 전부 동일한 메인 카드 높이를 쓰도록 공유하는 상수 - 개별 섹션이
-// 각자 다른 높이를 쓰면 스와이프 중 카드 높이가 들쭉날쭉해 보인다.
-export const HOME_MAIN_CARD_HEIGHT_CLASS = 'h-[228px]';
+// 레퍼런스 시안의 "타임투밋이 사랑받는 이유 / 모집방식 & 신청방식" 배너 카드
+// 비율 - 가로로 길고 낮은 배너(약 2.76:1). 두 섹션이 같은 값을 쓰도록 공유.
+export const HOME_BANNER_ASPECT = '320 / 116';
 
 const DEFAULT_AUTOPLAY_MS = 4500;
 const RESUME_AFTER_INTERACTION_MS = 4500;

@@ -17,7 +17,7 @@ function clampOffset(offset: number, scale: number) {
 // 저장값은 RepresentativeCrop({scale, offsetX, offsetY} - 오프셋은 표시 박스
 // 높이 대비 비율)이고, 홈에서는 ParticipantPhoto가 같은 방식으로 렌더한다.
 export default function HomeContentCropEditor({
-  aspectRatio = '335 / 228',
+  aspectRatio = '320 / 116',
   imageUrl,
   onChange,
   value,

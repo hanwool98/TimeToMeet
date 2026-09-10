@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import HomeCarousel, { HOME_MAIN_CARD_HEIGHT_CLASS } from './HomeCarousel';
+import HomeCarousel from './HomeCarousel';
 import type { EventData } from '../types/event';
 
 // 행사 대표 이미지를 담을 DB 컬럼/관리자 업로드가 아직 없어 전체 행사 공용
-// 임시 목업 이미지를 쓴다("준비중" 문구 없이 카드가 자연스럽게 채워지도록
-// 따뜻한 톤의 추상 배경으로만 구성). 실제 이미지 필드가 생기면 이 상수만
-// 교체하면 된다.
+// 임시 목업 이미지를 쓴다("준비중" 문구 없이 자연스럽게 채워지도록 따뜻한
+// 톤의 추상 배경). 실제 이미지 필드가 생기면 이 상수만 교체하면 된다.
 const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.svg';
 
+// 레퍼런스 시안의 다가오는 행사 카드: 세로가 아니라 가로형 - 사진 왼쪽
+// 썸네일, 가운데 제목/날짜/시간/지역, 신청 버튼은 오른쪽 아래.
 export default function HomeUpcomingEventsSection({ events }: { events: EventData[] }) {
   const navigate = useNavigate();
 
@@ -17,17 +18,15 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-black text-black">다가오는 행사 🌸</h2>
-        <button className="text-[13px] font-bold text-[#9a9a9a]" onClick={() => navigate('/calendar')} type="button">
+      <div className="mb-2.5 flex items-center justify-between">
+        <h2 className="text-[16px] font-black text-black">다가오는 행사 🌸</h2>
+        <button className="text-[12px] font-bold text-[#9a9a9a]" onClick={() => navigate('/calendar')} type="button">
           전체보기 ›
         </button>
       </div>
       {upcomingEvents.length === 0 ? (
-        <div
-          className={`grid w-full place-items-center rounded-[22px] bg-meet-blueSoft ${HOME_MAIN_CARD_HEIGHT_CLASS}`}
-        >
-          <p className="text-[14px] font-bold text-[#8a8a8a]">예정된 행사가 없습니다</p>
+        <div className="grid h-[120px] w-full place-items-center rounded-[18px] bg-meet-blueSoft">
+          <p className="text-[13px] font-bold text-[#8a8a8a]">예정된 행사가 없습니다</p>
         </div>
       ) : (
         <HomeCarousel
@@ -37,26 +36,30 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
           trackClassName="-mr-5 pr-5"
           renderItem={(event) => (
             <button
-              className={`flex w-full flex-col overflow-hidden rounded-[22px] bg-white text-left shadow-[0_10px_28px_rgba(30,43,63,0.09)] transition active:scale-[0.99] ${HOME_MAIN_CARD_HEIGHT_CLASS}`}
+              className="flex w-full items-stretch gap-3 rounded-[18px] border border-[#eef0f2] bg-white p-3 text-left shadow-[0_8px_22px_rgba(30,43,63,0.07)] transition active:scale-[0.99]"
               onClick={() => navigate(`/events/${event.id}`)}
               type="button"
             >
-              <div className="relative h-[44%] w-full shrink-0">
-                <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={eventCoverPlaceholder} />
-                <span className="absolute left-3 top-3 rounded-full bg-meet-pink px-2.5 py-1 text-[12px] font-black text-white shadow-sm">
+              <div className="relative w-[92px] shrink-0 self-stretch overflow-hidden rounded-[13px]">
+                <img
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full min-h-[92px] w-full object-cover"
+                  src={eventCoverPlaceholder}
+                />
+                <span className="absolute left-1.5 top-1.5 rounded-full bg-meet-pink px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
                   {formatDDay(getDaysUntilEvent(event.date))}
                 </span>
               </div>
-              <div className="flex flex-1 flex-col justify-between px-3.5 py-3">
-                <div>
-                  <h3 className="truncate text-[15px] font-black text-black">{event.title}</h3>
-                  <p className="mt-1 truncate text-[12px] font-bold text-[#8a8a8a]">
-                    {formatKoreanDate(event.date)} · {formatTimeRange(event.startTime, event.endTime)}
-                  </p>
-                  <p className="truncate text-[12px] font-bold text-[#8a8a8a]">{event.location}</p>
-                </div>
-                <span className="mt-1.5 inline-flex w-fit items-center gap-1 self-end rounded-full bg-meet-blueSoft px-3 py-1.5 text-[12px] font-black text-meet-blue">
-                  소개팅 신청하기 <span aria-hidden="true">›</span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <h3 className="truncate text-[13.5px] font-black text-black">{event.title}</h3>
+                <p className="mt-1 text-[10.5px] font-bold leading-[1.65] text-[#8a8a8a]">
+                  📅 {formatKoreanDate(event.date)}
+                  <br />🕐 {formatTimeRange(event.startTime, event.endTime)}
+                  <br />📍 {event.location}
+                </p>
+                <span className="mt-auto ml-auto rounded-[12px] bg-meet-blueSoft px-3 py-1.5 text-[11px] font-black text-meet-blue">
+                  소개팅 신청하기 ›
                 </span>
               </div>
             </button>

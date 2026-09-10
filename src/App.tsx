@@ -60,9 +60,9 @@ export default function App() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
-      <div className="mobile-container mx-auto flex min-h-screen flex-col px-5 with-bottom-tabs pt-3">
-        <header className="mb-1 flex items-center justify-between">
-          <div className="relative w-[150px]">
+      <div className="mobile-container mx-auto flex min-h-screen flex-col px-5 with-bottom-tabs pt-2.5">
+        <header className="mb-3 flex items-center justify-between">
+          <div className="relative w-[132px]">
             <img alt="time2meet" className="h-auto w-full object-contain" src="/assets/time2meet-logo-transparent.png" />
             <button
               aria-label="관리자 로그인 열기"
@@ -85,7 +85,7 @@ export default function App() {
             <span className="absolute right-1.5 top-1 h-2 w-2 rounded-full bg-meet-pink ring-2 ring-white" />
           </span>
         </header>
-        <div className="mt-4 flex flex-col gap-8">
+        <div className="flex flex-col gap-5">
           <HomeUpcomingEventsSection events={events} />
           <HomeReasonSection />
           <HomeRecruitmentSection />
