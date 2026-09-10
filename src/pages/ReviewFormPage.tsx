@@ -29,6 +29,9 @@ export default function ReviewFormPage() {
   const { eventId } = useParams();
   const [eventTitle, setEventTitle] = useState('');
   const [content, setContent] = useState('');
+  // 별점: 진입 시 선택되지 않은 상태(null). 참가자가 직접 1~5점을 골라야
+  // 제출할 수 있고, 그 값이 event_reviews.rating에 저장된다.
+  const [rating, setRating] = useState<number | null>(null);
   const [submittedAt, setSubmittedAt] = useState<string | undefined>(undefined);
   const [images, setImages] = useState<ReviewImageSlot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +51,7 @@ export default function ReviewFormPage() {
       .then(([review, tickets]) => {
         if (!active) return;
         setContent(review.content);
+        setRating(review.submittedAt ? review.rating : null);
         setSubmittedAt(review.submittedAt);
         setImages(
           review.images.map((image, index) => ({
@@ -100,7 +104,7 @@ export default function ReviewFormPage() {
   };
 
   const handleSubmit = async () => {
-    if (!eventId || saving || !content.trim()) return;
+    if (!eventId || saving || !content.trim() || rating == null) return;
     setSaving(true);
     setSaveError('');
     try {
@@ -114,7 +118,7 @@ export default function ReviewFormPage() {
           return uploaded.photoPath;
         }),
       );
-      const result = await saveEventReview(eventId, content, finalPaths);
+      const result = await saveEventReview(eventId, content, rating, finalPaths);
       setSubmittedAt(result.submittedAt);
       setJustSaved(true);
     } catch (caughtError) {
@@ -154,6 +158,31 @@ export default function ReviewFormPage() {
             {eventTitle ? <p className="-mt-2 text-center text-[13px] font-bold text-[#999]">{eventTitle}</p> : null}
 
             <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-5 shadow-calendar">
+              <div className="mb-5">
+                <p className="text-[13px] font-black text-[#666]">별점</p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      aria-label={`${star}점`}
+                      aria-pressed={rating != null && star <= rating}
+                      className={[
+                        'text-[30px] leading-none transition active:scale-95',
+                        rating != null && star <= rating ? 'text-meet-pink' : 'text-[#d9dde2]',
+                      ].join(' ')}
+                      key={star}
+                      onClick={() => setRating(star)}
+                      type="button"
+                    >
+                      ★
+                    </button>
+                  ))}
+                  {rating != null ? <span className="ml-1 text-[13px] font-black text-[#888]">{rating}점</span> : null}
+                </div>
+                {rating == null ? (
+                  <p className="mt-1.5 text-[12px] font-bold text-meet-pink">별점을 선택해주세요.</p>
+                ) : null}
+              </div>
+
               <textarea
                 className="h-56 w-full resize-none rounded-[16px] bg-[#f7f8fa] p-4 text-[15px] font-medium leading-relaxed outline-none"
                 maxLength={reviewMaxLength}
@@ -212,7 +241,7 @@ export default function ReviewFormPage() {
               {saveError ? <p className="mt-5 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
 
               <div className="mt-6">
-                <PrimaryButton disabled={saving || !content.trim()} onClick={() => void handleSubmit()}>
+                <PrimaryButton disabled={saving || !content.trim() || rating == null} onClick={() => void handleSubmit()}>
                   {saving ? '저장하는 중' : submittedAt ? '후기 수정하기' : '후기 남기기'}
                 </PrimaryButton>
               </div>

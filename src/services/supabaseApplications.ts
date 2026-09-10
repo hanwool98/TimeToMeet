@@ -3064,10 +3064,12 @@ export interface MyEventReviewImage {
 
 // get_my_event_review_for_session RPC는 Storage 서명이 불가능해 텍스트만
 // 내려줬다 - 기존 첨부 사진 미리보기가 필요해져 Edge Function으로 교체.
-export async function fetchMyEventReview(eventId: string): Promise<{ content: string; images: MyEventReviewImage[]; submittedAt?: string }> {
+export async function fetchMyEventReview(
+  eventId: string,
+): Promise<{ content: string; images: MyEventReviewImage[]; rating: number | null; submittedAt?: string }> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
-  if (!session?.token) return { content: '', images: [] };
+  if (!session?.token) return { content: '', images: [], rating: null };
 
   const { data, error } = await supabase.functions.invoke('get-my-event-review', {
     body: { eventId, sessionToken: session.token },
@@ -3076,6 +3078,7 @@ export async function fetchMyEventReview(eventId: string): Promise<{ content: st
   return {
     content: data.content ?? '',
     images: (data.images ?? []) as MyEventReviewImage[],
+    rating: typeof data.rating === 'number' ? data.rating : null,
     submittedAt: data.submittedAt ?? undefined,
   };
 }
@@ -3110,15 +3113,22 @@ export async function uploadEventReviewPhoto(eventId: string, file: File): Promi
   return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
 }
 
-export async function saveEventReview(eventId: string, content: string, imagePaths: string[] = []): Promise<{ submittedAt?: string }> {
+export async function saveEventReview(
+  eventId: string,
+  content: string,
+  rating: number,
+  imagePaths: string[] = [],
+): Promise<{ submittedAt?: string }> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('별점을 선택해주세요.');
 
   const { data, error } = await supabase.rpc('save_event_review_for_session', {
     content_value: content,
     event_id_value: eventId,
     image_paths_value: imagePaths,
+    rating_value: rating,
     session_token: session.token,
   });
   if (error) throw new Error(error.message || '후기 저장에 실패했습니다.');

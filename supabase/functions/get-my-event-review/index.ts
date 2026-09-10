@@ -51,12 +51,12 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (myApplicationError || !myApplication) {
-    return json({ ok: true, content: '', images: [], submittedAt: null });
+    return json({ ok: true, content: '', images: [], rating: null, submittedAt: null });
   }
 
   const { data: review } = await supabase
     .from('event_reviews')
-    .select('content, image_paths, submitted_at')
+    .select('content, image_paths, submitted_at, rating')
     .eq('event_id', payload.eventId)
     .eq('application_id', myApplication.id)
     .maybeSingle();
@@ -70,6 +70,7 @@ Deno.serve(async (request) => {
     ok: true,
     content: review?.content ?? '',
     images,
+    rating: review?.rating ?? null,
     submittedAt: review?.submitted_at ?? null,
   });
 });
