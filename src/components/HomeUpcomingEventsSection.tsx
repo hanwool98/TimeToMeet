@@ -1,20 +1,38 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import HomeCarousel from './HomeCarousel';
+import { fetchEventCoverUrls } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
-// 행사 대표 이미지를 담을 DB 컬럼/관리자 업로드가 아직 없어 전체 행사 공용
-// 임시 목업 이미지를 쓴다("준비중" 문구 없이 자연스럽게 채워지도록 따뜻한
-// 톤의 추상 배경). 실제 이미지 필드가 생기면 이 상수만 교체하면 된다.
+// 관리자가 행사별 대표 이미지를 등록하지 않은 경우에 쓰는 공용 목업
+// ("준비중" 문구 없이 자연스럽게 채워지도록 따뜻한 톤의 추상 배경).
 const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.svg';
 
 // 레퍼런스 시안의 다가오는 행사 카드: 세로가 아니라 가로형 - 사진 왼쪽
 // 썸네일, 가운데 제목/날짜/시간/지역, 신청 버튼은 오른쪽 아래.
 export default function HomeUpcomingEventsSection({ events }: { events: EventData[] }) {
   const navigate = useNavigate();
+  const [covers, setCovers] = useState<Record<string, string>>({});
 
-  const upcomingEvents = events
-    .filter((event) => getDaysUntilEvent(event.date) >= 0)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const upcomingEvents = useMemo(
+    () =>
+      events
+        .filter((event) => getDaysUntilEvent(event.date) >= 0)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [events],
+  );
+
+  const upcomingIdsKey = upcomingEvents.map((event) => event.id).join(',');
+  useEffect(() => {
+    if (!upcomingIdsKey) return;
+    let active = true;
+    void fetchEventCoverUrls(upcomingIdsKey.split(',')).then((next) => {
+      if (active) setCovers(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [upcomingIdsKey]);
 
   return (
     <section>
@@ -45,7 +63,7 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
                   alt=""
                   aria-hidden="true"
                   className="absolute inset-0 h-full min-h-[92px] w-full object-cover"
-                  src={eventCoverPlaceholder}
+                  src={covers[event.id] ?? eventCoverPlaceholder}
                 />
                 <span className="absolute left-1.5 top-1.5 rounded-full bg-meet-pink px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
                   {formatDDay(getDaysUntilEvent(event.date))}

@@ -47,7 +47,7 @@ Deno.serve(async (request) => {
 
   let reviewQuery = supabase
     .from('event_reviews')
-    .select('event_id, application_id, content, image_paths, submitted_at')
+    .select('id, event_id, application_id, content, image_paths, submitted_at, home_featured, home_sort_order')
     .order('submitted_at', { ascending: false });
   if (payload.eventId) reviewQuery = reviewQuery.eq('event_id', payload.eventId);
 
@@ -62,7 +62,7 @@ Deno.serve(async (request) => {
     supabase.from('events').select('id, title, event_date').in('id', eventIds),
     supabase
       .from('applications')
-      .select('id, nickname, job, birth_date, profile_photo_paths, representative_photo_index, representative_crop')
+      .select('id, nickname, job, gender, birth_date, profile_photo_paths, representative_photo_index, representative_crop')
       .in('id', applicationIds),
     supabase.from('event_profile_cards').select('event_id, application_id, photo_path, photo_crop').in('application_id', applicationIds),
     // 작성자 계정이 그 사이 정리(게스트 만료 등)돼 applications가 익명화된
@@ -70,7 +70,7 @@ Deno.serve(async (request) => {
     // 안 됐거나 스냅샷 도입 이전 legacy 후기) 기존처럼 applications를 쓴다.
     supabase
       .from('event_participant_snapshots')
-      .select('event_id, application_id, nickname, age, job, photo_path, photo_crop')
+      .select('event_id, application_id, nickname, age, job, gender, photo_path, photo_crop')
       .in('application_id', applicationIds),
   ]);
 
@@ -101,11 +101,15 @@ Deno.serve(async (request) => {
       const images = await Promise.all(reviewImagePaths.map((path) => signUrl(supabase, path)));
 
       return {
+        id: review.id,
         applicationId: review.application_id,
         age,
         content: review.content,
         eventId: review.event_id,
         eventTitle: event?.title ?? '',
+        gender: (snapshot?.gender ?? '') !== '' ? snapshot!.gender : (application?.gender ?? ''),
+        homeFeatured: Boolean(review.home_featured),
+        homeSortOrder: Number(review.home_sort_order ?? 0),
         images: images.filter((url): url is string => Boolean(url)),
         job: (snapshot?.job ?? '') !== '' ? snapshot!.job : (application?.job ?? ''),
         nickname: (snapshot?.nickname ?? '') !== '' ? snapshot!.nickname : (application?.nickname ?? ''),

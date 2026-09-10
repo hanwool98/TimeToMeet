@@ -6,7 +6,13 @@ import DateTimePicker from '../components/DateTimePicker';
 import PrimaryButton from '../components/PrimaryButton';
 import TimeSelect from '../components/TimeSelect';
 import useOperationalData from '../hooks/useOperationalData';
-import { fetchAdminEventDetailsFromSupabase, upsertEventToSupabase } from '../services/supabaseApplications';
+import {
+  fetchAdminEventDetailsFromSupabase,
+  fetchEventCoverUrls,
+  removeEventCover,
+  uploadEventCover,
+  upsertEventToSupabase,
+} from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
 const eventTypes = ['타임투밋 로테이션 소개팅'];
@@ -291,6 +297,16 @@ export default function AdminEventCreatePage() {
               <input className={inputClassName} onChange={(event) => setEventName(event.target.value)} value={eventName} />
             </Field>
 
+            <Field label="대표 이미지 (홈 '다가오는 행사' 카드)">
+              {editingEvent ? (
+                <EventCoverField eventId={editingEvent.id} />
+              ) : (
+                <span className="block text-[12px] font-bold leading-relaxed text-[#777]">
+                  행사를 먼저 만든 뒤, 행사 수정 화면에서 대표 이미지를 등록할 수 있어요.
+                </span>
+              )}
+            </Field>
+
             <Field label="닉네임 안내 문구 (선택)">
               <textarea
                 className="min-h-24 w-full max-w-full min-w-0 resize-y rounded-[18px] bg-meet-blueSoft px-4 py-3 text-left text-[15px] font-bold leading-relaxed text-black outline-none focus:ring-2 focus:ring-meet-blue"
@@ -531,6 +547,86 @@ export default function AdminEventCreatePage() {
         </section>
       </div>
     </main>
+  );
+}
+
+// 행사 대표 이미지 등록/교체/삭제. 행사 저장 폼과는 독립적으로, 선택 즉시
+// upload-event-cover Edge Function으로 반영한다.
+function EventCoverField({ eventId }: { eventId: string }) {
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetchEventCoverUrls([eventId]).then((covers) => {
+      if (active) setCoverUrl(covers[eventId] ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file || busy) return;
+    setBusy(true);
+    try {
+      const { coverImageUrl } = await uploadEventCover(eventId, file);
+      setCoverUrl(coverImageUrl);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '대표 이미지 업로드에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (busy || !window.confirm('대표 이미지를 삭제할까요?')) return;
+    setBusy(true);
+    try {
+      await removeEventCover(eventId);
+      setCoverUrl(null);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '삭제에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="overflow-hidden rounded-[16px] border border-[#e8edf2] bg-[#f7f9fb]" style={{ aspectRatio: '16 / 9' }}>
+        {coverUrl ? (
+          <img alt="대표 이미지" className="h-full w-full object-cover" src={coverUrl} />
+        ) : (
+          <div className="grid h-full w-full place-items-center text-[12px] font-bold text-[#9aa4ad]">등록된 이미지 없음</div>
+        )}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <label className="cursor-pointer rounded-[10px] bg-meet-blue px-3 py-2 text-[12px] font-black text-white">
+          {busy ? '처리 중' : coverUrl ? '이미지 교체' : '이미지 등록'}
+          <input
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            disabled={busy}
+            onChange={(event) => void handleFile(event.target.files?.[0])}
+            type="file"
+          />
+        </label>
+        {coverUrl ? (
+          <button
+            className="rounded-[10px] bg-[#f0f1f3] px-3 py-2 text-[12px] font-black text-[#e0554a]"
+            disabled={busy}
+            onClick={() => void handleRemove()}
+            type="button"
+          >
+            삭제
+          </button>
+        ) : null}
+      </div>
+      <span className="mt-1.5 block text-[12px] font-bold leading-relaxed text-[#777]">
+        가로형 이미지 권장(예: 1200 x 675). 등록하지 않으면 기본 이미지가 표시됩니다.
+      </span>
+    </div>
   );
 }
 

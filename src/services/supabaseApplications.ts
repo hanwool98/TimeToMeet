@@ -3210,11 +3210,15 @@ export async function fetchAdminParticipantEventProfileCard(eventId: string, app
 // 콘텐츠 관리 > 후기 관리 목록 - 사진은 admin-participant-event-profile
 // -card와 동일한 우선순위(행사 카드 사진 > 기본 대표사진)로 서명됨.
 export interface AdminEventReview {
+  id: string;
   age: number | null;
   applicationId: string;
   content: string;
   eventId: string;
   eventTitle: string;
+  gender: string;
+  homeFeatured: boolean;
+  homeSortOrder: number;
   images: string[];
   job: string;
   nickname: string;
@@ -4003,6 +4007,108 @@ export async function deleteHomeContent(contentId: string): Promise<void> {
       void logClientError('home-content:storage-cleanup', cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
     }
   }
+}
+
+// ── 행사 대표 이미지(다가오는 행사 카드) ─────────────────────────────
+export async function fetchEventCoverUrls(eventIds: string[]): Promise<Record<string, string>> {
+  if (!supabase || eventIds.length === 0) return {};
+  try {
+    const { data, error } = await supabase.functions.invoke('event-cover-urls', { body: { eventIds } });
+    if (error || data?.ok !== true || typeof data.covers !== 'object' || !data.covers) return {};
+    return data.covers as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export async function uploadEventCover(eventId: string, file: File): Promise<{ coverImageUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-event-cover', {
+    body: { eventId, photo, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    let message = '대표 이미지 업로드에 실패했습니다.';
+    if (data?.message) {
+      message = data.message;
+    } else if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // keep generic
+      }
+    }
+    throw new Error(message);
+  }
+  return { coverImageUrl: (data.coverImageUrl as string | null) ?? null };
+}
+
+export async function removeEventCover(eventId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('upload-event-cover', {
+    body: { eventId, remove: true, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(data?.message || (error instanceof Error ? error.message : '대표 이미지 삭제에 실패했습니다.'));
+  }
+}
+
+// ── 홈 "참가자 후기" 노출 ────────────────────────────────────────────
+export interface PublicHomeReview {
+  id: string;
+  gender: string;
+  age: number | null;
+  content: string;
+}
+
+export async function fetchPublicHomeReviews(): Promise<PublicHomeReview[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.rpc('get_public_home_reviews');
+    if (error || !Array.isArray(data)) return [];
+    return (data as Record<string, unknown>[]).map((row) => ({
+      age: row.age == null ? null : Number(row.age),
+      content: (row.content as string) ?? '',
+      gender: (row.gender as string) ?? '',
+      id: row.id as string,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function setReviewHomeFeatured(reviewId: string, isFeatured: boolean): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('set_review_home_featured_for_session', {
+    is_featured: isFeatured,
+    review_id_value: reviewId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+}
+
+export async function reorderHomeFeaturedReviews(orderedIds: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('reorder_home_featured_reviews_for_session', {
+    ordered_ids: orderedIds,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
 }
 
 export interface TabletConversationTopic {

@@ -5,12 +5,16 @@ import HomeContentCropEditor from '../components/HomeContentCropEditor';
 import ParticipantPhoto from '../components/ParticipantPhoto';
 import {
   deleteHomeContent,
+  fetchAdminEventReviews,
   fetchAdminHomeContents,
   homeContentAspectRatio,
   reorderHomeContents,
+  reorderHomeFeaturedReviews,
   setHomeContentVisible,
+  setReviewHomeFeatured,
   updateHomeContent,
   uploadHomeContent,
+  type AdminEventReview,
   type AdminHomeContent,
   type HomeContentCrop,
   type HomeContentSection,
@@ -24,9 +28,12 @@ const sections: { key: HomeContentSection; label: string; managed: boolean; hint
   { hint: '홈 "현장 스케치" 영역에 앞쪽 순서 3개가 노출됩니다. 가로 썸네일(4:3), 캡션(해시태그) 입력 가능.', key: 'field_sketch', label: '현장 스케치', managed: true },
 ];
 
+type Tab = HomeContentSection | 'reviews';
+
 export default function AdminHomeContentPage() {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState<HomeContentSection>('love_reason');
+  const [tab, setTab] = useState<Tab>('love_reason');
+  const activeSection: HomeContentSection = tab === 'reviews' ? 'love_reason' : tab;
   const [items, setItems] = useState<AdminHomeContent[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,18 +129,30 @@ export default function AdminHomeContentPage() {
             <button
               className={[
                 'rounded-[10px] px-3 py-1.5 text-[12px] font-black transition',
-                activeSection === section.key ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-meet-blue',
+                tab === section.key ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-meet-blue',
               ].join(' ')}
               key={section.key}
-              onClick={() => setActiveSection(section.key)}
+              onClick={() => setTab(section.key)}
               type="button"
             >
               {section.label}
             </button>
           ))}
+          <button
+            className={[
+              'rounded-[10px] px-3 py-1.5 text-[12px] font-black transition',
+              tab === 'reviews' ? 'bg-meet-blue text-white' : 'bg-meet-blueSoft text-meet-blue',
+            ].join(' ')}
+            onClick={() => setTab('reviews')}
+            type="button"
+          >
+            참가자 후기
+          </button>
         </div>
 
-        {loading ? (
+        {tab === 'reviews' ? (
+          <HomeReviewsAdminPanel />
+        ) : loading ? (
           <DataLoadingState />
         ) : error ? (
           <DataErrorState message={error} onRetry={load} />
@@ -429,5 +448,155 @@ function HomeContentEditModal({
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+// 홈 "참가자 후기" 캐러셀에 노출할 후기를 실제 후기 목록에서 직접 고른다.
+// 이미지가 아니라 기존 event_reviews를 선택/정렬하는 것이라 위 이미지
+// 섹션들과 UI가 다르다. 카드에는 성별·나이·내용만 쓴다.
+function HomeReviewsAdminPanel() {
+  const [reviews, setReviews] = useState<AdminEventReview[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setError('');
+    try {
+      setReviews(await fetchAdminEventReviews());
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : '후기를 불러오지 못했습니다.');
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const featured = useMemo(
+    () => (reviews ?? []).filter((review) => review.homeFeatured).sort((a, b) => a.homeSortOrder - b.homeSortOrder),
+    [reviews],
+  );
+  const others = useMemo(
+    () => (reviews ?? []).filter((review) => !review.homeFeatured),
+    [reviews],
+  );
+
+  const patch = (id: string, next: Partial<AdminEventReview>) =>
+    setReviews((current) => current?.map((review) => (review.id === id ? { ...review, ...next } : review)) ?? null);
+
+  const toggle = async (review: AdminEventReview, on: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    patch(review.id, { homeFeatured: on });
+    try {
+      await setReviewHomeFeatured(review.id, on);
+      await load();
+    } catch (caughtError) {
+      patch(review.id, { homeFeatured: !on });
+      window.alert(caughtError instanceof Error ? caughtError.message : '변경에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const move = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= featured.length || busy) return;
+    const reordered = [...featured];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setReviews((current) => {
+      if (!current) return current;
+      const order = new Map(reordered.map((review, position) => [review.id, position + 1]));
+      return current.map((review) => (order.has(review.id) ? { ...review, homeSortOrder: order.get(review.id)! } : review));
+    });
+    setBusy(true);
+    try {
+      await reorderHomeFeaturedReviews(reordered.map((review) => review.id));
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '순서 변경에 실패했습니다.');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const who = (review: AdminEventReview) =>
+    [review.gender, review.age != null ? `${review.age}세` : ''].filter(Boolean).join(' · ') || '참가자';
+
+  if (error) return <DataErrorState message={error} onRetry={load} />;
+  if (!reviews) return <DataLoadingState />;
+
+  return (
+    <div className="mt-4 pb-6">
+      <p className="text-[13px] font-extrabold text-[#8a8a8a]">
+        홈 "참가자 후기"에는 여기서 고른 후기만 성별·나이·내용으로 노출됩니다. 고르지 않으면 홈에 후기 영역이 표시되지 않습니다.
+      </p>
+
+      <h3 className="mt-4 text-[13px] font-black text-[#555]">홈 노출 중 · {featured.length}개</h3>
+      <div className="mt-2 space-y-2">
+        {featured.map((review, index) => (
+          <article className="rounded-[14px] border border-[#e6f0e9] bg-[#f6fbf8] p-3" key={review.id}>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-black text-[#999]">#{index + 1}</span>
+              <span className="text-[12px] font-black text-meet-pink">{who(review)}</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  className="rounded-[8px] bg-[#eef4f0] px-2 py-1 text-[12px] font-black text-[#555] disabled:opacity-40"
+                  disabled={index === 0 || busy}
+                  onClick={() => void move(index, -1)}
+                  type="button"
+                >
+                  ↑
+                </button>
+                <button
+                  className="rounded-[8px] bg-[#eef4f0] px-2 py-1 text-[12px] font-black text-[#555] disabled:opacity-40"
+                  disabled={index === featured.length - 1 || busy}
+                  onClick={() => void move(index, 1)}
+                  type="button"
+                >
+                  ↓
+                </button>
+                <button
+                  className="rounded-[8px] bg-[#f2f2f2] px-2.5 py-1 text-[12px] font-black text-[#e0554a]"
+                  disabled={busy}
+                  onClick={() => void toggle(review, false)}
+                  type="button"
+                >
+                  숨기기
+                </button>
+              </div>
+            </div>
+            <p className="mt-1.5 whitespace-pre-wrap text-[13px] font-bold leading-relaxed text-[#333]">{review.content}</p>
+          </article>
+        ))}
+        {featured.length === 0 ? (
+          <p className="rounded-[12px] bg-[#f7f8fa] py-4 text-center text-[12px] font-bold text-[#999]">아직 고른 후기가 없습니다.</p>
+        ) : null}
+      </div>
+
+      <h3 className="mt-6 text-[13px] font-black text-[#555]">전체 후기 · {others.length}개</h3>
+      <div className="mt-2 space-y-2">
+        {others.map((review) => (
+          <article className="rounded-[14px] border border-[#f0f3f6] bg-white p-3" key={review.id}>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-black text-[#888]">{who(review)}</span>
+              <span className="text-[11px] font-bold text-[#aaa]">· {review.eventTitle}</span>
+              <button
+                className="ml-auto rounded-[8px] bg-meet-blueSoft px-2.5 py-1 text-[12px] font-black text-meet-blue disabled:opacity-40"
+                disabled={busy}
+                onClick={() => void toggle(review, true)}
+                type="button"
+              >
+                홈에 노출
+              </button>
+            </div>
+            <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-[13px] font-bold leading-relaxed text-[#333]">{review.content}</p>
+          </article>
+        ))}
+        {others.length === 0 ? (
+          <p className="rounded-[12px] bg-[#f7f8fa] py-4 text-center text-[12px] font-bold text-[#999]">등록된 후기가 없습니다.</p>
+        ) : null}
+      </div>
+    </div>
   );
 }
