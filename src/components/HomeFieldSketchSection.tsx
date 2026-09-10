@@ -32,7 +32,7 @@ export default function HomeFieldSketchSection() {
       {preview.length > 0 ? (
         <div className="grid grid-cols-3 gap-2.5">
           {preview.map((sketch) => (
-            <div className="overflow-hidden rounded-[16px] shadow-[0_6px_16px_rgba(30,43,63,0.08)]" key={sketch.id}>
+            <div className="relative overflow-hidden rounded-[14px] shadow-[0_6px_16px_rgba(30,43,63,0.09)]" key={sketch.id}>
               <ParticipantPhoto
                 className="w-full bg-[#f1f3f5]"
                 crop={sketch.cropPosition}
@@ -40,13 +40,15 @@ export default function HomeFieldSketchSection() {
                 style={{ aspectRatio: '3 / 4' }}
               />
               {sketch.caption ? (
-                <p className="truncate bg-white px-1.5 py-1.5 text-center text-[11px] font-black text-[#666]">{sketch.caption}</p>
+                <p className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1.5 pt-4 text-[10px] font-black text-white">
+                  {sketch.caption}
+                </p>
               ) : null}
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid h-[132px] w-full place-items-center rounded-[16px] bg-meet-blueSoft">
+        <div className="grid h-[128px] w-full place-items-center rounded-[14px] bg-meet-blueSoft">
           <p className="text-[13px] font-bold text-[#8a8a8a]">{contents ? '현장 스케치 준비 중입니다' : '불러오는 중'}</p>
         </div>
       )}

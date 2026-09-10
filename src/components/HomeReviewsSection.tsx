@@ -10,12 +10,12 @@ export default function HomeReviewsSection() {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-black text-black">참가자 후기 💧</h2>
+        <h2 className="text-[19px] font-black text-black">참가자 후기 🌸</h2>
         <span className="text-[13px] font-bold text-[#9a9a9a]">더보기 ›</span>
       </div>
       <div className="grid grid-cols-2 gap-2.5">
         {previewReviews.map((review) => (
-          <div className="rounded-[18px] bg-white p-3.5 shadow-[0_6px_16px_rgba(30,43,63,0.08)]" key={review.quote}>
+          <div className="rounded-[18px] bg-white p-3.5 shadow-[0_6px_16px_rgba(30,43,63,0.09)] ring-1 ring-[#f0f1f3]" key={review.quote}>
             <HeartIcon color={review.heartColor} />
             <p className="mt-2 text-[13px] font-black leading-snug text-black">“{review.quote}”</p>
             <p className="mt-1.5 whitespace-pre-line text-[11px] font-bold leading-relaxed text-[#8a8a8a]">

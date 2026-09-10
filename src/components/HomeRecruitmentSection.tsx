@@ -7,15 +7,16 @@ const recruitmentSlides = Array.from({ length: 10 }, (_, index) => `/assets/home
 export default function HomeRecruitmentSection() {
   return (
     <section>
-      <h2 className="mb-3 text-[19px] font-black text-black">모집방식 & 신청방식 💧</h2>
+      <h2 className="mb-3 text-[19px] font-black text-black">모집방식 &amp; 신청방식 💧</h2>
       <HomeCarousel
         ariaLabel="모집방식 & 신청방식"
         dotStyle="windowed"
         getKey={(src) => src}
         items={recruitmentSlides}
+        trackClassName="-mr-5 pr-5"
         renderItem={(src, index) => (
           <div
-            className={`w-full overflow-hidden rounded-[22px] shadow-[0_10px_30px_rgba(30,43,63,0.08)] ${HOME_MAIN_CARD_HEIGHT_CLASS}`}
+            className={`w-full overflow-hidden rounded-[22px] shadow-[0_10px_28px_rgba(30,43,63,0.09)] ${HOME_MAIN_CARD_HEIGHT_CLASS}`}
           >
             <img
               alt={`모집방식 & 신청방식 ${index + 1}`}

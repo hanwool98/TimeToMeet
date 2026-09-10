@@ -16,6 +16,10 @@ interface HomeCarouselProps<T> {
   items: T[];
   renderItem: (item: T, index: number) => ReactNode;
   slideClassName?: string;
+  // 트랙 자체에 얹는 클래스(예: 홈 컨테이너 좌우 패딩을 뚫고 카드가 화면
+  // 오른쪽 끝까지 차도록 "-mr-5 pr-5"). 레퍼런스처럼 카드 1장이 폭에 꽉 차고
+  // 다음 카드가 살짝만 보이게 하기 위함.
+  trackClassName?: string;
 }
 
 // 이 프로젝트에는 별도 캐러셀/스와이퍼 라이브러리가 없어(package.json 확인
@@ -30,7 +34,8 @@ export default function HomeCarousel<T>({
   getKey,
   items,
   renderItem,
-  slideClassName = 'w-[84%] min-[380px]:w-[82%]',
+  slideClassName = 'w-[87vw] max-w-[372px]',
+  trackClassName = '',
 }: HomeCarouselProps<T>) {
   const trackRef = useRef<HTMLDivElement>(null);
   const stepRef = useRef(0);
@@ -116,7 +121,7 @@ export default function HomeCarousel<T>({
     <div>
       <div
         aria-label={ariaLabel}
-        className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth pb-1 pr-6"
+        className={`no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth pb-1 ${trackClassName}`}
         onPointerDown={pauseThenResume}
         onScroll={handleScroll}
         ref={trackRef}
@@ -148,7 +153,7 @@ function CarouselDots({ activeIndex, style, total }: { activeIndex: number; styl
   if (style === 'windowed') {
     const visibleCount = Math.min(WINDOWED_DOT_SIZES.length, total - activeIndex);
     return (
-      <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-1.5">
+      <div aria-hidden="true" className="mt-2.5 flex items-center justify-center gap-1.5">
         {Array.from({ length: visibleCount }, (_, offset) => (
           <span className={`rounded-full ${WINDOWED_DOT_SIZES[offset]}`} key={offset} />
         ))}
@@ -157,13 +162,13 @@ function CarouselDots({ activeIndex, style, total }: { activeIndex: number; styl
   }
 
   return (
-    <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-1.5">
+    <div aria-hidden="true" className="mt-2.5 flex items-center justify-center gap-1.5">
       {Array.from({ length: total }, (_, index) => (
         <span
           className={
             index === activeIndex
-              ? 'h-2 w-5 rounded-full bg-meet-blue transition-all'
-              : 'h-2 w-2 rounded-full bg-[#d9d9d9] transition-all'
+              ? 'h-1.5 w-4 rounded-full bg-meet-blue transition-all'
+              : 'h-1.5 w-1.5 rounded-full bg-[#d5d5d5] transition-all'
           }
           key={index}
         />
