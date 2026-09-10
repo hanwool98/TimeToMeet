@@ -61,7 +61,7 @@ export default function App() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
       <div className="mobile-container mx-auto flex min-h-screen flex-col px-5 with-bottom-tabs pt-2.5">
-        <header className="mb-3 flex items-center justify-between">
+        <header className="mb-3 flex items-center">
           <div className="relative w-[132px]">
             <img alt="time2meet" className="h-auto w-full object-contain" src="/assets/time2meet-logo-transparent.png" />
             <button
@@ -71,19 +71,6 @@ export default function App() {
               type="button"
             />
           </div>
-          <span aria-hidden="true" className="relative grid h-9 w-9 place-items-center text-[#3a3a3a]">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-              <path
-                d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.9"
-              />
-              <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" />
-            </svg>
-            <span className="absolute right-1.5 top-1 h-2 w-2 rounded-full bg-meet-pink ring-2 ring-white" />
-          </span>
         </header>
         <div className="flex flex-col gap-5">
           <HomeUpcomingEventsSection events={events} />

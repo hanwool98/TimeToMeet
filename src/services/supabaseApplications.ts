@@ -4135,6 +4135,7 @@ export interface PublicHomeReview {
   gender: string;
   age: number | null;
   content: string;
+  rating: number;
 }
 
 export async function fetchPublicHomeReviews(): Promise<PublicHomeReview[]> {
@@ -4147,6 +4148,7 @@ export async function fetchPublicHomeReviews(): Promise<PublicHomeReview[]> {
       content: (row.content as string) ?? '',
       gender: (row.gender as string) ?? '',
       id: row.id as string,
+      rating: Math.min(5, Math.max(1, Math.round(Number(row.rating ?? 5)))),
     }));
   } catch {
     return [];

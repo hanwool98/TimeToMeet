@@ -138,25 +138,32 @@ export default function HomeCarousel<T>({
   );
 }
 
-// windowed 스타일에서 현재 카드 뒤로 갈수록 점점 작아지는 5단계 크기표 -
-// "● • • · ·"처럼 뒤에 더 남아있다는 느낌만 주고 전체 개수를 다 나열하지
-// 않는다(요청: 8/10페이지 전부를 점으로 나열하면 너무 빽빽해 보임).
-const WINDOWED_DOT_SIZES = [
-  'h-2 w-2 bg-meet-blue',
-  'h-1.5 w-1.5 bg-meet-blue/50',
-  'h-1.5 w-1.5 bg-[#c9c9c9]',
-  'h-1 w-1 bg-[#d9d9d9]',
-  'h-1 w-1 bg-[#e4e4e4]',
-];
+// windowed 스타일: 실제 슬라이드가 6개 이상이어도 하단 점은 항상 최대 5개만
+// 보여준다. 현재 슬라이드를 중심으로 5칸 창이 이동하며(첫/끝 구간은 고정),
+// 창 안에서 활성 점 위치와의 거리에 따라 크기를 3단계(큼/중간/작음)로 준다.
+//   거리 0 = 큼(활성) · 1 = 중간 · 2+ = 작음
+// key를 창 안 위치(0~4)로 잡아 창이 밀릴 때 같은 DOM이 유지돼 크기가
+// transition으로 부드럽게 바뀐다.
+const WINDOWED_DOT_MAX = 5;
+
+function windowedDotClass(distance: number, active: boolean) {
+  const size = distance === 0 ? 'h-2 w-2' : distance === 1 ? 'h-1.5 w-1.5' : 'h-1 w-1';
+  const color = active ? 'bg-meet-blue' : 'bg-[#d5d5d5]';
+  return `rounded-full transition-all duration-200 ${size} ${color}`;
+}
 
 function CarouselDots({ activeIndex, style, total }: { activeIndex: number; style: 'plain' | 'windowed'; total: number }) {
   if (style === 'windowed') {
-    const visibleCount = Math.min(WINDOWED_DOT_SIZES.length, total - activeIndex);
+    const dotCount = Math.min(WINDOWED_DOT_MAX, total);
+    const windowStart =
+      total <= WINDOWED_DOT_MAX ? 0 : Math.min(Math.max(activeIndex - 2, 0), total - WINDOWED_DOT_MAX);
+    const activePos = activeIndex - windowStart; // 0 ~ dotCount-1
     return (
       <div aria-hidden="true" className="mt-2.5 flex items-center justify-center gap-1.5">
-        {Array.from({ length: visibleCount }, (_, offset) => (
-          <span className={`rounded-full ${WINDOWED_DOT_SIZES[offset]}`} key={offset} />
-        ))}
+        {Array.from({ length: dotCount }, (_, position) => {
+          const distance = Math.abs(position - activePos);
+          return <span className={windowedDotClass(distance, distance === 0)} key={position} />;
+        })}
       </div>
     );
   }
