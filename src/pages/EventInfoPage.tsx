@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
+import EventIntroSections from '../components/EventIntroSections';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import { verifyAppSession } from '../services/appAuth';
-import { getCachedTestEventPreviewToken } from '../services/supabaseApplications';
+import { fetchPublicEventIntro, type EventIntroSection } from '../services/eventIntro';
+import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
 const reasons = [
   {
@@ -107,6 +109,48 @@ function SwipeSection({
   );
 }
 
+// 관리자가 이 행사에 소개 콘텐츠를 하나도 등록하지 않았을 때 쓰는 기존
+// 고정 콘텐츠 - 전면 개편 이전부터 있던 문구를 그대로 유지해, 이미
+// 운영 중인 행사의 소개 페이지가 갑자기 비어 보이지 않게 한다.
+function DefaultIntroContent() {
+  return (
+    <>
+      <section className="mt-9 space-y-6 px-1">
+        <h2 className="text-[20px] font-black">새로운 만남이 가장 기대되는 시간</h2>
+        <div className="space-y-5 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-black">
+          <p>
+            미혼남녀가 가장 선호하는 소개팅 시간대는
+            <br />
+            주말 초저녁이었습니다.
+          </p>
+          <p>
+            단순히 연인을 찾는 것을 넘어,
+            <br />내 시간을 함께하고 싶은 사람을 만나는 곳.
+          </p>
+          <p>행사의 끝이 새로운 만남의 시작이 될 수 있도록,</p>
+          <p>
+            <span className="font-black italic">Time to Meet</span>
+            <br />
+            여러분의 새로운 만남이 시작될 시간입니다.
+          </p>
+        </div>
+      </section>
+
+      <SwipeSection items={reasons} title="왜 타임투밋인가요?" />
+      <SwipeSection items={steps} title="진행순서" />
+      <SwipeSection items={reviews} title="후기" />
+
+      <section className="mt-10">
+        <h2 className="px-1 text-[20px] font-black">콘텐츠 참여 혜택</h2>
+        <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+          <p>행사 후기 콘텐츠 제작(유튜브, 릴스, 블로그 등)에 참여하고 싶으시다면 타임투밋 공식 DM으로 문의해주세요.</p>
+          <p className="mt-5">별도의 참여 혜택을 안내해드립니다.</p>
+        </div>
+      </section>
+    </>
+  );
+}
+
 export default function EventInfoPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -114,6 +158,8 @@ export default function EventInfoPage() {
   const previewToken = getCachedTestEventPreviewToken(eventId);
   const { error, events, loading, reload } = useOperationalData({ eventId, previewToken });
   const [checkingSession, setCheckingSession] = useState(false);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [introSections, setIntroSections] = useState<EventIntroSection[] | null>(null);
   const isTabEventInfo = location.pathname === '/event-info';
   const event = eventId
     ? events.find((item) => item.id === eventId)
@@ -131,6 +177,27 @@ export default function EventInfoPage() {
   const finalMalePrice = Math.max((event?.malePrice ?? 50000) - earlyBirdDiscountMale, 0);
   const finalFemalePrice = Math.max((event?.femalePrice ?? 40000) - earlyBirdDiscountFemale, 0);
   const hasActiveEarlyBirdDiscount = isEarlyBirdActive && (earlyBirdDiscountMale > 0 || earlyBirdDiscountFemale > 0);
+  const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
+
+  // "/event-info"(행사 미지정 일반 안내 탭)는 이 개편과 무관한 기존
+  // 고정 페이지라 대표 이미지/소개 콘텐츠를 조회하지 않는다.
+  useEffect(() => {
+    if (isTabEventInfo || !eventId) return;
+    let active = true;
+    void fetchEventCoverUrls([eventId]).then((covers) => {
+      if (active) setCoverUrl(covers[eventId] ?? null);
+    });
+    void fetchPublicEventIntro(eventId).then((sections) => {
+      if (active) setIntroSections(sections);
+    });
+    return () => {
+      active = false;
+    };
+  }, [eventId, isTabEventInfo]);
+
+  // fetchPublicEventIntro는 이미 is_visible=true인 행만 내려주므로, 결과가
+  // 비어있지 않다는 것 자체가 "이 행사에 노출할 커스텀 소개가 있다"는 뜻이다.
+  const hasCustomIntro = Boolean(introSections && introSections.length > 0);
 
   if (!isTabEventInfo && loading) return <DataLoadingState />;
   if (!isTabEventInfo && error) return <DataErrorState message={error} onRetry={reload} />;
@@ -152,38 +219,32 @@ export default function EventInfoPage() {
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
 
-          <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
-            <div>
-              <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
-              <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+          {!isTabEventInfo && coverUrl ? (
+            <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
+              <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={coverUrl} />
             </div>
-          </div>
-
-          <section className="mt-9 space-y-6 px-1">
-            <h2 className="text-[20px] font-black">새로운 만남이 가장 기대되는 시간</h2>
-            <div className="space-y-5 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-black">
-              <p>
-                미혼남녀가 가장 선호하는 소개팅 시간대는
-                <br />
-                주말 초저녁이었습니다.
-              </p>
-              <p>
-                단순히 연인을 찾는 것을 넘어,
-                <br />내 시간을 함께하고 싶은 사람을 만나는 곳.
-              </p>
-              <p>
-                행사의 끝이 새로운 만남의 시작이 될 수 있도록,
-              </p>
-              <p>
-                <span className="font-black italic">Time to Meet</span>
-                <br />
-                여러분의 새로운 만남이 시작될 시간입니다.
-              </p>
+          ) : (
+            <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
+              <div>
+                <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
+                <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+              </div>
             </div>
-          </section>
+          )}
 
-          <section className="mt-10">
-            <h2 className="px-1 text-[20px] font-black">핵심정보</h2>
+          {!isTabEventInfo && event ? (
+            <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">{event.title}</h1>
+          ) : null}
+
+          <section className="mt-9">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[20px] font-black">핵심정보</h2>
+              {!isTabEventInfo && event ? (
+                <span className={`text-[13px] font-black ${isRecruiting ? 'text-meet-pink' : 'text-[#9a9a9a]'}`}>
+                  {isRecruiting ? '🔥 모집중' : '모집 마감'}
+                </span>
+              ) : null}
+            </div>
             {isTabEventInfo ? (
               <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
                 <p className="font-black text-black">일시</p>
@@ -217,10 +278,6 @@ export default function EventInfoPage() {
               </div>
             )}
           </section>
-
-          <SwipeSection items={reasons} title="왜 타임투밋인가요?" />
-          <SwipeSection items={steps} title="진행순서" />
-          <SwipeSection items={reviews} title="후기" />
 
           <section className="mt-10">
             <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
@@ -268,15 +325,11 @@ export default function EventInfoPage() {
             )}
           </section>
 
-          <section className="mt-10">
-            <h2 className="px-1 text-[20px] font-black">콘텐츠 참여 혜택</h2>
-            <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-              <p>
-                행사 후기 콘텐츠 제작(유튜브, 릴스, 블로그 등)에 참여하고 싶으시다면 타임투밋 공식 DM으로 문의해주세요.
-              </p>
-              <p className="mt-5">별도의 참여 혜택을 안내해드립니다.</p>
-            </div>
-          </section>
+          {!isTabEventInfo && hasCustomIntro && introSections ? (
+            <EventIntroSections sections={introSections} />
+          ) : (
+            <DefaultIntroContent />
+          )}
 
           {!isTabEventInfo ? (
             <div className="sticky bottom-4 mt-10">

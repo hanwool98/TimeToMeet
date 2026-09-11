@@ -18,6 +18,7 @@ import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminHomeContentPage from './pages/AdminHomeContentPage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
+import AdminEventIntroPage from './pages/AdminEventIntroPage';
 import AdminInquiriesPage from './pages/AdminInquiriesPage';
 import AdminInquiryDetailPage from './pages/AdminInquiryDetailPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
@@ -109,6 +110,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
               <Route path="/admin/events/:eventId/prepare/seats" element={<AdminPreroundSeatsPage />} />
               <Route path="/admin/events/:eventId/live" element={<AdminEventLivePage />} />
+              <Route path="/admin/events/:eventId/intro" element={<AdminEventIntroPage />} />
               <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
               <Route path="/admin/inquiries/:inquiryId" element={<AdminInquiryDetailPage />} />
             </Route>
