@@ -65,7 +65,7 @@ export function ReviewCard({ onOpen, review }: { onOpen: () => void; review: Pub
 
   return (
     <div
-      className={`flex ${REVIEW_CARD_HEIGHT} w-full flex-col rounded-[16px] bg-white p-4 shadow-card`}
+      className={`flex ${REVIEW_CARD_HEIGHT} w-full flex-col rounded-[16px] border border-[#f0f3f6] bg-white p-4 shadow-card`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-[11px] font-black text-meet-pink">{formatWho(review)}</p>
