@@ -21,6 +21,11 @@ import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services
 // events 데이터에서 그대로 가져온다 - 절대 하드코딩하지 않는다. 그 아래
 // 텍스트/이미지 갤러리 콘텐츠는 관리자 "행사소개 관리"가 관리하는 공통
 // 콘텐츠로, 두 모드 모두 항상 동일하다.
+// 관리자가 행사별 대표 이미지를 등록하지 않았거나 기본값에 대표 이미지가
+// 없을 때 쓰는 공용 목업 - 빈 회색 박스 대신 홈 "다가오는 행사" 카드와
+// 같은 현장 사진을 보여준다.
+const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.jpg';
+
 function BackIcon() {
   return (
     <svg aria-hidden="true" className="h-8 w-8" fill="none" viewBox="0 0 48 48">
@@ -112,18 +117,14 @@ export default function EventInfoPage() {
 
           {event ? (
             <>
-              {coverUrl ? (
-                <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
-                  <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={coverUrl} />
-                </div>
-              ) : (
-                <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
-                  <div>
-                    <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
-                    <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
-                  </div>
-                </div>
-              )}
+              <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
+                <img
+                  alt=""
+                  aria-hidden="true"
+                  className={`h-full w-full object-cover ${coverUrl ? 'object-center' : 'object-[center_30%]'}`}
+                  src={coverUrl ?? eventCoverPlaceholder}
+                />
+              </div>
 
               <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">{event.title}</h1>
 
@@ -142,7 +143,7 @@ export default function EventInfoPage() {
                   <p>{event.location} 내 프라이빗 카페</p>
                   <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
                   <p className="mt-5 font-black text-black">모집 대상</p>
-                  <p>25~35세 미혼 남녀</p>
+                  <p>만 24~33세 미혼 남녀</p>
                   <p className="mt-5 font-black text-black">모집 인원</p>
                   <p>
                     남성 {counts.male}/{event.maleCapacity ?? 10} · 여성 {counts.female}/{event.femaleCapacity ?? 10}
@@ -189,18 +190,14 @@ export default function EventInfoPage() {
             </>
           ) : hasDefaultInfo && defaultInfo ? (
             <>
-              {defaultInfo.coverUrl ? (
-                <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
-                  <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={defaultInfo.coverUrl} />
-                </div>
-              ) : (
-                <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
-                  <div>
-                    <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
-                    <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
-                  </div>
-                </div>
-              )}
+              <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
+                <img
+                  alt=""
+                  aria-hidden="true"
+                  className={`h-full w-full object-cover ${defaultInfo.coverUrl ? 'object-center' : 'object-[center_30%]'}`}
+                  src={defaultInfo.coverUrl ?? eventCoverPlaceholder}
+                />
+              </div>
 
               <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">
                 {defaultInfo.title || '타임투밋 로테이션소개팅'}
@@ -218,12 +215,17 @@ export default function EventInfoPage() {
                   <p className="mt-5 font-black text-black">장소</p>
                   <p>{defaultInfo.location ? `${defaultInfo.location} 내 프라이빗 카페` : '장소 안내 예정'}</p>
                   <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
+                  <p className="mt-5 font-black text-black">모집 대상</p>
+                  <p>만 24~33세 미혼 남녀</p>
                   {defaultInfo.maleCapacity != null || defaultInfo.femaleCapacity != null ? (
                     <>
                       <p className="mt-5 font-black text-black">모집 인원</p>
                       <p>
                         남성 {defaultInfo.maleCapacity ?? '-'}명 · 여성 {defaultInfo.femaleCapacity ?? '-'}명
                       </p>
+                      {(defaultInfo.maleCapacity ?? 0) >= 6 && (defaultInfo.femaleCapacity ?? 0) >= 6 ? (
+                        <p>※ 최소 6:6부터 진행됩니다.</p>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

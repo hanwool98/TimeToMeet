@@ -24,6 +24,10 @@ import {
 import { fetchEventCoverUrls } from '../services/supabaseApplications';
 import type { EventData } from '../types/event';
 
+// 실제 참가자 화면(EventInfoPage)과 동일한 대표 이미지 fallback - 미리보기가
+// 실제 화면과 어긋나지 않도록 같은 목업을 쓴다.
+const eventCoverPlaceholder = '/assets/home/event-cover-placeholder.jpg';
+
 // 관리자 "행사소개 관리" - 타임투밋 공통 행사소개 페이지(참가자
 // /event-info, /events/:eventId/info 하단)에 붙는 텍스트/이미지 갤러리
 // 콘텐츠를 관리한다. 행사별로 따로 관리하지 않는다 - 여기서 만든 콘텐츠는
@@ -897,7 +901,11 @@ function PreviewOverlay({
           {previewMode === 'event' && previewEvent ? (
             <>
               <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
-                {coverUrl ? <img alt="" className="h-full w-full object-cover" src={coverUrl} /> : null}
+                <img
+                  alt=""
+                  className={`h-full w-full object-cover ${coverUrl ? 'object-center' : 'object-[center_30%]'}`}
+                  src={coverUrl ?? eventCoverPlaceholder}
+                />
               </div>
               <h1 className="mt-4 text-[19px] font-black leading-tight">{previewEvent.title}</h1>
               <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
@@ -907,6 +915,8 @@ function PreviewOverlay({
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
                 <p>{previewEvent.location}</p>
+                <p className="mt-3 font-black text-black">모집 대상</p>
+                <p>만 24~33세 미혼 남녀</p>
                 <p className="mt-3 font-black text-black">모집 인원</p>
                 <p>
                   남성 {previewEvent.maleCapacity ?? '-'}명 · 여성 {previewEvent.femaleCapacity ?? '-'}명
@@ -919,15 +929,13 @@ function PreviewOverlay({
             </>
           ) : previewMode === 'default' && hasDefaultInfo && defaultInfo ? (
             <>
-              {defaultInfo.coverUrl ? (
-                <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
-                  <img alt="" className="h-full w-full object-cover" src={defaultInfo.coverUrl} />
-                </div>
-              ) : (
-                <div className="grid min-h-[110px] place-items-center rounded-[16px] bg-[#f1f3f5] text-[12px] font-bold text-[#9a9a9a]">
-                  대표 이미지 없음(기본값 미리보기)
-                </div>
-              )}
+              <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
+                <img
+                  alt=""
+                  className={`h-full w-full object-cover ${defaultInfo.coverUrl ? 'object-center' : 'object-[center_30%]'}`}
+                  src={defaultInfo.coverUrl ?? eventCoverPlaceholder}
+                />
+              </div>
               <h1 className="mt-4 text-[19px] font-black leading-tight">{defaultInfo.title || '타임투밋 로테이션소개팅'}</h1>
               <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
                 <p className="font-black text-black">일시</p>
@@ -936,6 +944,8 @@ function PreviewOverlay({
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
                 <p>{defaultInfo.location ?? '장소 안내 예정'}</p>
+                <p className="mt-3 font-black text-black">모집 대상</p>
+                <p>만 24~33세 미혼 남녀</p>
                 {defaultInfo.maleCapacity != null || defaultInfo.femaleCapacity != null ? (
                   <>
                     <p className="mt-3 font-black text-black">모집 인원</p>
