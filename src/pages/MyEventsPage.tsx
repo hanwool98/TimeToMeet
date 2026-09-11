@@ -177,10 +177,16 @@ export default function MyEventsPage() {
                     {ticket.status === '참가 확정' && (Boolean(ticket.eventEndedAt) || hasEventEnded(ticket.eventDate, ticket.endTime)) ? (
                       <button
                         className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-meet-blue p-4 text-[14px] font-black text-meet-blue transition active:scale-[0.99]"
-                        onClick={() => navigate(`/my-events/ticket/${ticket.eventId}/review`)}
+                        onClick={() =>
+                          navigate(
+                            ticket.eventReviewSubmittedAt
+                              ? `/my-events/ticket/${ticket.eventId}/result`
+                              : `/my-events/ticket/${ticket.eventId}/review`,
+                          )
+                        }
                         type="button"
                       >
-                        {ticket.eventReviewSubmittedAt ? '후기 보기/수정' : '후기 작성'}
+                        {ticket.eventReviewSubmittedAt ? '결과 확인' : '후기 작성'}
                       </button>
                     ) : null}
                   </section>

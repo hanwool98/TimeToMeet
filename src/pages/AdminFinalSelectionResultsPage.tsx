@@ -109,6 +109,22 @@ export default function AdminFinalSelectionResultsPage() {
         </section>
 
         <section className="mt-8">
+          <h2 className="text-[18px] font-black">마음 한 줄 🩵</h2>
+          <p className="mt-1 text-[12px] font-bold text-[#888]">
+            참가자에게는 공개되지 않고 운영자만 볼 수 있어요. 부적절한 내용이나 개인정보가 있으면 걸러주세요.
+          </p>
+          {data.heartNotes.length === 0 ? (
+            <EmptyCard text="접수된 마음 한 줄이 없습니다" />
+          ) : (
+            <div className="mt-3 flex flex-col gap-2.5">
+              {data.heartNotes.map((note) => (
+                <HeartNoteCard key={note.id} note={note} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-8">
           <h2 className="text-[18px] font-black">전체 최종 선택 목록</h2>
           <p className="mt-1 text-[12px] font-bold text-[#888]">각 참가자가 선택한 상대를 순위 없이 표시합니다.</p>
           <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-[12px] border border-[#e7e9ed]">
@@ -185,16 +201,38 @@ function ParticipantSelectionRow({ media, participant }: { media: Map<string, Pu
         </div>
       </div>
       {participant.submittedAt ? (
-        participant.selected.length > 0 ? (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {participant.selected.map((selected) => (
-              <span className="rounded-full bg-[#fff0f3] px-2.5 py-1 text-[11px] font-black text-[#e64c70]" key={selected.applicationId}>
-                {selected.nickname}{selected.age ? ` (${selected.age})` : ''}
-              </span>
-            ))}
+        <>
+          <div className="mt-2 flex gap-3 text-[11px] font-black text-[#666]">
+            <span>받은 선택 {participant.receivedCount}</span>
+            <span className="text-[#ef4039]">매칭 {participant.matchCount}</span>
           </div>
-        ) : <p className="mt-2 text-[11px] font-bold text-[#999]">선택 0명</p>
+          {participant.selected.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {participant.selected.map((selected) => (
+                <span className="rounded-full bg-[#fff0f3] px-2.5 py-1 text-[11px] font-black text-[#e64c70]" key={selected.applicationId}>
+                  {selected.nickname}{selected.age ? ` (${selected.age})` : ''}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] font-bold text-[#999]">선택 0명</p>
+          )}
+        </>
       ) : null}
+    </div>
+  );
+}
+
+function HeartNoteCard({ note }: { note: AdminFinalSelectionResults['heartNotes'][number] }) {
+  return (
+    <div className="rounded-[16px] border border-[#ffe1ea] bg-[#fff8fa] px-4 py-3.5">
+      <p className="text-[13px] font-black text-[#e64c70]">
+        {note.senderNickname} → {note.targetNickname}
+      </p>
+      <p className="mt-1.5 whitespace-pre-wrap text-[13px] font-bold leading-relaxed text-[#555]">
+        {note.message ? `"${note.message}"` : '(메시지 없음)'}
+      </p>
+      <p className="mt-1.5 text-[10.5px] font-bold text-[#bbb]">{formatSubmittedAt(note.createdAt)}</p>
     </div>
   );
 }

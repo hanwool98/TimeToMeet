@@ -521,6 +521,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
   const [nickname, setNickname] = useState('');
   const [age, setAge] = useState<number | null>(null);
   const [job, setJob] = useState('');
+  const [height, setHeight] = useState('');
   const [defaultPhotoPath, setDefaultPhotoPath] = useState<string | null>(null);
   const [defaultPhotoCrop, setDefaultPhotoCrop] = useState<RepresentativeCrop | undefined>(undefined);
   const [ownPhotos, setOwnPhotos] = useState<Array<{ path: string; signedUrl: string | null }>>([]);
@@ -584,6 +585,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         setNickname(result.nickname);
         setAge(result.age);
         setJob(result.job);
+        setHeight(result.height);
         setDefaultPhotoPath(result.defaultPhotoPath);
         setDefaultPhotoCrop(result.defaultPhotoCrop);
         setOwnPhotos(result.ownPhotos);
@@ -922,7 +924,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           </div>
           {photoUploadError ? <p className="mt-2 text-[12px] font-bold text-meet-pink">{photoUploadError}</p> : null}
           <p className="text-fluid-safe mt-4 break-keep text-[26px] font-black leading-tight">{nickname}</p>
-          <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job].filter(Boolean).join(' · ')}</p>
+          <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job, height].filter(Boolean).join(' · ')}</p>
 
           <div className="mt-6 grid grid-cols-2 gap-3 text-left">
             <CardField label="취미" onChange={setHobby} placeholder="예) 영화 감상, 요가" value={hobby} />
@@ -1369,9 +1371,11 @@ function ConversationScreen({
           <p className="text-fluid-safe mt-4 break-keep text-[clamp(30px,8vw,40px)] font-black leading-none">
             {progress.partnerNickname ?? '상대 확인 중'}
           </p>
-          {progress.partnerAge || progress.partnerJob ? (
+          {progress.partnerAge || progress.partnerJob || progress.partnerHeight ? (
             <p className="mt-1.5 text-[15px] font-bold text-[#888]">
-              {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob].filter(Boolean).join(' / ')}
+              {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob, progress.partnerHeight]
+                .filter(Boolean)
+                .join(' / ')}
             </p>
           ) : null}
           {progress.timerUpdatedAt ? (
@@ -1768,7 +1772,12 @@ function BonusSeatGuideScreen({
             onMemoChange={setMemo}
             onScoreChange={setScore}
             onSubmit={() => void handleSubmit()}
-            partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+            partnerLabel={[
+              progress.partnerNickname ?? '상대 확인 중',
+              progress.partnerAge ? `${progress.partnerAge}세` : null,
+              progress.partnerJob,
+              progress.partnerHeight,
+            ]
               .filter(Boolean)
               .join(' / ')}
             photo={photo}
@@ -1809,7 +1818,9 @@ function BonusSeatGuideScreen({
               {nextNickname}
             </p>
             <p className="mt-2 text-[15px] font-bold text-[#888]">
-              {[progress.nextPartnerAge ? `${progress.nextPartnerAge}세` : null, progress.nextPartnerJob].filter(Boolean).join(' | ')}
+              {[progress.nextPartnerAge ? `${progress.nextPartnerAge}세` : null, progress.nextPartnerJob, progress.nextPartnerHeight]
+                .filter(Boolean)
+                .join(' | ')}
             </p>
 
             <div className="mt-5 flex items-center gap-3 rounded-[18px] bg-meet-blueSoft px-4 py-4 text-left">
@@ -2251,7 +2262,12 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
           onMemoChange={setMemo}
           onScoreChange={setScore}
           onSubmit={() => void handleSubmit()}
-          partnerLabel={[progress.partnerNickname ?? '상대 확인 중', progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob]
+          partnerLabel={[
+            progress.partnerNickname ?? '상대 확인 중',
+            progress.partnerAge ? `${progress.partnerAge}세` : null,
+            progress.partnerJob,
+            progress.partnerHeight,
+          ]
             .filter(Boolean)
             .join(' / ')}
           photo={photo}
@@ -2335,6 +2351,10 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
   const [photoMap, setPhotoMap] = useState<Map<string, FinalSelectionCandidateProfile>>(new Map());
   const [step, setStep] = useState<'announce' | 'pick' | 'review'>('announce');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // 마음 한 줄 - 최종선택과 완전히 독립된 선택사항(같은 화면의 review
+  // step에서 함께 작성하지만, 대상/제출 데이터는 서버에서도 분리 저장).
+  const [heartNoteTargetId, setHeartNoteTargetId] = useState<string | null>(null);
+  const [heartNoteMessage, setHeartNoteMessage] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -2422,7 +2442,7 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
     setSubmitting(true);
     setSubmitError('');
     try {
-      await submitFinalSelection(eventId, selectedIds);
+      await submitFinalSelection(eventId, selectedIds, heartNoteTargetId, heartNoteMessage);
       setConfirmOpen(false);
       setJustSubmitted(true);
     } catch (caughtError) {
@@ -2467,7 +2487,12 @@ function FinalSelectionScreen({ eventId, onBack }: { eventId: string; onBack: ()
   return (
     <>
       <FinalSelectionReviewScreen
+        candidates={data.candidates}
+        heartNoteMessage={heartNoteMessage}
+        heartNoteTargetId={heartNoteTargetId}
         onBack={() => setStep('pick')}
+        onHeartNoteMessageChange={setHeartNoteMessage}
+        onHeartNoteTargetChange={setHeartNoteTargetId}
         onReselect={() => setStep('pick')}
         onSubmitClick={() => setConfirmOpen(true)}
         photoMap={photoMap}
@@ -2762,14 +2787,26 @@ function FinalSelectionProfileModal({
 
 // 선택 확인 화면(3번) - 문구는 요청대로 최소화: "최종 선택" 타이틀 하나와
 // 선택한 사람 목록뿐, "선택을 완료했어요" 류 설명 문구는 추가하지 않는다.
+const heartNoteMaxLength = 200;
+
 function FinalSelectionReviewScreen({
+  candidates,
+  heartNoteMessage,
+  heartNoteTargetId,
   onBack,
+  onHeartNoteMessageChange,
+  onHeartNoteTargetChange,
   onReselect,
   onSubmitClick,
   photoMap,
   selectedCandidates,
 }: {
+  candidates: FinalSelectionCandidate[];
+  heartNoteMessage: string;
+  heartNoteTargetId: string | null;
   onBack: () => void;
+  onHeartNoteMessageChange: (value: string) => void;
+  onHeartNoteTargetChange: (applicationId: string | null) => void;
   onReselect: () => void;
   onSubmitClick: () => void;
   photoMap: Map<string, FinalSelectionCandidateProfile>;
@@ -2780,32 +2817,44 @@ function FinalSelectionReviewScreen({
       <ScreenHeader onBack={onBack} title="최종 선택" />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-4 pb-8">
-        {selectedCandidates.length === 0 ? (
-          <section className="rounded-[24px] bg-white px-6 py-12 text-center shadow-calendar">
-            <p className="text-[15px] font-extrabold text-[#888]">선택한 분이 없어요</p>
-          </section>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {selectedCandidates.map((candidate) => (
-              <div className="flex items-center gap-3 rounded-[18px] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
-                <ParticipantPhoto
-                  className="rounded-full bg-[#f5f7fa]"
-                  crop={photoMap.get(candidate.applicationId)?.representativeCrop}
-                  fallback={<PersonPlaceholderGlyph />}
-                  photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
-                  sizePx={56}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-black">{candidate.nickname}</p>
-                  <p className="text-[12px] font-bold text-[#999]">
-                    {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
-                  </p>
+        <section>
+          <h2 className="px-1 text-[15px] font-black">내가 선택한 분</h2>
+          {selectedCandidates.length === 0 ? (
+            <section className="mt-2.5 rounded-[24px] bg-white px-6 py-12 text-center shadow-calendar">
+              <p className="text-[15px] font-extrabold text-[#888]">선택한 분이 없어요</p>
+            </section>
+          ) : (
+            <div className="mt-2.5 flex flex-col gap-2.5">
+              {selectedCandidates.map((candidate) => (
+                <div className="flex items-center gap-3 rounded-[18px] bg-white p-3 shadow-calendar" key={candidate.applicationId}>
+                  <ParticipantPhoto
+                    className="rounded-full bg-[#f5f7fa]"
+                    crop={photoMap.get(candidate.applicationId)?.representativeCrop}
+                    fallback={<PersonPlaceholderGlyph />}
+                    photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
+                    sizePx={56}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-black">{candidate.nickname}</p>
+                    <p className="text-[12px] font-bold text-[#999]">
+                      {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                  <SmallHeartGlyph />
                 </div>
-                <SmallHeartGlyph />
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </section>
+
+        <HeartNoteSection
+          candidates={candidates}
+          message={heartNoteMessage}
+          onMessageChange={onHeartNoteMessageChange}
+          onTargetChange={onHeartNoteTargetChange}
+          photoMap={photoMap}
+          targetId={heartNoteTargetId}
+        />
 
         <div className="mt-2 flex flex-col gap-2">
           <button
@@ -2825,6 +2874,98 @@ function FinalSelectionReviewScreen({
         </div>
       </div>
     </div>
+  );
+}
+
+// 마음 한 줄 - 최종선택과 완전히 독립된 선택 기능. 대상은 한 명만(최종선택
+// 대상과 같아도, 달라도 무방), 메시지는 선택사항. 참가자 화면에는 절대
+// 다시 노출되지 않고(운영자만 확인) 안내 문구로 그 사실을 명시한다.
+function HeartNoteSection({
+  candidates,
+  message,
+  onMessageChange,
+  onTargetChange,
+  photoMap,
+  targetId,
+}: {
+  candidates: FinalSelectionCandidate[];
+  message: string;
+  onMessageChange: (value: string) => void;
+  onTargetChange: (applicationId: string | null) => void;
+  photoMap: Map<string, FinalSelectionCandidateProfile>;
+  targetId: string | null;
+}) {
+  return (
+    <section className="rounded-[24px] bg-white p-5 shadow-calendar">
+      <div className="flex items-center gap-1.5">
+        <SmallHeartGlyph />
+        <h2 className="text-[16px] font-black">마음 한 줄 (선택)</h2>
+      </div>
+      <p className="mt-2 text-[12.5px] font-bold leading-relaxed text-[#888]">
+        다시 한번 만나보고 싶은 상대에게 전하고 싶은 말을 남겨주세요.
+        <br />
+        상대가 승낙하면 호스트가 개인 채팅방을 만들어드려요.
+      </p>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {candidates.map((candidate) => {
+          const selected = candidate.applicationId === targetId;
+          return (
+            <button
+              className={[
+                'flex items-center gap-3 rounded-[16px] border p-2.5 text-left transition active:scale-[0.99]',
+                selected ? 'border-meet-pink bg-meet-pinkSoft' : 'border-[#eee] bg-white',
+              ].join(' ')}
+              key={candidate.applicationId}
+              onClick={() => onTargetChange(selected ? null : candidate.applicationId)}
+              type="button"
+            >
+              <ParticipantPhoto
+                className="rounded-full bg-[#f5f7fa]"
+                crop={photoMap.get(candidate.applicationId)?.representativeCrop}
+                fallback={<PersonPlaceholderGlyph />}
+                photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
+                sizePx={44}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-black">{candidate.nickname}</p>
+                <p className="text-[11px] font-bold text-[#999]">
+                  {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <span
+                className={[
+                  'grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 text-[12px] font-black text-white',
+                  selected ? 'border-meet-pink bg-meet-pink' : 'border-[#ddd] bg-white',
+                ].join(' ')}
+              >
+                {selected ? '✓' : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {targetId ? (
+        <div className="mt-4">
+          <textarea
+            className="h-24 w-full resize-none rounded-[16px] bg-[#f7f8fa] p-3.5 text-[14px] font-medium leading-relaxed outline-none"
+            maxLength={heartNoteMaxLength}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="전하고 싶은 말을 자유롭게 남겨주세요 (선택)"
+            value={message}
+          />
+          <p className="mt-1 text-right text-[11px] font-bold text-[#bbb]">
+            {message.length} / {heartNoteMaxLength}
+          </p>
+          <p className="mt-1 text-[11.5px] font-bold text-[#ef8ba3]">연락처, SNS ID 등 개인정보는 남기지 말아주세요.</p>
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-[11px] font-bold text-[#bbb]">
+        마음 한 줄은 참가자에게 바로 공개되지 않고 운영자만 확인해요. 내용을 확인한 뒤 필요한 경우에만 개인 카카오톡으로 전달해드려요.
+      </p>
+    </section>
   );
 }
 

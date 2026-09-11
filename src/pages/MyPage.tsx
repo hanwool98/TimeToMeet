@@ -114,7 +114,7 @@ export default function MyPage() {
           <h1 className="text-[34px] font-black leading-none">마이페이지</h1>
         </header>
 
-        <section className="rounded-[24px] bg-white p-4 shadow-calendar min-[380px]:p-5">
+        <section className="rounded-[24px] border border-[#f0f3f6] bg-white p-4 shadow-calendar min-[380px]:p-5">
           {loggedIn ? (
             <div className="grid min-w-0 grid-cols-[78px_minmax(0,1fr)] items-center gap-4">
               <ProfileAvatar crop={summary?.profilePhotoCrop} hasProfile={Boolean(summary?.hasProfile)} photoUrl={summary?.profilePhotoUrl} />
@@ -145,7 +145,7 @@ export default function MyPage() {
           )}
         </section>
 
-        <section className="mt-7 overflow-hidden rounded-[24px] bg-white px-4 shadow-calendar min-[380px]:px-5">
+        <section className="mt-7 overflow-hidden rounded-[24px] border border-[#f0f3f6] bg-white px-4 shadow-calendar min-[380px]:px-5">
           {visibleMenuItems.map((item) => (
             <button
               className="grid h-[62px] w-full grid-cols-[34px_minmax(0,1fr)_18px] items-center gap-3 border-b border-[#edf0f3] text-left last:border-b-0"

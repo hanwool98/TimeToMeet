@@ -21,9 +21,12 @@ interface ReviewImageSlot {
 }
 
 // 최종선택 완료 직후 후기 안내 화면(EventModePage의 ReviewPromptScreen)과
-// "내 행사" 종료 티켓의 "후기 작성" 버튼, 양쪽에서 재사용하는 후기 작성/
-// 수정 화면. 후기는 final_selections와 완전히 분리된 데이터라 여기서
-// 무엇을 하든 최종선택 결과에는 영향이 없다.
+// "내 행사" 종료 티켓의 "후기 작성" 버튼, 양쪽에서 재사용하는 후기 작성
+// 화면. 후기는 final_selections와 완전히 분리된 데이터라 여기서 무엇을
+// 하든 최종선택 결과에는 영향이 없다.
+// 후기는 1회 제출 후 잠금(수정/재작성 불가, save_event_review_for_session이
+// 서버에서도 강제) - 이미 제출된 후기가 있으면 편집 UI 대신 읽기 전용
+// 요약만 보여준다.
 export default function ReviewFormPage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
@@ -129,6 +132,10 @@ export default function ReviewFormPage() {
   };
 
   const canAddMore = images.length < maxReviewImages;
+  // 서버(save_event_review_for_session)가 이미 제출된 후기의 수정/재제출을
+  // 거부하므로, 프론트도 제출된 순간부터는 편집 UI 자체를 보여주지 않고
+  // 읽기 전용 요약 + "결과 확인하기"로 안내한다.
+  const locked = Boolean(submittedAt);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-4 pt-6 text-black min-[380px]:px-5">
@@ -153,6 +160,52 @@ export default function ReviewFormPage() {
           <div className="grid min-h-[calc(100dvh-16rem)] place-items-center text-center">
             <p className="text-[15px] font-bold text-meet-pink">{loadError}</p>
           </div>
+        ) : locked ? (
+          <>
+            {eventTitle ? <p className="-mt-2 text-center text-[13px] font-bold text-[#999]">{eventTitle}</p> : null}
+
+            <section className="rounded-[24px] bg-white p-5 shadow-calendar">
+              <div className="mb-5">
+                <p className="text-[13px] font-black text-[#666]">별점</p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <span
+                      className={`text-[30px] leading-none ${rating != null && star <= rating ? 'text-meet-pink' : 'text-[#d9dde2]'}`}
+                      key={star}
+                    >
+                      ★
+                    </span>
+                  ))}
+                  {rating != null ? <span className="ml-1 text-[13px] font-black text-[#888]">{rating}점</span> : null}
+                </div>
+              </div>
+
+              <p className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-[#333]">{content}</p>
+
+              {images.length > 0 ? (
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {images.map((image) => (
+                    <div className="aspect-square overflow-hidden rounded-[14px] bg-[#f5f7fa]" key={image.key}>
+                      {image.previewUrl ? <img alt="" className="h-full w-full object-cover" src={image.previewUrl} /> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <p
+                className={[
+                  'mt-5 rounded-[14px] px-4 py-3 text-[13px] font-black',
+                  justSaved ? 'bg-meet-pinkSoft text-meet-pink' : 'bg-meet-blueSoft text-meet-blue',
+                ].join(' ')}
+              >
+                {justSaved ? '후기가 저장됐어요. 소중한 의견 감사합니다 💗' : '이미 제출한 후기예요 · 후기는 한 번만 작성할 수 있어요'}
+              </p>
+
+              <div className="mt-6">
+                <PrimaryButton onClick={() => navigate(`/my-events/ticket/${eventId}/result`)}>결과 확인하기</PrimaryButton>
+              </div>
+            </section>
+          </>
         ) : (
           <>
             {eventTitle ? <p className="-mt-2 text-center text-[13px] font-bold text-[#999]">{eventTitle}</p> : null}
@@ -228,23 +281,23 @@ export default function ReviewFormPage() {
                 <PhotoSourceInputs multiple onFiles={handleFilesChosen} ref={photoInputsRef} />
               </div>
 
-              {submittedAt && !justSaved ? (
-                <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
-                  이전에 작성한 후기예요 · 언제든 수정할 수 있어요
-                </p>
-              ) : null}
-              {justSaved ? (
-                <p className="mt-5 rounded-[14px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">
-                  후기가 저장됐어요. 소중한 의견 감사합니다 💗
-                </p>
-              ) : null}
+              <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[12px] font-bold leading-relaxed text-meet-blue">
+                제출 후에는 수정할 수 없어요. 신중하게 작성해주세요.
+              </p>
               {saveError ? <p className="mt-5 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
 
               <div className="mt-6">
                 <PrimaryButton disabled={saving || !content.trim() || rating == null} onClick={() => void handleSubmit()}>
-                  {saving ? '저장하는 중' : submittedAt ? '후기 수정하기' : '후기 남기기'}
+                  {saving ? '저장하는 중' : '후기 남기기'}
                 </PrimaryButton>
               </div>
+              <button
+                className="mt-3 w-full text-center text-[13px] font-bold text-[#999] underline underline-offset-2"
+                onClick={() => navigate('/my-events')}
+                type="button"
+              >
+                나중에 작성하기
+              </button>
             </section>
           </>
         )}

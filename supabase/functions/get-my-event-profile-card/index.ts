@@ -45,7 +45,7 @@ Deno.serve(async (request) => {
 
   const { data: myApplication, error: myApplicationError } = await supabase
     .from('applications')
-    .select('id, nickname, job, birth_date, profile_photo_paths, representative_photo_index, representative_crop')
+    .select('id, nickname, job, height, birth_date, profile_photo_paths, representative_photo_index, representative_crop')
     .eq('event_id', payload.eventId)
     .eq('user_id', session.user_id)
     .eq('status', '참가 확정')
@@ -84,6 +84,7 @@ Deno.serve(async (request) => {
     nickname: myApplication.nickname,
     age,
     job: myApplication.job,
+    height: myApplication.height ?? '',
     defaultPhotoPath,
     defaultPhotoCrop: myApplication.representative_crop ?? null,
     ownPhotos,

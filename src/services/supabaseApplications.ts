@@ -2456,12 +2456,14 @@ export interface ParticipantRoundProgress {
   // next match to precompute. partner* above still refers to the partner
   // just finished (who the rating form on screen is for).
   nextPartnerAge?: number;
+  nextPartnerHeight?: string;
   nextPartnerJob?: string;
   nextPartnerNickname?: string;
   nextTableNumber?: number;
   ok: boolean;
   partnerAge?: number;
   partnerApplicationId?: string;
+  partnerHeight?: string;
   partnerJob?: string;
   partnerNickname?: string;
   roundPhase?: 'conversation' | 'reveal' | 'transition';
@@ -2494,12 +2496,14 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     isBonusRound?: boolean | null;
     isResting?: boolean | null;
     nextPartnerAge?: number | null;
+    nextPartnerHeight?: string | null;
     nextPartnerJob?: string | null;
     nextPartnerNickname?: string | null;
     nextTableNumber?: number | null;
     ok: boolean;
     partnerAge?: number | null;
     partnerApplicationId?: string | null;
+    partnerHeight?: string | null;
     partnerJob?: string | null;
     partnerNickname?: string | null;
     roundPhase?: 'conversation' | 'reveal' | 'transition' | null;
@@ -2522,12 +2526,14 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     isBonusRound: row.isBonusRound ?? undefined,
     isResting: row.isResting ?? undefined,
     nextPartnerAge: row.nextPartnerAge ?? undefined,
+    nextPartnerHeight: row.nextPartnerHeight ?? undefined,
     nextPartnerJob: row.nextPartnerJob ?? undefined,
     nextPartnerNickname: row.nextPartnerNickname ?? undefined,
     nextTableNumber: row.nextTableNumber ?? undefined,
     ok: true,
     partnerAge: row.partnerAge ?? undefined,
     partnerApplicationId: row.partnerApplicationId ?? undefined,
+    partnerHeight: row.partnerHeight ?? undefined,
     partnerJob: row.partnerJob ?? undefined,
     partnerNickname: row.partnerNickname ?? undefined,
     roundPhase: row.roundPhase ?? undefined,
@@ -2881,6 +2887,7 @@ export interface MyEventProfileCard {
   defaultPhotoPath: string | null;
   drinkingAmount: string;
   drinkingFrequency: string;
+  height: string;
   hobby: string;
   idealType: string;
   job: string;
@@ -2951,6 +2958,7 @@ export async function fetchMyEventProfileCard(eventId: string): Promise<MyEventP
     defaultPhotoPath: data.defaultPhotoPath ?? null,
     drinkingAmount: card.drinkingAmount ?? '',
     drinkingFrequency: card.drinkingFrequency ?? '',
+    height: data.height ?? '',
     hobby: card.hobby,
     idealType: card.idealType,
     job: data.job ?? '',
@@ -3548,17 +3556,56 @@ export async function fetchFinalSelectionCandidatePhotos(eventId: string): Promi
   return photoMap;
 }
 
-export async function submitFinalSelection(eventId: string, selectedApplicationIds: string[]): Promise<void> {
+// heartNoteTargetId를 넘기지 않으면(undefined/null) 마음 한 줄 자체를
+// 보내지 않은 것으로 처리된다 - final_selections와 완전히 분리된
+// heart_notes 테이블에 별도로 저장되며, 대상이 최종선택 대상과 같을
+// 필요도 없다(서버가 독립적으로 검증/저장).
+export async function submitFinalSelection(
+  eventId: string,
+  selectedApplicationIds: string[],
+  heartNoteTargetId?: string | null,
+  heartNoteMessage?: string,
+): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
 
   const { error } = await supabase.rpc('submit_final_selection', {
     event_id_value: eventId,
+    heart_note_message: heartNoteTargetId ? (heartNoteMessage?.trim() || null) : null,
+    heart_note_target_id: heartNoteTargetId || null,
     selected_application_ids: selectedApplicationIds,
     session_token: session.token,
   });
   if (error) throw error;
+}
+
+export interface MyFinalSelectionOutcome {
+  matchCount: number;
+  ready: boolean;
+  receivedCount: number;
+}
+
+// 참가자 본인 결과만 반환한다(다른 참가자 결과는 서버가 애초에 포함하지
+// 않음). ready=false는 "아직 결과가 준비되지 않음"(행사 종료 전)이지
+// 오류가 아니다.
+export async function fetchMyFinalSelectionOutcome(eventId: string): Promise<MyFinalSelectionOutcome | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return null;
+
+  const { data, error } = await supabase.rpc('get_my_final_selection_outcome', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as { matchCount?: number; ok: boolean; ready?: boolean; receivedCount?: number } | null;
+  if (!row?.ok) return null;
+  return {
+    matchCount: row.matchCount ?? 0,
+    ready: Boolean(row.ready),
+    receivedCount: row.receivedCount ?? 0,
+  };
 }
 
 export interface AdminFinalSelectionPerson {
@@ -3569,8 +3616,23 @@ export interface AdminFinalSelectionPerson {
 
 export interface AdminFinalSelectionParticipant extends AdminFinalSelectionPerson {
   gender: '남성' | '여성';
+  matchCount: number;
+  receivedCount: number;
   selected: AdminFinalSelectionPerson[];
   submittedAt: string | null;
+}
+
+// 마음 한 줄은 참가자 화면에는 절대 노출되지 않고 관리자만 조회한다 -
+// 운영자가 내용을 확인해 부적절한 내용/개인정보를 거르고 필요하면 개인
+// 카카오톡으로 전달하는 용도.
+export interface AdminHeartNote {
+  createdAt: string;
+  id: string;
+  message: string | null;
+  senderApplicationId: string;
+  senderNickname: string;
+  targetApplicationId: string;
+  targetNickname: string;
 }
 
 export interface AdminFinalSelectionEventSummary {
@@ -3585,6 +3647,7 @@ export interface AdminFinalSelectionEventSummary {
 
 export interface AdminFinalSelectionResults {
   event: { eventDate: string; id: string; title: string };
+  heartNotes: AdminHeartNote[];
   mutualMatches: Array<{ left: AdminFinalSelectionPerson; right: AdminFinalSelectionPerson }>;
   participants: AdminFinalSelectionParticipant[];
   summary: Omit<AdminFinalSelectionEventSummary, 'eventDate' | 'eventId' | 'title'>;

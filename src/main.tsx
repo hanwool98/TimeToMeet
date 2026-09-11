@@ -34,6 +34,7 @@ import EmergencyProfileFormPage from './pages/EmergencyProfileFormPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
 import EventModePage from './pages/EventModePage';
+import FinalSelectionResultPage from './pages/FinalSelectionResultPage';
 import GuestPhoneAuthPage from './pages/GuestPhoneAuthPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
 import InquiryFormPage from './pages/InquiryFormPage';
@@ -123,6 +124,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />
             <Route path="/my-events/ticket/:eventId" element={<TicketDetailPage />} />
             <Route path="/my-events/ticket/:eventId/review" element={<ReviewFormPage />} />
+            <Route path="/my-events/ticket/:eventId/result" element={<FinalSelectionResultPage />} />
             <Route path="/mypage" element={<MyPage />} />
             <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
             <Route path="/mypage/inquiries" element={<InquiryListPage />} />
