@@ -35,7 +35,6 @@ export interface IntroDefaultInfo {
   coverUrl: string | null;
   dateLabel: string | null;
   discountNote: string | null;
-  endTime: string | null;
   femaleCapacity: number | null;
   femalePrice: number | null;
   location: string | null;
@@ -54,7 +53,6 @@ const emptyDefaultInfo: IntroDefaultInfo = {
   coverUrl: null,
   dateLabel: null,
   discountNote: null,
-  endTime: null,
   femaleCapacity: null,
   femalePrice: null,
   location: null,
@@ -71,7 +69,6 @@ function mapDefaultInfo(row: unknown): IntroDefaultInfo {
     coverUrl: (value.coverUrl as string | null) ?? null,
     dateLabel: (value.dateLabel as string | null) ?? null,
     discountNote: (value.discountNote as string | null) ?? null,
-    endTime: (value.endTime as string | null) ?? null,
     femaleCapacity: value.femaleCapacity == null ? null : Number(value.femaleCapacity),
     femalePrice: value.femalePrice == null ? null : Number(value.femalePrice),
     location: (value.location as string | null) ?? null,
@@ -139,7 +136,6 @@ export async function fetchAdminIntroContent(): Promise<IntroContentPayload> {
 export async function updateIntroDefaultInfo(payload: {
   dateLabel: string | null;
   discountNote: string | null;
-  endTime: string | null;
   femaleCapacity: number | null;
   femalePrice: number | null;
   location: string | null;
@@ -155,7 +151,6 @@ export async function updateIntroDefaultInfo(payload: {
   const { error } = await supabase.rpc('update_intro_default_info_for_session', {
     date_label_value: payload.dateLabel,
     discount_note_value: payload.discountNote,
-    end_time_value: payload.endTime,
     female_capacity_value: payload.femaleCapacity,
     female_price_value: payload.femalePrice,
     location_value: payload.location,

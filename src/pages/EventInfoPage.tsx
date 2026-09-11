@@ -214,7 +214,6 @@ export default function EventInfoPage() {
                   <p>
                     {defaultInfo.dateLabel ?? '일정 안내 예정'}
                     {defaultInfo.startTime ? ` ${defaultInfo.startTime.slice(0, 5)}` : ''}
-                    {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
                   </p>
                   <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
                   <p className="mt-5 font-black text-black">장소</p>

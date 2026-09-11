@@ -707,7 +707,7 @@ function DefaultInfoCard({
           />
         </LabeledInput>
 
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
           <LabeledInput label="기본 날짜">
             <input
               className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
@@ -722,14 +722,6 @@ function DefaultInfoCard({
               onChange={(event) => update('startTime', event.target.value || null)}
               type="time"
               value={draft.startTime?.slice(0, 5) ?? ''}
-            />
-          </LabeledInput>
-          <LabeledInput label="종료 시간">
-            <input
-              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
-              onChange={(event) => update('endTime', event.target.value || null)}
-              type="time"
-              value={draft.endTime?.slice(0, 5) ?? ''}
             />
           </LabeledInput>
         </div>
@@ -939,7 +931,6 @@ function PreviewOverlay({
                 <p className="font-black text-black">일시</p>
                 <p>
                   {defaultInfo.dateLabel ?? '일정 안내 예정'} {defaultInfo.startTime?.slice(0, 5) ?? ''}
-                  {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
                 <p>{defaultInfo.location ?? '장소 안내 예정'}</p>
