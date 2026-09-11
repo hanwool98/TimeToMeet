@@ -7,30 +7,26 @@ const corsHeaders = {
 };
 
 type Payload = {
-  eventId?: string;
   sessionToken?: string;
 };
 
 const signedUrlExpirySeconds = 21_600;
 
-// 행사 소개 콘텐츠(텍스트/이미지 갤러리 섹션) 조회 전용. 이미지는 Storage
-// 서명(service role)이 필요해 RPC로는 못 하고 Edge Function으로 처리한다
-// (home-contents와 동일한 이유/구조).
-//   - 공개(참가자) 호출: { eventId } -> is_visible=true 섹션만 순서대로
-//   - 관리자 호출: { eventId, sessionToken } -> 숨김 포함 전체 섹션
+// 타임투밋 공통 행사소개 콘텐츠(텍스트/이미지 갤러리 섹션) 조회 전용.
+// 행사별 콘텐츠가 아니라 앱 전체에서 공유하는 단일 콘텐츠라 eventId를
+// 받지 않는다. 이미지는 Storage 서명(service role)이 필요해 RPC로는 못
+// 하고 Edge Function으로 처리한다(home-contents와 동일한 구조).
+//   - 공개(참가자) 호출: {} -> is_visible=true 섹션만 순서대로
+//   - 관리자 호출: { sessionToken } -> 숨김 포함 전체 섹션
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ message: 'Method not allowed.' }, 405);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Event intro access is not configured.' }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Intro content access is not configured.' }, 500);
 
-  const payload = (await request.json().catch(() => null)) as Payload | null;
-  if (!payload || typeof payload.eventId !== 'string' || !payload.eventId) {
-    return json({ message: 'Invalid request.' }, 400);
-  }
-
+  const payload = (await request.json().catch(() => ({}))) as Payload;
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const isAdminCall = typeof payload.sessionToken === 'string' && Boolean(payload.sessionToken);
 
@@ -49,22 +45,21 @@ Deno.serve(async (request) => {
   }
 
   let sectionQuery = supabase
-    .from('event_intro_sections')
+    .from('intro_sections')
     .select('id, section_type, title, content, display_order, is_visible')
-    .eq('event_id', payload.eventId)
     .order('display_order', { ascending: true })
     .order('created_at', { ascending: true });
   if (!isAdminCall) sectionQuery = sectionQuery.eq('is_visible', true);
 
   const { data: sectionRows, error: sectionError } = await sectionQuery;
-  if (sectionError) return json({ message: '행사 소개를 불러오지 못했습니다.' }, 500);
+  if (sectionError) return json({ message: '행사소개를 불러오지 못했습니다.' }, 500);
 
   const sectionIds = (sectionRows ?? []).map((row) => row.id as string);
   const imagesBySection = new Map<string, Array<{ id: string; imageUrl: string | null; caption: string; displayOrder: number }>>();
 
   if (sectionIds.length > 0) {
     const { data: imageRows } = await supabase
-      .from('event_intro_images')
+      .from('intro_images')
       .select('id, section_id, storage_path, caption, display_order')
       .in('section_id', sectionIds)
       .order('display_order', { ascending: true })

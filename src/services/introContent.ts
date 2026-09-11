@@ -3,30 +3,31 @@ import { supabase } from '../lib/supabase';
 import { compressImageIfNeeded } from '../utils/imageCompression';
 import { getAdminSession } from './adminAuth';
 
-// 행사 소개 페이지(참가자 /events/:eventId/info)의 관리자 편집 콘텐츠.
-// 날짜/시간/장소/가격/인원 같은 운영 정보는 여기서 다루지 않는다 - 그건
+// 타임투밋 공통 행사소개 콘텐츠(참가자 /event-info, /events/:eventId/info
+// 하단에 붙는 텍스트/이미지 갤러리). 행사별로 따로 저장하지 않는다 - 관리자가
+// "행사소개 관리"에서 한 번만 작성하면 모든 행사 소개 페이지에 그대로
+// 쓰인다. 행사명/날짜/장소/가격/인원 같은 운영 정보는 여기서 다루지 않고
 // events 테이블/useOperationalData가 그대로 유일한 source of truth다.
-// 이 서비스는 그 정보 아래에 붙는 텍스트/이미지 갤러리 섹션만 담당한다.
 export type IntroSectionType = 'text' | 'gallery';
 
-export interface EventIntroImage {
+export interface IntroImage {
   caption: string;
   displayOrder: number;
   id: string;
   imageUrl: string | null;
 }
 
-export interface EventIntroSection {
+export interface IntroSection {
   content: string | null;
   displayOrder: number;
   id: string;
-  images: EventIntroImage[];
+  images: IntroImage[];
   isVisible: boolean;
   sectionType: IntroSectionType;
   title: string | null;
 }
 
-function mapSections(rows: unknown): EventIntroSection[] {
+function mapSections(rows: unknown): IntroSection[] {
   return ((rows ?? []) as Array<Record<string, unknown>>).map((row) => ({
     content: (row.content as string | null) ?? null,
     displayOrder: Number(row.displayOrder ?? 0),
@@ -58,41 +59,35 @@ async function extractFunctionErrorMessage(error: unknown, data: unknown, fallba
 }
 
 // 참가자 화면(공개) - is_visible=true 섹션만 내려온다.
-export async function fetchPublicEventIntro(eventId: string): Promise<EventIntroSection[]> {
+export async function fetchPublicIntroContent(): Promise<IntroSection[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.functions.invoke('event-intro', { body: { eventId } });
+  const { data, error } = await supabase.functions.invoke('intro-content', { body: {} });
   if (error || data?.ok !== true) return [];
   return mapSections(data.sections);
 }
 
 // 관리자 편집/미리보기 - 숨김 섹션도 포함해 전부 내려온다.
-export async function fetchAdminEventIntro(eventId: string): Promise<EventIntroSection[]> {
+export async function fetchAdminIntroContent(): Promise<IntroSection[]> {
   if (!supabase) return [];
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { data, error } = await supabase.functions.invoke('event-intro', {
-    body: { eventId, sessionToken: adminSession.token },
+  const { data, error } = await supabase.functions.invoke('intro-content', {
+    body: { sessionToken: adminSession.token },
   });
   if (error || data?.ok !== true) {
-    throw new Error(await extractFunctionErrorMessage(error, data, '행사 소개를 불러오지 못했습니다.'));
+    throw new Error(await extractFunctionErrorMessage(error, data, '행사소개를 불러오지 못했습니다.'));
   }
   return mapSections(data.sections);
 }
 
-export async function createEventIntroSection(
-  eventId: string,
-  sectionType: IntroSectionType,
-  title: string,
-  content: string,
-): Promise<string> {
+export async function createIntroSection(sectionType: IntroSectionType, title: string, content: string): Promise<string> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { data, error } = await supabase.rpc('create_event_intro_section_for_session', {
+  const { data, error } = await supabase.rpc('create_intro_section_for_session', {
     content_value: content,
-    event_id_value: eventId,
     section_type_value: sectionType,
     session_token: adminSession.token,
     title_value: title,
@@ -101,12 +96,12 @@ export async function createEventIntroSection(
   return data as string;
 }
 
-export async function updateEventIntroSection(sectionId: string, title: string, content: string): Promise<void> {
+export async function updateIntroSection(sectionId: string, title: string, content: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('update_event_intro_section_for_session', {
+  const { error } = await supabase.rpc('update_intro_section_for_session', {
     content_value: content,
     section_id_value: sectionId,
     session_token: adminSession.token,
@@ -115,12 +110,12 @@ export async function updateEventIntroSection(sectionId: string, title: string, 
   if (error) throw new Error(error.message || '섹션을 저장하지 못했습니다.');
 }
 
-export async function setEventIntroSectionVisible(sectionId: string, isVisible: boolean): Promise<void> {
+export async function setIntroSectionVisible(sectionId: string, isVisible: boolean): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('set_event_intro_section_visible_for_session', {
+  const { error } = await supabase.rpc('set_intro_section_visible_for_session', {
     is_visible_value: isVisible,
     section_id_value: sectionId,
     session_token: adminSession.token,
@@ -128,25 +123,24 @@ export async function setEventIntroSectionVisible(sectionId: string, isVisible: 
   if (error) throw new Error(error.message || '노출 상태를 변경하지 못했습니다.');
 }
 
-export async function reorderEventIntroSections(eventId: string, orderedIds: string[]): Promise<void> {
+export async function reorderIntroSections(orderedIds: string[]): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('reorder_event_intro_sections_for_session', {
-    event_id_value: eventId,
+  const { error } = await supabase.rpc('reorder_intro_sections_for_session', {
     ordered_ids: orderedIds,
     session_token: adminSession.token,
   });
   if (error) throw new Error(error.message || '순서를 변경하지 못했습니다.');
 }
 
-export async function deleteEventIntroSection(sectionId: string): Promise<void> {
+export async function deleteIntroSection(sectionId: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { data, error } = await supabase.rpc('delete_event_intro_section_for_session', {
+  const { data, error } = await supabase.rpc('delete_intro_section_for_session', {
     section_id_value: sectionId,
     session_token: adminSession.token,
   });
@@ -154,12 +148,12 @@ export async function deleteEventIntroSection(sectionId: string): Promise<void> 
   await cleanupStoragePaths((data as string[] | null) ?? []);
 }
 
-export async function reorderEventIntroImages(sectionId: string, orderedIds: string[]): Promise<void> {
+export async function reorderIntroImages(sectionId: string, orderedIds: string[]): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('reorder_event_intro_images_for_session', {
+  const { error } = await supabase.rpc('reorder_intro_images_for_session', {
     ordered_ids: orderedIds,
     section_id_value: sectionId,
     session_token: adminSession.token,
@@ -167,12 +161,12 @@ export async function reorderEventIntroImages(sectionId: string, orderedIds: str
   if (error) throw new Error(error.message || '이미지 순서를 변경하지 못했습니다.');
 }
 
-export async function updateEventIntroImageCaption(imageId: string, caption: string): Promise<void> {
+export async function updateIntroImageCaption(imageId: string, caption: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { error } = await supabase.rpc('update_event_intro_image_caption_for_session', {
+  const { error } = await supabase.rpc('update_intro_image_caption_for_session', {
     caption_value: caption,
     image_id_value: imageId,
     session_token: adminSession.token,
@@ -180,12 +174,12 @@ export async function updateEventIntroImageCaption(imageId: string, caption: str
   if (error) throw new Error(error.message || '캡션을 저장하지 못했습니다.');
 }
 
-export async function deleteEventIntroImage(imageId: string): Promise<void> {
+export async function deleteIntroImage(imageId: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
-  const { data, error } = await supabase.rpc('delete_event_intro_image_for_session', {
+  const { data, error } = await supabase.rpc('delete_intro_image_for_session', {
     image_id_value: imageId,
     session_token: adminSession.token,
   });
@@ -193,13 +187,12 @@ export async function deleteEventIntroImage(imageId: string): Promise<void> {
   if (data) await cleanupStoragePaths([data as string]);
 }
 
-export async function uploadEventIntroImage(
-  eventId: string,
+export async function uploadIntroImage(
   sectionId: string,
   file: File,
   caption = '',
   replaceImageId?: string,
-): Promise<EventIntroImage> {
+): Promise<IntroImage> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
@@ -207,8 +200,8 @@ export async function uploadEventIntroImage(
   const resized = await compressImageIfNeeded(file);
   const photo = await fileToPayload(resized);
 
-  const { data, error } = await supabase.functions.invoke('upload-event-intro-image', {
-    body: { caption, eventId, photo, replaceImageId, sectionId, sessionToken: adminSession.token },
+  const { data, error } = await supabase.functions.invoke('upload-intro-image', {
+    body: { caption, photo, replaceImageId, sectionId, sessionToken: adminSession.token },
   });
   if (error || data?.ok !== true) {
     throw new Error(await extractFunctionErrorMessage(error, data, '이미지 업로드에 실패했습니다.'));
@@ -221,23 +214,6 @@ export async function uploadEventIntroImage(
     id: row.id as string,
     imageUrl: (row.imageUrl as string | null) ?? null,
   };
-}
-
-export async function copyEventIntroFromEvent(
-  sourceEventId: string,
-  targetEventId: string,
-): Promise<{ copiedImages: number; copiedSections: number }> {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  const adminSession = getAdminSession();
-  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
-
-  const { data, error } = await supabase.functions.invoke('copy-event-intro', {
-    body: { sessionToken: adminSession.token, sourceEventId, targetEventId },
-  });
-  if (error || data?.ok !== true) {
-    throw new Error(await extractFunctionErrorMessage(error, data, '소개 콘텐츠를 불러오지 못했습니다.'));
-  }
-  return { copiedImages: Number(data.copiedImages ?? 0), copiedSections: Number(data.copiedSections ?? 0) };
 }
 
 // 실패해도 콘텐츠 저장/삭제 자체는 이미 끝났으니 조용히 넘어가는

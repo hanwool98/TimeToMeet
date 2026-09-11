@@ -1,70 +1,67 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
-import EventIntroSections from '../components/EventIntroSections';
+import IntroContentSections from '../components/IntroContentSections';
 import useOperationalData from '../hooks/useOperationalData';
 import {
-  copyEventIntroFromEvent,
-  createEventIntroSection,
-  deleteEventIntroImage,
-  deleteEventIntroSection,
-  fetchAdminEventIntro,
-  reorderEventIntroImages,
-  reorderEventIntroSections,
-  setEventIntroSectionVisible,
-  updateEventIntroImageCaption,
-  updateEventIntroSection,
-  uploadEventIntroImage,
-  type EventIntroImage,
-  type EventIntroSection,
-} from '../services/eventIntro';
+  createIntroSection,
+  deleteIntroImage,
+  deleteIntroSection,
+  fetchAdminIntroContent,
+  reorderIntroImages,
+  reorderIntroSections,
+  setIntroSectionVisible,
+  updateIntroImageCaption,
+  updateIntroSection,
+  uploadIntroImage,
+  type IntroImage,
+  type IntroSection,
+} from '../services/introContent';
+import { fetchEventCoverUrls } from '../services/supabaseApplications';
+import type { EventData } from '../types/event';
 
-// 관리자 "행사 소개 편집" - 참가자 /events/:eventId/info 하단에 붙는
-// 텍스트/이미지 갤러리 섹션을 행사별로 관리한다. 날짜/장소/가격/인원 같은
-// 운영 정보는 여기서 건드리지 않는다(행사 수정 화면이 그대로 담당).
-export default function AdminEventIntroPage() {
+// 관리자 "행사소개 관리" - 타임투밋 공통 행사소개 페이지(참가자
+// /event-info, /events/:eventId/info 하단)에 붙는 텍스트/이미지 갤러리
+// 콘텐츠를 관리한다. 행사별로 따로 관리하지 않는다 - 여기서 만든 콘텐츠는
+// 모든 행사 소개 페이지에 동일하게 노출된다. 날짜/장소/가격/인원 같은
+// 운영 정보는 각 행사의 수정 화면에서만 관리한다.
+export default function AdminIntroContentPage() {
   const navigate = useNavigate();
-  const { eventId } = useParams();
   const { error, events, loading, reload: reloadEvents } = useOperationalData({ admin: true });
-  const event = events.find((item) => item.id === eventId);
 
-  const [sections, setSections] = useState<EventIntroSection[] | null>(null);
+  const [sections, setSections] = useState<IntroSection[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [showCopyPicker, setShowCopyPicker] = useState(false);
-  const [copying, setCopying] = useState(false);
   const [savedFlashId, setSavedFlashId] = useState('');
 
   const load = async () => {
-    if (!eventId) return;
     setLoadError('');
     try {
-      setSections(await fetchAdminEventIntro(eventId));
+      setSections(await fetchAdminIntroContent());
     } catch (caughtError) {
-      setLoadError(caughtError instanceof Error ? caughtError.message : '행사 소개를 불러오지 못했습니다.');
+      setLoadError(caughtError instanceof Error ? caughtError.message : '행사소개를 불러오지 못했습니다.');
     }
   };
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, []);
 
   const flashSaved = (id: string) => {
     setSavedFlashId(id);
     window.setTimeout(() => setSavedFlashId((current) => (current === id ? '' : current)), 1500);
   };
 
-  const patchSection = (sectionId: string, updater: (section: EventIntroSection) => EventIntroSection) => {
+  const patchSection = (sectionId: string, updater: (section: IntroSection) => IntroSection) => {
     setSections((current) => (current ? current.map((row) => (row.id === sectionId ? updater(row) : row)) : current));
   };
 
   const handleAddSection = async (type: 'text' | 'gallery') => {
-    if (!eventId || busy) return;
+    if (busy) return;
     setBusy(true);
     try {
-      await createEventIntroSection(eventId, type, '', '');
+      await createIntroSection(type, '', '');
       await load();
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '섹션을 추가하지 못했습니다.');
@@ -73,10 +70,10 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleSaveText = async (section: EventIntroSection) => {
+  const handleSaveText = async (section: IntroSection) => {
     setBusy(true);
     try {
-      await updateEventIntroSection(section.id, section.title ?? '', section.content ?? '');
+      await updateIntroSection(section.id, section.title ?? '', section.content ?? '');
       flashSaved(section.id);
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '섹션을 저장하지 못했습니다.');
@@ -85,10 +82,10 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleToggleVisible = async (section: EventIntroSection) => {
+  const handleToggleVisible = async (section: IntroSection) => {
     patchSection(section.id, (row) => ({ ...row, isVisible: !row.isVisible }));
     try {
-      await setEventIntroSectionVisible(section.id, !section.isVisible);
+      await setIntroSectionVisible(section.id, !section.isVisible);
     } catch (caughtError) {
       patchSection(section.id, (row) => ({ ...row, isVisible: section.isVisible }));
       window.alert(caughtError instanceof Error ? caughtError.message : '노출 상태를 변경하지 못했습니다.');
@@ -96,7 +93,7 @@ export default function AdminEventIntroPage() {
   };
 
   const handleMoveSection = async (index: number, direction: -1 | 1) => {
-    if (!sections || !eventId || busy) return;
+    if (!sections || busy) return;
     const target = index + direction;
     if (target < 0 || target >= sections.length) return;
     const reordered = [...sections];
@@ -104,7 +101,7 @@ export default function AdminEventIntroPage() {
     setSections(reordered);
     setBusy(true);
     try {
-      await reorderEventIntroSections(eventId, reordered.map((row) => row.id));
+      await reorderIntroSections(reordered.map((row) => row.id));
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '순서를 변경하지 못했습니다.');
       await load();
@@ -113,11 +110,11 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleDeleteSection = async (section: EventIntroSection) => {
+  const handleDeleteSection = async (section: IntroSection) => {
     if (!window.confirm('이 섹션을 삭제할까요? 안의 이미지도 함께 삭제되며 되돌릴 수 없습니다.')) return;
     setBusy(true);
     try {
-      await deleteEventIntroSection(section.id);
+      await deleteIntroSection(section.id);
       setSections((current) => (current ? current.filter((row) => row.id !== section.id) : current));
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '섹션을 삭제하지 못했습니다.');
@@ -126,12 +123,12 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleUploadImages = async (section: EventIntroSection, files: FileList | null) => {
-    if (!eventId || !files || files.length === 0) return;
+  const handleUploadImages = async (section: IntroSection, files: FileList | null) => {
+    if (!files || files.length === 0) return;
     setBusy(true);
     try {
       for (const file of Array.from(files)) {
-        const image = await uploadEventIntroImage(eventId, section.id, file);
+        const image = await uploadIntroImage(section.id, file);
         patchSection(section.id, (row) => ({ ...row, images: [...row.images, image] }));
       }
     } catch (caughtError) {
@@ -141,11 +138,10 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleReplaceImage = async (section: EventIntroSection, image: EventIntroImage, file: File) => {
-    if (!eventId) return;
+  const handleReplaceImage = async (section: IntroSection, image: IntroImage, file: File) => {
     setBusy(true);
     try {
-      const next = await uploadEventIntroImage(eventId, section.id, file, image.caption, image.id);
+      const next = await uploadIntroImage(section.id, file, image.caption, image.id);
       patchSection(section.id, (row) => ({
         ...row,
         images: row.images.map((item) => (item.id === image.id ? next : item)),
@@ -157,11 +153,11 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleDeleteImage = async (section: EventIntroSection, image: EventIntroImage) => {
+  const handleDeleteImage = async (section: IntroSection, image: IntroImage) => {
     if (!window.confirm('이 이미지를 삭제할까요?')) return;
     setBusy(true);
     try {
-      await deleteEventIntroImage(image.id);
+      await deleteIntroImage(image.id);
       patchSection(section.id, (row) => ({ ...row, images: row.images.filter((item) => item.id !== image.id) }));
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '이미지를 삭제하지 못했습니다.');
@@ -170,7 +166,7 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleMoveImage = async (section: EventIntroSection, index: number, direction: -1 | 1) => {
+  const handleMoveImage = async (section: IntroSection, index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= section.images.length || busy) return;
     const reordered = [...section.images];
@@ -178,7 +174,7 @@ export default function AdminEventIntroPage() {
     patchSection(section.id, (row) => ({ ...row, images: reordered }));
     setBusy(true);
     try {
-      await reorderEventIntroImages(section.id, reordered.map((row) => row.id));
+      await reorderIntroImages(section.id, reordered.map((row) => row.id));
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '이미지 순서를 변경하지 못했습니다.');
       await load();
@@ -187,44 +183,17 @@ export default function AdminEventIntroPage() {
     }
   };
 
-  const handleCaptionBlur = async (section: EventIntroSection, image: EventIntroImage, value: string) => {
+  const handleCaptionBlur = async (section: IntroSection, image: IntroImage, value: string) => {
     if (value === image.caption) return;
     try {
-      await updateEventIntroImageCaption(image.id, value);
+      await updateIntroImageCaption(image.id, value);
     } catch (caughtError) {
       window.alert(caughtError instanceof Error ? caughtError.message : '캡션을 저장하지 못했습니다.');
     }
   };
 
-  const handleCopyFrom = async (sourceEventId: string) => {
-    if (!eventId || copying) return;
-    setCopying(true);
-    try {
-      const result = await copyEventIntroFromEvent(sourceEventId, eventId);
-      setShowCopyPicker(false);
-      await load();
-      window.alert(`섹션 ${result.copiedSections}개, 이미지 ${result.copiedImages}장을 불러왔습니다.`);
-    } catch (caughtError) {
-      window.alert(caughtError instanceof Error ? caughtError.message : '소개 콘텐츠를 불러오지 못했습니다.');
-    } finally {
-      setCopying(false);
-    }
-  };
-
-  const otherEvents = useMemo(() => events.filter((item) => item.id !== eventId), [events, eventId]);
-
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reloadEvents} />;
-  if (!event) {
-    return (
-      <main className="admin-page min-h-screen bg-white p-6 text-black">
-        <p className="text-[15px] font-black">행사를 찾을 수 없습니다.</p>
-        <button className="mt-4 text-[13px] font-black text-meet-blue" onClick={() => navigate('/admin/events')} type="button">
-          ← 행사 목록으로
-        </button>
-      </main>
-    );
-  }
 
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white text-black">
@@ -235,34 +204,24 @@ export default function AdminEventIntroPage() {
         </header>
 
         <div className="mt-5 flex items-center justify-between">
-          <h1 className="text-[20px] font-black">행사 소개 편집</h1>
-          <button className="text-[13px] font-black text-meet-blue" onClick={() => navigate(`/admin/events/${event.id}/edit`)} type="button">
-            ← 행사 수정으로
+          <h1 className="text-[20px] font-black">행사소개 관리</h1>
+          <button className="text-[13px] font-black text-meet-blue" onClick={() => navigate('/admin/content')} type="button">
+            ← 콘텐츠 관리로
           </button>
         </div>
-        <p className="mt-1 truncate text-[13px] font-extrabold text-[#8a8a8a]">{event.title}</p>
         <p className="mt-1 text-[12px] font-bold leading-relaxed text-[#aab0b8]">
-          날짜·시간·장소·가격·인원은 여기서 수정할 수 없어요. 행사 수정 화면 값이 참가자 소개 페이지에 그대로 표시됩니다.
+          여기서 만든 소개글/이미지는 모든 행사의 소개 페이지에 공통으로 노출됩니다. 행사명·날짜·장소·가격·인원은 각 행사 수정
+          화면 값이 자동으로 표시되며 여기서 입력하지 않습니다.
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            className="h-10 rounded-[12px] bg-meet-blue px-3.5 text-[12.5px] font-black text-white disabled:opacity-50"
-            disabled={!sections}
-            onClick={() => setShowPreview(true)}
-            type="button"
-          >
-            👀 미리보기
-          </button>
-          <button
-            className="h-10 rounded-[12px] bg-[#f2f4f6] px-3.5 text-[12.5px] font-black text-[#555] disabled:opacity-50"
-            disabled={otherEvents.length === 0}
-            onClick={() => setShowCopyPicker(true)}
-            type="button"
-          >
-            📋 기존 행사에서 불러오기
-          </button>
-        </div>
+        <button
+          className="mt-4 h-10 rounded-[12px] bg-meet-blue px-3.5 text-[12.5px] font-black text-white disabled:opacity-50"
+          disabled={!sections}
+          onClick={() => setShowPreview(true)}
+          type="button"
+        >
+          👀 미리보기
+        </button>
 
         {loadError ? (
           <p className="mt-4 rounded-[16px] bg-meet-pinkSoft p-4 text-center text-[13px] font-black text-meet-pink">{loadError}</p>
@@ -272,7 +231,7 @@ export default function AdminEventIntroPage() {
           <div className="mt-5 space-y-3">
             {sections.length === 0 ? (
               <p className="rounded-[18px] bg-meet-blueSoft p-4 text-center text-[13px] font-black text-[#555]">
-                아직 등록된 소개 콘텐츠가 없습니다. 없으면 참가자 화면에는 기본 안내가 대신 보여요.
+                아직 등록된 소개 콘텐츠가 없습니다.
               </p>
             ) : null}
             {sections.map((section, index) =>
@@ -316,7 +275,7 @@ export default function AdminEventIntroPage() {
         <div className="mt-5 flex gap-2">
           <button
             className="h-12 flex-1 rounded-[14px] bg-meet-blueSoft text-[13.5px] font-black text-meet-blue disabled:opacity-50"
-            disabled={busy || !eventId}
+            disabled={busy}
             onClick={() => void handleAddSection('text')}
             type="button"
           >
@@ -324,7 +283,7 @@ export default function AdminEventIntroPage() {
           </button>
           <button
             className="h-12 flex-1 rounded-[14px] bg-meet-blueSoft text-[13.5px] font-black text-meet-blue disabled:opacity-50"
-            disabled={busy || !eventId}
+            disabled={busy}
             onClick={() => void handleAddSection('gallery')}
             type="button"
           >
@@ -333,15 +292,7 @@ export default function AdminEventIntroPage() {
         </div>
       </div>
 
-      {showPreview ? <PreviewOverlay event={event} onClose={() => setShowPreview(false)} sections={sections ?? []} /> : null}
-      {showCopyPicker ? (
-        <CopyPickerOverlay
-          busy={copying}
-          events={otherEvents}
-          onClose={() => setShowCopyPicker(false)}
-          onSelect={(id) => void handleCopyFrom(id)}
-        />
-      ) : null}
+      {showPreview ? <PreviewOverlay events={events} onClose={() => setShowPreview(false)} sections={sections ?? []} /> : null}
     </main>
   );
 }
@@ -363,13 +314,13 @@ function TextSectionCard({
   index: number;
   isFirst: boolean;
   isLast: boolean;
-  onChange: (updater: (section: EventIntroSection) => EventIntroSection) => void;
+  onChange: (updater: (section: IntroSection) => IntroSection) => void;
   onDelete: () => void;
   onMove: (direction: -1 | 1) => void;
   onSave: () => void;
   onToggleVisible: () => void;
   saved: boolean;
-  section: EventIntroSection;
+  section: IntroSection;
 }) {
   return (
     <article className="rounded-[16px] border border-[#f0f3f6] bg-white p-4 shadow-sm">
@@ -430,15 +381,15 @@ function GallerySectionCard({
   index: number;
   isFirst: boolean;
   isLast: boolean;
-  onCaptionBlur: (image: EventIntroImage, value: string) => void;
+  onCaptionBlur: (image: IntroImage, value: string) => void;
   onDelete: () => void;
-  onDeleteImage: (image: EventIntroImage) => void;
+  onDeleteImage: (image: IntroImage) => void;
   onMove: (direction: -1 | 1) => void;
   onMoveImage: (imageIndex: number, direction: -1 | 1) => void;
-  onReplaceImage: (image: EventIntroImage, file: File) => void;
+  onReplaceImage: (image: IntroImage, file: File) => void;
   onToggleVisible: () => void;
   onUpload: (files: FileList | null) => void;
-  section: EventIntroSection;
+  section: IntroSection;
 }) {
   const addInputRef = useRef<HTMLInputElement>(null);
 
@@ -481,8 +432,8 @@ function GallerySectionCard({
           onUpload(event.target.files);
           event.target.value = '';
         }}
-        style={{ display: 'none' }}
         ref={addInputRef}
+        style={{ display: 'none' }}
         type="file"
       />
       <button
@@ -506,7 +457,7 @@ function GalleryImageRow({
   onMove,
   onReplace,
 }: {
-  image: EventIntroImage;
+  image: IntroImage;
   index: number;
   isFirst: boolean;
   isLast: boolean;
@@ -546,8 +497,8 @@ function GalleryImageRow({
               if (file) onReplace(file);
               event.target.value = '';
             }}
-            style={{ display: 'none' }}
             ref={replaceInputRef}
+            style={{ display: 'none' }}
             type="file"
           />
           <button className="text-[11px] font-black text-meet-blue" onClick={() => replaceInputRef.current?.click()} type="button">
@@ -609,15 +560,40 @@ function SectionHeader({
   );
 }
 
+// 미리보기용 "가장 가까운 예정 행사" 계산 - EventInfoPage가 /event-info(행사
+// 미지정 진입)에서 쓰는 것과 동일한 기준이라 미리보기가 실제 화면과
+// 어긋나지 않는다.
+function pickNearestUpcomingEvent(events: EventData[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return events
+    .filter((event) => new Date(`${event.date}T00:00:00`).getTime() >= today.getTime())
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+}
+
 function PreviewOverlay({
-  event,
+  events,
   onClose,
   sections,
 }: {
-  event: ReturnType<typeof useOperationalData>['events'][number];
+  events: EventData[];
   onClose: () => void;
-  sections: EventIntroSection[];
+  sections: IntroSection[];
 }) {
+  const previewEvent = pickNearestUpcomingEvent(events);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewEvent) return;
+    let active = true;
+    void fetchEventCoverUrls([previewEvent.id]).then((covers) => {
+      if (active) setCoverUrl(covers[previewEvent.id] ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [previewEvent?.id]);
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8" onClick={onClose} role="presentation">
       <div
@@ -631,68 +607,34 @@ function PreviewOverlay({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-5">
-          <h1 className="text-[19px] font-black leading-tight">{event.title}</h1>
-          <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
-            <p className="font-black text-black">일시</p>
-            <p>
-              {event.date} {event.startTime}~{event.endTime}
+          {previewEvent ? (
+            <>
+              <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
+                {coverUrl ? <img alt="" className="h-full w-full object-cover" src={coverUrl} /> : null}
+              </div>
+              <h1 className="mt-4 text-[19px] font-black leading-tight">{previewEvent.title}</h1>
+              <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
+                <p className="font-black text-black">일시</p>
+                <p>
+                  {previewEvent.date} {previewEvent.startTime}~{previewEvent.endTime}
+                </p>
+                <p className="mt-3 font-black text-black">장소</p>
+                <p>{previewEvent.location}</p>
+                <p className="mt-3 font-black text-black">참가비</p>
+                <p>
+                  남성 {previewEvent.malePrice.toLocaleString('ko-KR')}원 · 여성 {previewEvent.femalePrice.toLocaleString('ko-KR')}원
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="rounded-[16px] bg-meet-blueSoft p-4 text-center text-[13px] font-black text-[#555]">
+              예정된 행사가 없어 핵심 정보 미리보기는 생략됩니다.
             </p>
-            <p className="mt-3 font-black text-black">장소</p>
-            <p>{event.location}</p>
-            <p className="mt-3 font-black text-black">참가비</p>
-            <p>
-              남성 {event.malePrice.toLocaleString('ko-KR')}원 · 여성 {event.femalePrice.toLocaleString('ko-KR')}원
-            </p>
-          </div>
-          <EventIntroSections sections={sections} />
+          )}
+          <IntroContentSections sections={sections} />
           {sections.filter((section) => section.isVisible).length === 0 ? (
-            <p className="mt-8 text-center text-[13px] font-bold text-[#9a9a9a]">
-              노출 중인 소개 콘텐츠가 없어 기본 안내 문구가 대신 표시됩니다.
-            </p>
+            <p className="mt-8 text-center text-[13px] font-bold text-[#9a9a9a]">노출 중인 소개 콘텐츠가 없습니다.</p>
           ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CopyPickerOverlay({
-  busy,
-  events,
-  onClose,
-  onSelect,
-}: {
-  busy: boolean;
-  events: ReturnType<typeof useOperationalData>['events'];
-  onClose: () => void;
-  onSelect: (eventId: string) => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onClose} role="presentation">
-      <div
-        className="max-h-[70vh] w-full max-w-[360px] overflow-hidden rounded-[18px] bg-white"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-[#f0f3f6] px-4 py-3">
-          <p className="text-[13px] font-black text-[#555]">불러올 행사 선택</p>
-          <button className="text-[13px] font-black text-meet-blue" onClick={onClose} type="button">
-            닫기
-          </button>
-        </div>
-        <div className="max-h-[56vh] overflow-y-auto p-2">
-          {events.map((item) => (
-            <button
-              className="block w-full rounded-[12px] px-3 py-3 text-left text-[13.5px] font-bold text-black transition hover:bg-[#f7f9fb] disabled:opacity-50"
-              disabled={busy}
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              type="button"
-            >
-              {item.title}
-              <span className="ml-2 text-[11.5px] font-extrabold text-[#9a9a9a]">{item.date}</span>
-            </button>
-          ))}
-          {events.length === 0 ? <p className="p-4 text-center text-[13px] font-bold text-[#9a9a9a]">불러올 다른 행사가 없습니다.</p> : null}
         </div>
       </div>
     </div>

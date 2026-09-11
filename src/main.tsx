@@ -18,7 +18,7 @@ import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminHomeContentPage from './pages/AdminHomeContentPage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
-import AdminEventIntroPage from './pages/AdminEventIntroPage';
+import AdminIntroContentPage from './pages/AdminIntroContentPage';
 import AdminInquiriesPage from './pages/AdminInquiriesPage';
 import AdminInquiryDetailPage from './pages/AdminInquiryDetailPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
@@ -97,6 +97,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/content/conversation-topics" element={<AdminConversationTopicsPage />} />
               <Route path="/admin/content/profile-keywords" element={<AdminProfileKeywordsPage />} />
               <Route path="/admin/content/reviews" element={<AdminReviewsPage />} />
+              <Route path="/admin/content/event-intro" element={<AdminIntroContentPage />} />
               <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
               <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
               <Route path="/admin/applications" element={<AdminApplicationsPage />} />
@@ -110,7 +111,6 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
               <Route path="/admin/events/:eventId/prepare/seats" element={<AdminPreroundSeatsPage />} />
               <Route path="/admin/events/:eventId/live" element={<AdminEventLivePage />} />
-              <Route path="/admin/events/:eventId/intro" element={<AdminEventIntroPage />} />
               <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
               <Route path="/admin/inquiries/:inquiryId" element={<AdminInquiryDetailPage />} />
             </Route>

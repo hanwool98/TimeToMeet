@@ -49,6 +49,11 @@ export default function AdminContentPage() {
             label="후기 관리"
             onClick={() => navigate('/admin/content/reviews')}
           />
+          <MenuCard
+            icon={<EventIntroIcon />}
+            label="행사소개 관리"
+            onClick={() => navigate('/admin/content/event-intro')}
+          />
         </div>
       </div>
     </main>
@@ -111,6 +116,15 @@ function ReviewIcon() {
     <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
       <path d="M6 8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H12l-5 5v-5H8a2 2 0 0 1-2-2V8Z" />
       <path d="M11 13h10M11 17h6" />
+    </svg>
+  );
+}
+
+function EventIntroIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <rect height="22" rx="3" width="18" x="7" y="4" />
+      <path d="M11 11h10M11 15h10M11 19h6" />
     </svg>
   );
 }

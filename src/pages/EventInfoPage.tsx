@@ -1,68 +1,29 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
-import EventIntroSections from '../components/EventIntroSections';
+import IntroContentSections from '../components/IntroContentSections';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import { verifyAppSession } from '../services/appAuth';
-import { fetchPublicEventIntro, type EventIntroSection } from '../services/eventIntro';
+import { fetchPublicIntroContent, type IntroSection } from '../services/introContent';
 import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
-const reasons = [
-  {
-    title: '전용 앱으로 편안하게',
-    body: ['타임투밋은 전용 앱을 사용합니다', '행사 중에도 앱이 설치된 태블릿을 사용하여', '더욱 쉽게 즐길 수 있습니다'],
-  },
-  {
-    title: '닉네임으로 부담없이',
-    body: ['행사 중에는 닉네임을 사용합니다.', '실명 및 연락처는 매칭 전까지', '공개되지 않습니다.'],
-  },
-  {
-    title: '첫인상은 외모만이 아닙니다',
-    body: ['참가자들을 만나보기 전에', '목소리를 먼저 들어보세요!'],
-  },
-  {
-    title: 'I도 편하게 즐길 수 있는 대화',
-    body: ['태블릿을 통해 100개가 넘은 대화 주제를', '제공 받아 누구나 편하게 대화할 수 있어요'],
-  },
-  {
-    title: '불편한 순간엔 바로 신고',
-    body: ['상대방의 부적절한 언행을 발견하면', '개인 휴대전화의 앱을 통해', '즉시 운영자에게 알릴 수 있어요'],
-  },
-  {
-    title: '만남이 아쉬웠다면 한번 더',
-    body: ['첫번째 대화가 끝난 후 호감도를 반영해', '특정 인물 2-3인과', '2nd 대화 찬스가 제공됩니다.'],
-  },
-  {
-    title: '차분한 자리의 소개팅',
-    body: ['차를 마시며 편안하게 대화할 수 있는', '분위기에서 진행됩니다.'],
-  },
-];
-
-const steps = [
-  '입장 및 안내',
-  '1 : 1 로테이션 대화',
-  '호감도 작성 및 메모',
-  '자리 이동',
-  '2nd 대화 찬스',
-  '최종선택',
-  '매칭',
-];
-
-const reviews = ['image', 'image', 'image', 'image'];
-
+// 행사소개 페이지 - 두 경로가 이 화면 하나를 공유한다.
+//   - /events/:eventId/info  ("apply" 모드) : 행사 신청 흐름 중 진입,
+//     eventId가 있으므로 그 행사 정보를 기준으로 보여주고 CTA는 신청으로.
+//   - /event-info            ("browse" 모드): 메인페이지 등에서 특정 신청
+//     흐름 없이 진입, eventId가 없으므로 "가장 가까운 예정 행사" 정보를
+//     보여주고 CTA는 캘린더 이동으로.
+// 핵심정보(행사명/날짜/장소/가격/인원/모집상태/대표이미지)는 두 모드 모두
+// events 데이터에서 그대로 가져온다 - 절대 하드코딩하지 않는다. 그 아래
+// 텍스트/이미지 갤러리 콘텐츠는 관리자 "행사소개 관리"가 관리하는 공통
+// 콘텐츠로, 행사와 무관하게 항상 동일하다.
 function BackIcon() {
   return (
     <svg aria-hidden="true" className="h-8 w-8" fill="none" viewBox="0 0 48 48">
-      <path
-        d="M18 12L7 23L18 34"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="6"
-      />
+      <path d="M18 12L7 23L18 34" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="6" />
       <path
         d="M9 23H31C37 23 41 27 41 33C41 39 37 43 31 43H19"
         stroke="currentColor"
@@ -74,133 +35,59 @@ function BackIcon() {
   );
 }
 
-function SwipeSection({
-  items,
-  title,
-}: {
-  items: Array<string | { title: string; body: string[] }>;
-  title: string;
-}) {
-  return (
-    <section className="mt-10">
-      <h2 className="px-1 text-[20px] font-black text-black">{title}</h2>
-      <div className="mt-4 flex max-w-full snap-x gap-3 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
-        {items.map((item, index) => (
-          <article
-            className="grid min-h-[146px] min-w-[128px] snap-start place-items-center rounded-none bg-[#d9d9d9] p-3 text-center"
-            key={typeof item === 'string' ? `${item}-${index}` : item.title}
-          >
-            {typeof item === 'string' ? (
-              <p className="break-keep text-[13px] font-black leading-snug text-white">{item}</p>
-            ) : (
-              <>
-                <h3 className="break-keep text-[13px] font-black leading-snug text-black">{item.title}</h3>
-                <div className="mt-2 space-y-1 break-keep text-[10px] font-extrabold leading-snug text-[#555]">
-                  {item.body.map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
-                </div>
-              </>
-            )}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// 관리자가 이 행사에 소개 콘텐츠를 하나도 등록하지 않았을 때 쓰는 기존
-// 고정 콘텐츠 - 전면 개편 이전부터 있던 문구를 그대로 유지해, 이미
-// 운영 중인 행사의 소개 페이지가 갑자기 비어 보이지 않게 한다.
-function DefaultIntroContent() {
-  return (
-    <>
-      <section className="mt-9 space-y-6 px-1">
-        <h2 className="text-[20px] font-black">새로운 만남이 가장 기대되는 시간</h2>
-        <div className="space-y-5 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-black">
-          <p>
-            미혼남녀가 가장 선호하는 소개팅 시간대는
-            <br />
-            주말 초저녁이었습니다.
-          </p>
-          <p>
-            단순히 연인을 찾는 것을 넘어,
-            <br />내 시간을 함께하고 싶은 사람을 만나는 곳.
-          </p>
-          <p>행사의 끝이 새로운 만남의 시작이 될 수 있도록,</p>
-          <p>
-            <span className="font-black italic">Time to Meet</span>
-            <br />
-            여러분의 새로운 만남이 시작될 시간입니다.
-          </p>
-        </div>
-      </section>
-
-      <SwipeSection items={reasons} title="왜 타임투밋인가요?" />
-      <SwipeSection items={steps} title="진행순서" />
-      <SwipeSection items={reviews} title="후기" />
-
-      <section className="mt-10">
-        <h2 className="px-1 text-[20px] font-black">콘텐츠 참여 혜택</h2>
-        <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-          <p>행사 후기 콘텐츠 제작(유튜브, 릴스, 블로그 등)에 참여하고 싶으시다면 타임투밋 공식 DM으로 문의해주세요.</p>
-          <p className="mt-5">별도의 참여 혜택을 안내해드립니다.</p>
-        </div>
-      </section>
-    </>
-  );
-}
-
 export default function EventInfoPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { eventId } = useParams();
   const previewToken = getCachedTestEventPreviewToken(eventId);
   const { error, events, loading, reload } = useOperationalData({ eventId, previewToken });
   const [checkingSession, setCheckingSession] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
-  const [introSections, setIntroSections] = useState<EventIntroSection[] | null>(null);
-  const isTabEventInfo = location.pathname === '/event-info';
+  const [introSections, setIntroSections] = useState<IntroSection[] | null>(null);
+
+  // eventId가 있으면(행사 신청 흐름 진입) 그 행사, 없으면(메인페이지 등에서
+  // 특정 행사 없이 진입) 가장 가까운 예정 행사를 기본값으로 쓴다.
+  const mode: 'apply' | 'browse' = eventId ? 'apply' : 'browse';
   const event = eventId
     ? events.find((item) => item.id === eventId)
     : events
       .filter((item) => getDaysUntilEvent(item.date) >= 0)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-  // 참가 신청 마감 기능은 더 이상 신청을 막지 않는다(요청에 따라 제거) -
-  // applicationDeadline 필드/관리자 UI 자체는 그대로 남아있지만 더 이상
-  // 참조하지 않는다.
-  const isApplicationClosed = false;
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
   const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
   const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;
   const earlyBirdDiscountFemale = isEarlyBirdActive ? event?.earlyBirdDiscountFemale ?? 0 : 0;
-  const finalMalePrice = Math.max((event?.malePrice ?? 50000) - earlyBirdDiscountMale, 0);
-  const finalFemalePrice = Math.max((event?.femalePrice ?? 40000) - earlyBirdDiscountFemale, 0);
+  const finalMalePrice = Math.max((event?.malePrice ?? 0) - earlyBirdDiscountMale, 0);
+  const finalFemalePrice = Math.max((event?.femalePrice ?? 0) - earlyBirdDiscountFemale, 0);
   const hasActiveEarlyBirdDiscount = isEarlyBirdActive && (earlyBirdDiscountMale > 0 || earlyBirdDiscountFemale > 0);
   const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
 
-  // "/event-info"(행사 미지정 일반 안내 탭)는 이 개편과 무관한 기존
-  // 고정 페이지라 대표 이미지/소개 콘텐츠를 조회하지 않는다.
   useEffect(() => {
-    if (isTabEventInfo || !eventId) return;
+    if (!event) {
+      setCoverUrl(null);
+      return;
+    }
     let active = true;
-    void fetchEventCoverUrls([eventId]).then((covers) => {
-      if (active) setCoverUrl(covers[eventId] ?? null);
+    void fetchEventCoverUrls([event.id]).then((covers) => {
+      if (active) setCoverUrl(covers[event.id] ?? null);
     });
-    void fetchPublicEventIntro(eventId).then((sections) => {
+    return () => {
+      active = false;
+    };
+  }, [event?.id]);
+
+  // 공통 소개 콘텐츠는 행사와 무관하므로 한 번만 불러온다.
+  useEffect(() => {
+    let active = true;
+    void fetchPublicIntroContent().then((sections) => {
       if (active) setIntroSections(sections);
     });
     return () => {
       active = false;
     };
-  }, [eventId, isTabEventInfo]);
+  }, []);
 
-  // fetchPublicEventIntro는 이미 is_visible=true인 행만 내려주므로, 결과가
-  // 비어있지 않다는 것 자체가 "이 행사에 노출할 커스텀 소개가 있다"는 뜻이다.
-  const hasCustomIntro = Boolean(introSections && introSections.length > 0);
-
-  if (!isTabEventInfo && loading) return <DataLoadingState />;
-  if (!isTabEventInfo && error) return <DataErrorState message={error} onRetry={reload} />;
+  if (loading) return <DataLoadingState />;
+  if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-3 with-bottom-tabs pt-12 text-black min-[380px]:px-4">
@@ -219,124 +106,97 @@ export default function EventInfoPage() {
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
 
-          {!isTabEventInfo && coverUrl ? (
-            <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
-              <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={coverUrl} />
-            </div>
+          {event ? (
+            <>
+              {coverUrl ? (
+                <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
+                  <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={coverUrl} />
+                </div>
+              ) : (
+                <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
+                  <div>
+                    <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
+                    <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+                  </div>
+                </div>
+              )}
+
+              <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">{event.title}</h1>
+
+              <section className="mt-9">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-[20px] font-black">핵심정보</h2>
+                  <span className={`text-[13px] font-black ${isRecruiting ? 'text-meet-pink' : 'text-[#9a9a9a]'}`}>
+                    {isRecruiting ? '🔥 모집중' : '모집 마감'}
+                  </span>
+                </div>
+                <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                  <p className="font-black text-black">일시</p>
+                  <p>{formatKoreanWeekday(event.date)} {event.startTime}~{event.endTime}</p>
+                  <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
+                  <p className="mt-5 font-black text-black">장소</p>
+                  <p>{event.location} 내 프라이빗 카페</p>
+                  <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
+                  <p className="mt-5 font-black text-black">모집 대상</p>
+                  <p>25~35세 미혼 남녀</p>
+                  <p className="mt-5 font-black text-black">모집 인원</p>
+                  <p>
+                    남성 {counts.male}/{event.maleCapacity ?? 10} · 여성 {counts.female}/{event.femaleCapacity ?? 10}
+                  </p>
+                  {(event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6 ? <p>※ 최소 6:6부터 진행됩니다.</p> : null}
+                </div>
+              </section>
+
+              <section className="mt-10">
+                <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
+                <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                  {hasActiveEarlyBirdDiscount ? (
+                    <>
+                      <p>
+                        남성{' '}
+                        {earlyBirdDiscountMale > 0 ? (
+                          <>
+                            <span className="text-[#aab0b8] line-through">{formatWon(event.malePrice)}</span> {formatWon(finalMalePrice)}
+                          </>
+                        ) : (
+                          formatWon(finalMalePrice)
+                        )}
+                      </p>
+                      <p>
+                        여성{' '}
+                        {earlyBirdDiscountFemale > 0 ? (
+                          <>
+                            <span className="text-[#aab0b8] line-through">{formatWon(event.femalePrice)}</span> {formatWon(finalFemalePrice)}
+                          </>
+                        ) : (
+                          formatWon(finalFemalePrice)
+                        )}
+                      </p>
+                      <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>남성 {formatWon(event.malePrice)}</p>
+                      <p>여성 {formatWon(event.femalePrice)}</p>
+                    </>
+                  )}
+                </div>
+              </section>
+            </>
           ) : (
-            <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
-              <div>
-                <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
-                <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
-              </div>
+            <div className="mt-9 rounded-[16px] bg-meet-blueSoft p-6 text-center text-[14px] font-black text-[#666]">
+              {mode === 'browse' ? '예정된 행사가 없습니다.' : '행사 정보를 찾을 수 없습니다.'}
             </div>
           )}
 
-          {!isTabEventInfo && event ? (
-            <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">{event.title}</h1>
-          ) : null}
+          {introSections ? <IntroContentSections sections={introSections} /> : null}
 
-          <section className="mt-9">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-[20px] font-black">핵심정보</h2>
-              {!isTabEventInfo && event ? (
-                <span className={`text-[13px] font-black ${isRecruiting ? 'text-meet-pink' : 'text-[#9a9a9a]'}`}>
-                  {isRecruiting ? '🔥 모집중' : '모집 마감'}
-                </span>
-              ) : null}
-            </div>
-            {isTabEventInfo ? (
-              <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-                <p className="font-black text-black">일시</p>
-                <p>매주 주말</p>
-                <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
-                <p className="mt-5 font-black text-black">장소</p>
-                <p>수도권 내 프라이빗 카페</p>
-                <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
-                <p className="mt-5 font-black text-black">모집 대상</p>
-                <p>25~35세 미혼 남녀</p>
-                <p className="mt-5 font-black text-black">모집 인원</p>
-                <p>최소 6:6의 인원이 모였을 시 진행됩니다.</p>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-                <p className="font-black text-black">일시</p>
-                <p>{event ? `${formatKoreanWeekday(event.date)} ${event.startTime}~${event.endTime}` : '행사 일정 미정'}</p>
-                <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
-                <p className="mt-5 font-black text-black">장소</p>
-                <p>{event ? `${event.location} 내 프라이빗 카페` : '장소 미정'}</p>
-                <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
-                <p className="mt-5 font-black text-black">모집 대상</p>
-                <p>25~35세 미혼 남녀</p>
-                <p className="mt-5 font-black text-black">모집 인원</p>
-                <p>
-                  남성 {counts.male}/{event?.maleCapacity ?? 10} · 여성 {counts.female}/{event?.femaleCapacity ?? 10}
-                </p>
-                {!event || ((event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6) ? (
-                  <p>※ 최소 6:6부터 진행됩니다.</p>
-                ) : null}
-              </div>
-            )}
-          </section>
-
-          <section className="mt-10">
-            <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
-            {isTabEventInfo ? (
-              <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-                <p>남성 {formatWon(50000)}</p>
-                <p>여성 {formatWon(40000)}</p>
-                <p className="mt-5">얼리버드 신청 시 5,000원 할인</p>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-                {hasActiveEarlyBirdDiscount ? (
-                  <>
-                    <p>
-                      남성{' '}
-                      {earlyBirdDiscountMale > 0 ? (
-                        <>
-                          <span className="text-[#aab0b8] line-through">{formatWon(event?.malePrice ?? 50000)}</span>{' '}
-                          {formatWon(finalMalePrice)}
-                        </>
-                      ) : (
-                        formatWon(finalMalePrice)
-                      )}
-                    </p>
-                    <p>
-                      여성{' '}
-                      {earlyBirdDiscountFemale > 0 ? (
-                        <>
-                          <span className="text-[#aab0b8] line-through">{formatWon(event?.femalePrice ?? 40000)}</span>{' '}
-                          {formatWon(finalFemalePrice)}
-                        </>
-                      ) : (
-                        formatWon(finalFemalePrice)
-                      )}
-                    </p>
-                    <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
-                  </>
-                ) : (
-                  <>
-                    <p>남성 {formatWon(event?.malePrice ?? 50000)}</p>
-                    <p>여성 {formatWon(event?.femalePrice ?? 40000)}</p>
-                  </>
-                )}
-              </div>
-            )}
-          </section>
-
-          {!isTabEventInfo && hasCustomIntro && introSections ? (
-            <EventIntroSections sections={introSections} />
-          ) : (
-            <DefaultIntroContent />
-          )}
-
-          {!isTabEventInfo ? (
-            <div className="sticky bottom-4 mt-10">
+          <div className="sticky bottom-4 mt-10">
+            {mode === 'apply' ? (
               <PrimaryButton
-                disabled={!eventId || isApplicationClosed || checkingSession}
+                disabled={!eventId || checkingSession}
                 onClick={async () => {
-                  if (!eventId || isApplicationClosed || checkingSession) return;
+                  if (!eventId || checkingSession) return;
                   const returnTo = `/events/${eventId}/apply/profile`;
                   setCheckingSession(true);
                   try {
@@ -351,13 +211,12 @@ export default function EventInfoPage() {
                   }
                 }}
               >
-                {isApplicationClosed ? '신청 마감' : '내 프로필 만들기'}
+                내 프로필 만들기
               </PrimaryButton>
-              {isApplicationClosed ? (
-                <p className="mt-2 text-center text-[13px] font-black text-meet-pink">이 행사의 신청 접수가 마감되었습니다.</p>
-              ) : null}
-            </div>
-          ) : null}
+            ) : (
+              <PrimaryButton onClick={() => navigate('/calendar')}>캘린더로 이동하기</PrimaryButton>
+            )}
+          </div>
         </section>
       </div>
       <BottomTabs />

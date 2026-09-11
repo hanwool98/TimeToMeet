@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HomeCarousel, { HOME_BANNER_ASPECT } from './HomeCarousel';
 import ParticipantPhoto from './ParticipantPhoto';
 import { fetchPublicHomeContents, type PublicHomeContent } from '../services/supabaseApplications';
@@ -8,6 +9,7 @@ import { fetchPublicHomeContents, type PublicHomeContent } from '../services/sup
 // 완전히 동일한 크기/구조). 등록 전이면 시안형 안내 배너 1장을 임시 표시.
 // 홈에 노출되는 제목은 "모집방식 & 진행방식"(관리자 메뉴 라벨은 그대로).
 export default function HomeRecruitmentSection() {
+  const navigate = useNavigate();
   const [contents, setContents] = useState<PublicHomeContent[] | null>(null);
 
   useEffect(() => {
@@ -22,7 +24,12 @@ export default function HomeRecruitmentSection() {
 
   return (
     <section>
-      <h2 className="mb-2.5 text-[16px] font-black text-black">모집방식 &amp; 진행방식 📋</h2>
+      <div className="mb-2.5 flex items-center justify-between">
+        <h2 className="text-[16px] font-black text-black">모집방식 &amp; 진행방식 📋</h2>
+        <button className="text-[12px] font-bold text-[#9a9a9a]" onClick={() => navigate('/event-info')} type="button">
+          행사 소개 보기 ›
+        </button>
+      </div>
       {contents && contents.length > 0 ? (
         <HomeCarousel
           ariaLabel="모집방식 & 진행방식"

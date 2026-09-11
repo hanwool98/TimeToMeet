@@ -14,7 +14,6 @@ type UploadedFile = {
 
 type Payload = {
   caption?: string;
-  eventId?: string;
   photo?: UploadedFile;
   replaceImageId?: string;
   sectionId?: string;
@@ -25,9 +24,9 @@ const maxImageBytes = 6 * 1024 * 1024;
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 const signedUrlExpirySeconds = 21_600;
 
-// 관리자 "행사 소개 편집"의 이미지 갤러리 섹션에 이미지를 업로드한다.
-// 기존 event-assets/{eventId}/ 프리픽스 아래 intro/{sectionId}/ 폴더에
-// 새 오브젝트로 저장하고, event_intro_images 행까지 여기서 함께 만든다
+// 관리자 "행사소개 관리"의 이미지 갤러리 섹션에 이미지를 업로드한다.
+// application-files 버킷의 intro-content/{sectionId}/ 프리픽스에 새
+// 오브젝트로 저장하고, intro_images 행까지 여기서 함께 만든다
 // (upload-home-content와 동일한 이유로 별도 저장 RPC를 두지 않는다).
 // replaceImageId가 오면 "교체" - 새 이미지를 기존과 같은 순서로 넣고
 // 기존 행/파일은 이 함수 안에서 바로 정리해 한 번의 요청으로 끝낸다.
@@ -37,15 +36,13 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Event intro image upload is not configured.' }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return json({ message: 'Intro image upload is not configured.' }, 500);
 
   const payload = (await request.json().catch(() => null)) as Payload | null;
   if (
     !payload ||
     typeof payload.sessionToken !== 'string' ||
     !payload.sessionToken ||
-    typeof payload.eventId !== 'string' ||
-    !payload.eventId ||
     typeof payload.sectionId !== 'string' ||
     !payload.sectionId ||
     !payload.photo
@@ -71,10 +68,9 @@ Deno.serve(async (request) => {
   }
 
   const { data: section, error: sectionError } = await supabase
-    .from('event_intro_sections')
-    .select('id, event_id, section_type')
+    .from('intro_sections')
+    .select('id, section_type')
     .eq('id', payload.sectionId)
-    .eq('event_id', payload.eventId)
     .maybeSingle();
 
   if (sectionError || !section) return json({ message: '섹션을 찾을 수 없습니다.' }, 404);
@@ -83,7 +79,7 @@ Deno.serve(async (request) => {
   let replaceRow: { display_order: number; storage_path: string } | null = null;
   if (typeof payload.replaceImageId === 'string' && payload.replaceImageId) {
     const { data: existing } = await supabase
-      .from('event_intro_images')
+      .from('intro_images')
       .select('display_order, storage_path')
       .eq('id', payload.replaceImageId)
       .eq('section_id', payload.sectionId)
@@ -92,10 +88,9 @@ Deno.serve(async (request) => {
     replaceRow = existing;
   }
 
-  const safeEventId = await sanitizeIdForStoragePath(payload.eventId);
   const contentType = normalizeContentType(payload.photo.contentType);
   const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
-  const path = `event-assets/${safeEventId}/intro/${payload.sectionId}/${crypto.randomUUID()}.${extension}`;
+  const path = `intro-content/${payload.sectionId}/${crypto.randomUUID()}.${extension}`;
 
   let bytes: Uint8Array;
   try {
@@ -111,14 +106,14 @@ Deno.serve(async (request) => {
   });
 
   if (uploadError) {
-    console.error('Event intro image upload failed', { message: uploadError.message, path });
+    console.error('Intro image upload failed', { message: uploadError.message, path });
     return json({ message: `이미지 업로드에 실패했습니다. ${uploadError.message}` }, 500);
   }
 
   let nextOrder = replaceRow?.display_order;
   if (nextOrder === undefined) {
     const { data: maxRow } = await supabase
-      .from('event_intro_images')
+      .from('intro_images')
       .select('display_order')
       .eq('section_id', payload.sectionId)
       .order('display_order', { ascending: false })
@@ -128,7 +123,7 @@ Deno.serve(async (request) => {
   }
 
   const { data: inserted, error: insertError } = await supabase
-    .from('event_intro_images')
+    .from('intro_images')
     .insert({
       caption: typeof payload.caption === 'string' ? payload.caption.trim() : '',
       display_order: nextOrder,
@@ -144,7 +139,7 @@ Deno.serve(async (request) => {
   }
 
   if (replaceRow) {
-    await supabase.from('event_intro_images').delete().eq('id', payload.replaceImageId as string);
+    await supabase.from('intro_images').delete().eq('id', payload.replaceImageId as string);
     await supabase.storage.from('application-files').remove([replaceRow.storage_path]);
   }
 
@@ -209,11 +204,6 @@ function decodeBase64(base64: string) {
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
-}
-
-async function sanitizeIdForStoragePath(id: string) {
-  if (/^[A-Za-z0-9_.-]+$/.test(id)) return id;
-  return sha256(id);
 }
 
 async function sha256(value: string) {

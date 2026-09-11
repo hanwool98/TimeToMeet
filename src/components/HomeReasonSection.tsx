@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HomeCarousel, { HOME_BANNER_ASPECT } from './HomeCarousel';
 import ParticipantPhoto from './ParticipantPhoto';
 import { fetchPublicHomeContents, type PublicHomeContent } from '../services/supabaseApplications';
@@ -10,6 +11,7 @@ import { fetchPublicHomeContents, type PublicHomeContent } from '../services/sup
 const heroImage = '/assets/home/love-reason-hero.svg';
 
 export default function HomeReasonSection() {
+  const navigate = useNavigate();
   const [contents, setContents] = useState<PublicHomeContent[] | null>(null);
 
   useEffect(() => {
@@ -24,9 +26,14 @@ export default function HomeReasonSection() {
 
   return (
     <section>
-      <h2 className="mb-2.5 text-[16px] font-black text-black">
-        타임투밋이 사랑받는 이유 <span className="text-meet-pink">♥</span>
-      </h2>
+      <div className="mb-2.5 flex items-center justify-between">
+        <h2 className="text-[16px] font-black text-black">
+          타임투밋이 사랑받는 이유 <span className="text-meet-pink">♥</span>
+        </h2>
+        <button className="text-[12px] font-bold text-[#9a9a9a]" onClick={() => navigate('/event-info')} type="button">
+          행사 소개 보기 ›
+        </button>
+      </div>
       {contents && contents.length > 0 ? (
         <HomeCarousel
           ariaLabel="타임투밋이 사랑받는 이유"

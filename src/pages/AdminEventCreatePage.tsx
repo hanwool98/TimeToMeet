@@ -276,15 +276,6 @@ export default function AdminEventCreatePage() {
         <section className="w-full max-w-full min-w-0 rounded-[30px] border border-[#f0f3f6] bg-white px-4 py-6 shadow-calendar min-[380px]:px-5">
           <h1 className="text-fluid-safe text-[25px] font-black leading-tight">{pageTitle}</h1>
           <p className="mt-3 text-[18px] font-black text-meet-blue">{formatKoreanDate(eventDate)}</p>
-          {editingEvent ? (
-            <button
-              className="mt-4 h-11 rounded-[14px] bg-meet-blueSoft px-4 text-[13px] font-black text-meet-blue transition active:scale-[0.98]"
-              onClick={() => navigate(`/admin/events/${editingEvent.id}/intro`)}
-              type="button"
-            >
-              📝 행사 소개 편집 (참가자 화면에 보이는 소개 콘텐츠)
-            </button>
-          ) : null}
           {isLocked ? (
             <p className="mt-3 rounded-[16px] bg-meet-pinkSoft px-4 py-3 text-[13px] font-black text-meet-pink">
               🔒 잠긴 행사입니다. 행사 상세 화면에서 잠금을 해제해야 수정할 수 있어요.
