@@ -85,6 +85,7 @@ export default function AdminPage() {
             <MenuCard icon={<Icon className="h-5 w-5" name="user" />} label="참여이력 조회" onClick={() => navigate('/admin/participation-history')} />
             <MenuCard icon={<Icon className="h-5 w-5" name="shield" />} label="신고 관리" onClick={showPreparing} />
             <MenuCard icon={<Icon className="h-5 w-5" name="video" />} label="콘텐츠 관리" onClick={() => navigate('/admin/content')} />
+            <MenuCard icon={<Icon className="h-5 w-5" name="mail" />} label="문의 관리" onClick={() => navigate('/admin/inquiries')} />
             <MenuCard icon={<Icon className="h-5 w-5" name="alert" />} label="오류 로그" onClick={() => navigate('/admin/application-errors')} />
           </div>
           <button
@@ -280,7 +281,7 @@ function Icon({
   name,
 }: {
   className?: string;
-  name: 'alert' | 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'radio' | 'shield' | 'user' | 'users' | 'video';
+  name: 'alert' | 'calendar' | 'card' | 'clipboard' | 'file' | 'logout' | 'mail' | 'radio' | 'shield' | 'user' | 'users' | 'video';
 }) {
   const common = {
     fill: 'none',
@@ -345,6 +346,12 @@ function Icon({
         <>
           <rect {...common} height="18" rx="3" width="22" x="5" y="7" />
           <path {...common} d="m14 12 7 4-7 4v-8Z" />
+        </>
+      ) : null}
+      {name === 'mail' ? (
+        <>
+          <rect {...common} height="18" rx="3" width="24" x="4" y="8" />
+          <path {...common} d="m5 9 11 8 11-8" />
         </>
       ) : null}
       {name === 'logout' ? (

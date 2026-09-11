@@ -8,8 +8,7 @@ import type { RepresentativeCrop } from '../utils/representativeCrop';
 
 const menuItems = [
   { icon: 'profile', label: '참가 프로필', path: '/mypage/profile' },
-  { icon: 'mail', label: '문의하기' },
-  { icon: 'policy', label: '약관 및 정책' },
+  { icon: 'mail', label: '문의하기', path: '/mypage/inquiries' },
   { icon: 'logout', label: '로그아웃' },
 ];
 

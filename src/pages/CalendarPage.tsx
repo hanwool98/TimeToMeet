@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
 import Calendar from '../components/Calendar';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import EventCard from '../components/EventCard';
 import useOperationalData from '../hooks/useOperationalData';
+import { fetchEventCoverUrls } from '../services/supabaseApplications';
 
 const KOREA_TIME_ZONE = 'Asia/Seoul';
 
@@ -39,11 +40,24 @@ export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(() => today);
   const { error, events, loading, reload } = useOperationalData();
+  const [covers, setCovers] = useState<Record<string, string>>({});
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.date === toDateKey(selectedDate)),
     [events, selectedDate],
   );
+
+  const eventIdsKey = events.map((event) => event.id).join(',');
+  useEffect(() => {
+    if (!eventIdsKey) return;
+    let active = true;
+    void fetchEventCoverUrls(eventIdsKey.split(',')).then((next) => {
+      if (active) setCovers(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [eventIdsKey]);
 
   const handleApply = () => {
     if (!selectedEvent) return;
@@ -74,6 +88,7 @@ export default function CalendarPage() {
         />
         <div className="mt-8 scroll-mt-8" ref={eventCardRef}>
           <EventCard
+            coverUrl={selectedEvent ? covers[selectedEvent.id] : undefined}
             event={selectedEvent}
             onApply={handleApply}
             selectedDateLabel={formatKoreanDate(selectedDate)}

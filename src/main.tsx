@@ -18,6 +18,8 @@ import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminHomeContentPage from './pages/AdminHomeContentPage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
+import AdminInquiriesPage from './pages/AdminInquiriesPage';
+import AdminInquiryDetailPage from './pages/AdminInquiryDetailPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
 import AdminFinalSelectionsPage from './pages/AdminFinalSelectionsPage';
 import AdminPage from './pages/AdminPage';
@@ -31,6 +33,9 @@ import EventDetailPage from './pages/EventDetailPage';
 import EventInfoPage from './pages/EventInfoPage';
 import EventModePage from './pages/EventModePage';
 import GuestPhoneAuthPage from './pages/GuestPhoneAuthPage';
+import InquiryDetailPage from './pages/InquiryDetailPage';
+import InquiryFormPage from './pages/InquiryFormPage';
+import InquiryListPage from './pages/InquiryListPage';
 import LoginPage from './pages/LoginPage';
 import ApplicationCompletePage from './pages/ApplicationCompletePage';
 import MyEventsPage from './pages/MyEventsPage';
@@ -104,6 +109,8 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/events/:eventId/prepare" element={<AdminEventPreparePage />} />
               <Route path="/admin/events/:eventId/prepare/seats" element={<AdminPreroundSeatsPage />} />
               <Route path="/admin/events/:eventId/live" element={<AdminEventLivePage />} />
+              <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
+              <Route path="/admin/inquiries/:inquiryId" element={<AdminInquiryDetailPage />} />
             </Route>
             <Route path="/admin/events/:eventId/tablet-connect" element={<AdminTabletConnectPage />} />
             <Route path="/admin/events/:eventId/tablet/:tableNumber/seat" element={<AdminTabletSeatPage />} />
@@ -114,6 +121,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/my-events/ticket/:eventId/review" element={<ReviewFormPage />} />
             <Route path="/mypage" element={<MyPage />} />
             <Route path="/mypage/profile" element={<ParticipantProfilePage />} />
+            <Route path="/mypage/inquiries" element={<InquiryListPage />} />
+            <Route path="/mypage/inquiries/new" element={<InquiryFormPage />} />
+            <Route path="/mypage/inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="/profile/new" element={<ProfileFormPage />} />
             <Route path="/events/:eventId/apply/profile" element={<ProfileFormPage />} />
             <Route path="/application-complete" element={<ApplicationCompletePage />} />
