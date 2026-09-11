@@ -50,6 +50,7 @@ export default function EventInfoPage() {
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [introSections, setIntroSections] = useState<IntroSection[] | null>(null);
   const [defaultInfo, setDefaultInfo] = useState<IntroDefaultInfo | null>(null);
+  const [introLoaded, setIntroLoaded] = useState(false);
 
   // eventId가 있으면(행사 신청 흐름 진입) 그 행사의 실제 데이터를 쓰고,
   // 없으면(메인페이지 등에서 특정 행사 없이 진입) 예정 행사 유무와 무관하게
@@ -81,12 +82,17 @@ export default function EventInfoPage() {
   }, [event?.id]);
 
   // 공통 소개 콘텐츠(+기본 행사 정보)는 행사와 무관하므로 한 번만 불러온다.
+  // fetchPublicIntroContent는 실패해도 내부적으로 빈 payload를 resolve하므로
+  // introLoaded는 "성공 여부"가 아니라 "1차 응답을 받았는지"만 나타낸다 -
+  // 이 값이 true가 되기 전까지는 아래에서 "예정된 행사가 없습니다" 같은
+  // 진짜 빈 상태 문구를 절대 그리지 않는다(로딩 중 ≠ 데이터 없음).
   useEffect(() => {
     let active = true;
     void fetchPublicIntroContent().then((payload) => {
       if (!active) return;
       setIntroSections(payload.sections);
       setDefaultInfo(payload.defaultInfo);
+      setIntroLoaded(true);
     });
     return () => {
       active = false;
@@ -95,7 +101,7 @@ export default function EventInfoPage() {
 
   const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.dateLabel));
 
-  if (loading) return <DataLoadingState />;
+  if (loading || !introLoaded) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
 
   return (

@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HomeCarousel from './HomeCarousel';
 import { fetchPublicHomeReviews, type PublicHomeReview } from '../services/supabaseApplications';
 
 // 관리자 "홈 콘텐츠 관리 > 참가자 후기"에서 고른 후기만 좌우 스와이프로
 // 보여준다. 카드에는 별점 · 성별 · 나이 · 후기 내용(고정 줄 수, 넘치면 말줄임
 // + 전체보기 모달). 고른 후기가 없으면 섹션 자체를 비운다.
+// ReviewCard/ReviewModal은 "더보기" 전체 후기 페이지(AllReviewsPage)에서도
+// 그대로 재사용한다 - 카드 스타일을 이원화하지 않기 위해 export.
 const REVIEW_CARD_HEIGHT = 'h-[168px]';
 
 export default function HomeReviewsSection() {
+  const navigate = useNavigate();
   const [reviews, setReviews] = useState<PublicHomeReview[] | null>(null);
   const [openReview, setOpenReview] = useState<PublicHomeReview | null>(null);
 
@@ -27,7 +31,9 @@ export default function HomeReviewsSection() {
     <section>
       <div className="mb-2.5 flex items-center justify-between">
         <h2 className="text-[16px] font-black text-black">참가자 후기 🌸</h2>
-        <span className="text-[12px] font-bold text-[#9a9a9a]">더보기 ›</span>
+        <button className="text-[12px] font-bold text-[#9a9a9a]" onClick={() => navigate('/reviews')} type="button">
+          더보기 ›
+        </button>
       </div>
       <HomeCarousel
         ariaLabel="참가자 후기"
@@ -43,7 +49,7 @@ export default function HomeReviewsSection() {
   );
 }
 
-function ReviewCard({ onOpen, review }: { onOpen: () => void; review: PublicHomeReview }) {
+export function ReviewCard({ onOpen, review }: { onOpen: () => void; review: PublicHomeReview }) {
   const contentRef = useRef<HTMLParagraphElement>(null);
   const [truncated, setTruncated] = useState(false);
 
@@ -80,7 +86,7 @@ function ReviewCard({ onOpen, review }: { onOpen: () => void; review: PublicHome
   );
 }
 
-function ReviewModal({ onClose, review }: { onClose: () => void; review: PublicHomeReview }) {
+export function ReviewModal({ onClose, review }: { onClose: () => void; review: PublicHomeReview }) {
   useEffect(() => {
     const scrollY = window.scrollY;
     const { body } = document;

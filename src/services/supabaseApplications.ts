@@ -3306,6 +3306,31 @@ export async function fetchAdminEventReviews(eventId?: string): Promise<AdminEve
   return (data.reviews ?? []) as AdminEventReview[];
 }
 
+// 콘텐츠 관리 > 후기 관리 삭제. 행 자체는 RPC가 지우고, 첨부 사진은
+// deleteHomeContent와 동일한 best-effort 패턴으로 Storage에서 정리한다.
+export async function deleteEventReview(reviewId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data: removedImagePaths, error } = await supabase.rpc('delete_event_review_for_session', {
+    review_id_value: reviewId,
+    session_token: adminSession.token,
+  });
+  if (error) throw new Error(error.message || '후기를 삭제하지 못했습니다.');
+
+  const paths = Array.isArray(removedImagePaths) ? (removedImagePaths as string[]).filter(Boolean) : [];
+  if (paths.length > 0) {
+    try {
+      await supabase.functions.invoke('admin-delete-storage-objects', {
+        body: { paths, sessionToken: adminSession.token },
+      });
+    } catch (cleanupError) {
+      void logClientError('event-review:storage-cleanup', cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+    }
+  }
+}
+
 // 행사 잠금 - 관리자 행사 수정 화면의 자물쇠 버튼에서 호출.
 export async function setEventLock(eventId: string, isLocked: boolean) {
   if (!supabase) throw new Error('Supabase is not configured.');

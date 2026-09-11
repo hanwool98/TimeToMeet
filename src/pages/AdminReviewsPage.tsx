@@ -3,7 +3,7 @@ import { toPng } from 'html-to-image';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import ParticipantPhoto from '../components/ParticipantPhoto';
-import { fetchAdminEventReviews, setReviewRating, type AdminEventReview } from '../services/supabaseApplications';
+import { deleteEventReview, fetchAdminEventReviews, setReviewRating, type AdminEventReview } from '../services/supabaseApplications';
 
 // 콘텐츠 관리 > 후기 관리. AdminProfileKeywordsPage/AdminConversationTopicsPage와
 // 동일한 목록+필터 스타일을 재사용한다(읽기 전용 + 이미지 저장만, CRUD 아님).
@@ -16,6 +16,21 @@ export default function AdminReviewsPage() {
   const [imageTarget, setImageTarget] = useState<AdminEventReview | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [savingRatingId, setSavingRatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const removeReview = async (review: AdminEventReview) => {
+    if (deletingId) return;
+    if (!window.confirm('이 후기를 삭제하시겠습니까?')) return;
+    setDeletingId(review.id);
+    try {
+      await deleteEventReview(review.id);
+      setReviews((current) => current?.filter((item) => item.id !== review.id) ?? null);
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '후기를 삭제하지 못했습니다.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const changeRating = async (review: AdminEventReview, rating: number) => {
     if (savingRatingId || rating === review.rating) return;
@@ -145,9 +160,17 @@ export default function AdminReviewsPage() {
                       ))}
                     </div>
                   ) : null}
-                  <div className="mt-2.5 flex justify-end">
+                  <div className="mt-2.5 flex items-center justify-end gap-4">
                     <button className="text-[12px] font-black text-meet-blue" onClick={() => setImageTarget(review)} type="button">
                       이미지 저장
+                    </button>
+                    <button
+                      className="text-[12px] font-black text-[#e0554a] disabled:opacity-50"
+                      disabled={deletingId === review.id}
+                      onClick={() => void removeReview(review)}
+                      type="button"
+                    >
+                      삭제
                     </button>
                   </div>
                 </article>
