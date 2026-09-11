@@ -12,14 +12,15 @@ import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services
 
 // 행사소개 페이지 - 두 경로가 이 화면 하나를 공유한다.
 //   - /events/:eventId/info  ("apply" 모드) : 행사 신청 흐름 중 진입,
-//     eventId가 있으므로 그 행사 정보를 기준으로 보여주고 CTA는 신청으로.
+//     eventId가 있으므로 그 행사의 실제 데이터를 보여주고 CTA는 신청으로.
 //   - /event-info            ("browse" 모드): 메인페이지 등에서 특정 신청
-//     흐름 없이 진입, eventId가 없으므로 "가장 가까운 예정 행사" 정보를
-//     보여주고 CTA는 캘린더 이동으로.
-// 핵심정보(행사명/날짜/장소/가격/인원/모집상태/대표이미지)는 두 모드 모두
+//     흐름 없이 진입 - eventId가 없고, 예정 행사 유무와 무관하게 관리자
+//     "행사소개 관리 > 기본 행사 정보"에서 설정한 기본값을 항상 보여주고
+//     CTA는 캘린더 이동으로 (실제 행사로 자동 대체하지 않는다).
+// apply 모드의 핵심정보(행사명/날짜/장소/가격/인원/모집상태/대표이미지)는
 // events 데이터에서 그대로 가져온다 - 절대 하드코딩하지 않는다. 그 아래
 // 텍스트/이미지 갤러리 콘텐츠는 관리자 "행사소개 관리"가 관리하는 공통
-// 콘텐츠로, 행사와 무관하게 항상 동일하다.
+// 콘텐츠로, 두 모드 모두 항상 동일하다.
 function BackIcon() {
   return (
     <svg aria-hidden="true" className="h-8 w-8" fill="none" viewBox="0 0 48 48">
@@ -45,14 +46,12 @@ export default function EventInfoPage() {
   const [introSections, setIntroSections] = useState<IntroSection[] | null>(null);
   const [defaultInfo, setDefaultInfo] = useState<IntroDefaultInfo | null>(null);
 
-  // eventId가 있으면(행사 신청 흐름 진입) 그 행사, 없으면(메인페이지 등에서
-  // 특정 행사 없이 진입) 가장 가까운 예정 행사를 기본값으로 쓴다.
+  // eventId가 있으면(행사 신청 흐름 진입) 그 행사의 실제 데이터를 쓰고,
+  // 없으면(메인페이지 등에서 특정 행사 없이 진입) 예정 행사 유무와 무관하게
+  // 항상 관리자가 설정한 기본값을 쓴다 - 예정 행사가 있다고 자동으로
+  // 대체하지 않는다.
   const mode: 'apply' | 'browse' = eventId ? 'apply' : 'browse';
-  const event = eventId
-    ? events.find((item) => item.id === eventId)
-    : events
-      .filter((item) => getDaysUntilEvent(item.date) >= 0)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  const event = eventId ? events.find((item) => item.id === eventId) : undefined;
   const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
   const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
   const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;
@@ -280,13 +279,6 @@ export default function EventInfoPage() {
       <BottomTabs />
     </main>
   );
-}
-
-function getDaysUntilEvent(dateValue: string) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const eventDate = new Date(`${dateValue}T00:00:00`);
-  return Math.ceil((eventDate.getTime() - today.getTime()) / 86_400_000);
 }
 
 function formatWon(value: number) {

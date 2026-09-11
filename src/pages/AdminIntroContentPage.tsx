@@ -823,7 +823,9 @@ function PreviewOverlay({
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const nearestEvent = upcomingEvents[0];
 
-  const [previewMode, setPreviewMode] = useState<'default' | 'event'>(nearestEvent ? 'event' : 'default');
+  // 실제 메인페이지 "행사 소개 보기"(/event-info)는 예정 행사 유무와
+  // 무관하게 항상 기본값을 보여주므로, 미리보기도 기본값 모드로 시작한다.
+  const [previewMode, setPreviewMode] = useState<'default' | 'event'>('default');
   const [selectedEventId, setSelectedEventId] = useState(nearestEvent?.id ?? '');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
