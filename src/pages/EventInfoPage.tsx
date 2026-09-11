@@ -89,7 +89,7 @@ export default function EventInfoPage() {
     };
   }, []);
 
-  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.eventDate));
+  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.dateLabel));
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
@@ -190,12 +190,18 @@ export default function EventInfoPage() {
             </>
           ) : hasDefaultInfo && defaultInfo ? (
             <>
-              <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
-                <div>
-                  <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
-                  <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+              {defaultInfo.coverUrl ? (
+                <div className="mt-6 overflow-hidden rounded-[16px]" style={{ aspectRatio: '4 / 3' }}>
+                  <img alt="" aria-hidden="true" className="h-full w-full object-cover" src={defaultInfo.coverUrl} />
                 </div>
-              </div>
+              ) : (
+                <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
+                  <div>
+                    <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
+                    <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+                  </div>
+                </div>
+              )}
 
               <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">
                 {defaultInfo.title || '타임투밋 로테이션소개팅'}
@@ -206,7 +212,7 @@ export default function EventInfoPage() {
                 <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
                   <p className="font-black text-black">일시</p>
                   <p>
-                    {defaultInfo.eventDate ? formatKoreanWeekday(defaultInfo.eventDate) : '일정 안내 예정'}
+                    {defaultInfo.dateLabel ?? '일정 안내 예정'}
                     {defaultInfo.startTime ? ` ${defaultInfo.startTime.slice(0, 5)}` : ''}
                     {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
                   </p>
@@ -231,6 +237,7 @@ export default function EventInfoPage() {
                   <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
                     <p>남성 {formatWon(defaultInfo.malePrice ?? 0)}</p>
                     <p>여성 {formatWon(defaultInfo.femalePrice ?? 0)}</p>
+                    {defaultInfo.discountNote ? <p className="mt-5 text-meet-blue">{defaultInfo.discountNote}</p> : null}
                   </div>
                 </section>
               ) : null}

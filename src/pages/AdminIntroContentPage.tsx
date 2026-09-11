@@ -8,12 +8,14 @@ import {
   deleteIntroImage,
   deleteIntroSection,
   fetchAdminIntroContent,
+  removeIntroDefaultCover,
   reorderIntroImages,
   reorderIntroSections,
   setIntroSectionVisible,
   updateIntroDefaultInfo,
   updateIntroImageCaption,
   updateIntroSection,
+  uploadIntroDefaultCover,
   uploadIntroImage,
   type IntroDefaultInfo,
   type IntroImage,
@@ -210,6 +212,31 @@ export default function AdminIntroContentPage() {
     }
   };
 
+  const handleUploadDefaultCover = async (file: File) => {
+    setBusy(true);
+    try {
+      const coverUrl = await uploadIntroDefaultCover(file);
+      setDefaultInfo((current) => (current ? { ...current, coverUrl } : current));
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '대표 이미지 업로드에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemoveDefaultCover = async () => {
+    if (!window.confirm('기본 대표 이미지를 삭제할까요?')) return;
+    setBusy(true);
+    try {
+      await removeIntroDefaultCover();
+      setDefaultInfo((current) => (current ? { ...current, coverUrl: null } : current));
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '대표 이미지 삭제에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reloadEvents} />;
 
@@ -250,7 +277,9 @@ export default function AdminIntroContentPage() {
             <DefaultInfoCard
               busy={busy}
               defaultInfo={defaultInfo}
+              onRemoveCover={() => void handleRemoveDefaultCover()}
               onSave={handleSaveDefaultInfo}
+              onUploadCover={(file) => void handleUploadDefaultCover(file)}
               saved={savedFlashId === 'default-info'}
             />
 
@@ -600,15 +629,20 @@ function SectionHeader({
 function DefaultInfoCard({
   busy,
   defaultInfo,
+  onRemoveCover,
   onSave,
+  onUploadCover,
   saved,
 }: {
   busy: boolean;
   defaultInfo: IntroDefaultInfo;
+  onRemoveCover: () => void;
   onSave: (next: IntroDefaultInfo) => void;
+  onUploadCover: (file: File) => void;
   saved: boolean;
 }) {
   const [draft, setDraft] = useState(defaultInfo);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const update = <K extends keyof IntroDefaultInfo>(key: K, value: IntroDefaultInfo[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -624,6 +658,45 @@ function DefaultInfoCard({
         적용됩니다.
       </p>
 
+      <div className="mt-4">
+        <span className="text-[11.5px] font-black text-[#6f7f92]">기본 대표 이미지</span>
+        <div className="mt-1 flex gap-3">
+          <div className="w-[104px] shrink-0 overflow-hidden rounded-[12px] bg-white" style={{ aspectRatio: '4 / 3' }}>
+            {defaultInfo.coverUrl ? (
+              <img alt="" className="h-full w-full object-cover" src={defaultInfo.coverUrl} />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[10px] font-bold text-[#9aa0a7]">이미지 없음</div>
+            )}
+          </div>
+          <div className="flex flex-col justify-center gap-1.5">
+            <input
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onUploadCover(file);
+                event.target.value = '';
+              }}
+              ref={coverInputRef}
+              style={{ display: 'none' }}
+              type="file"
+            />
+            <button
+              className="h-8 rounded-[8px] bg-white px-3 text-[12px] font-black text-meet-blue"
+              onClick={() => coverInputRef.current?.click()}
+              type="button"
+            >
+              {defaultInfo.coverUrl ? '이미지 변경' : '이미지 업로드'}
+            </button>
+            {defaultInfo.coverUrl ? (
+              <button className="h-8 rounded-[8px] bg-white px-3 text-[12px] font-black text-[#e0554a]" onClick={onRemoveCover} type="button">
+                삭제
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <div className="mt-4 grid grid-cols-1 gap-2.5">
         <LabeledInput label="기본 행사명">
           <input
@@ -638,9 +711,9 @@ function DefaultInfoCard({
           <LabeledInput label="기본 날짜">
             <input
               className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
-              onChange={(event) => update('eventDate', event.target.value || null)}
-              type="date"
-              value={draft.eventDate ?? ''}
+              onChange={(event) => update('dateLabel', event.target.value || null)}
+              placeholder="예: 매주 일요일"
+              value={draft.dateLabel ?? ''}
             />
           </LabeledInput>
           <LabeledInput label="시작 시간">
@@ -707,6 +780,15 @@ function DefaultInfoCard({
             />
           </LabeledInput>
         </div>
+
+        <LabeledInput label="할인/얼리버드 안내 (선택, 참가비 아래에 표시)">
+          <textarea
+            className="min-h-[64px] w-full resize-none rounded-[10px] bg-white p-3 text-[13px] font-bold leading-relaxed outline-none focus:ring-2 focus:ring-meet-blue"
+            onChange={(event) => update('discountNote', event.target.value)}
+            placeholder="예: 얼리버드 신청 시 5,000원 할인"
+            value={draft.discountNote ?? ''}
+          />
+        </LabeledInput>
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-2">
@@ -769,7 +851,7 @@ function PreviewOverlay({
     };
   }, [previewEvent?.id]);
 
-  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.eventDate));
+  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.dateLabel));
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8" onClick={onClose} role="presentation">
@@ -843,14 +925,20 @@ function PreviewOverlay({
             </>
           ) : previewMode === 'default' && hasDefaultInfo && defaultInfo ? (
             <>
-              <div className="grid min-h-[110px] place-items-center rounded-[16px] bg-[#f1f3f5] text-[12px] font-bold text-[#9a9a9a]">
-                대표 이미지 없음(기본값 미리보기)
-              </div>
+              {defaultInfo.coverUrl ? (
+                <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
+                  <img alt="" className="h-full w-full object-cover" src={defaultInfo.coverUrl} />
+                </div>
+              ) : (
+                <div className="grid min-h-[110px] place-items-center rounded-[16px] bg-[#f1f3f5] text-[12px] font-bold text-[#9a9a9a]">
+                  대표 이미지 없음(기본값 미리보기)
+                </div>
+              )}
               <h1 className="mt-4 text-[19px] font-black leading-tight">{defaultInfo.title || '타임투밋 로테이션소개팅'}</h1>
               <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
                 <p className="font-black text-black">일시</p>
                 <p>
-                  {defaultInfo.eventDate ?? '일정 안내 예정'} {defaultInfo.startTime?.slice(0, 5) ?? ''}
+                  {defaultInfo.dateLabel ?? '일정 안내 예정'} {defaultInfo.startTime?.slice(0, 5) ?? ''}
                   {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
@@ -870,6 +958,7 @@ function PreviewOverlay({
                       남성 {(defaultInfo.malePrice ?? 0).toLocaleString('ko-KR')}원 · 여성{' '}
                       {(defaultInfo.femalePrice ?? 0).toLocaleString('ko-KR')}원
                     </p>
+                    {defaultInfo.discountNote ? <p className="mt-2 text-meet-blue">{defaultInfo.discountNote}</p> : null}
                   </>
                 ) : null}
               </div>

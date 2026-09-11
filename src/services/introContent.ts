@@ -29,8 +29,12 @@ export interface IntroSection {
 
 // 연결된 실제 행사가 없을 때(홈에서 특정 신청 흐름 없이 들어오는 경우 등)
 // 쓰는 fallback 값. 실제 행사 데이터가 있으면 이 값들은 전혀 쓰이지 않는다.
+// dateLabel은 "매주 일요일"처럼 반복 일정을 설명하는 자유 텍스트다 - 특정
+// 하루로 고정하면 fallback 취지와 맞지 않아 date 타입 대신 텍스트로 받는다.
 export interface IntroDefaultInfo {
-  eventDate: string | null;
+  coverUrl: string | null;
+  dateLabel: string | null;
+  discountNote: string | null;
   endTime: string | null;
   femaleCapacity: number | null;
   femalePrice: number | null;
@@ -47,7 +51,9 @@ export interface IntroContentPayload {
 }
 
 const emptyDefaultInfo: IntroDefaultInfo = {
-  eventDate: null,
+  coverUrl: null,
+  dateLabel: null,
+  discountNote: null,
   endTime: null,
   femaleCapacity: null,
   femalePrice: null,
@@ -62,7 +68,9 @@ function mapDefaultInfo(row: unknown): IntroDefaultInfo {
   if (!row || typeof row !== 'object') return emptyDefaultInfo;
   const value = row as Record<string, unknown>;
   return {
-    eventDate: (value.eventDate as string | null) ?? null,
+    coverUrl: (value.coverUrl as string | null) ?? null,
+    dateLabel: (value.dateLabel as string | null) ?? null,
+    discountNote: (value.discountNote as string | null) ?? null,
     endTime: (value.endTime as string | null) ?? null,
     femaleCapacity: value.femaleCapacity == null ? null : Number(value.femaleCapacity),
     femalePrice: value.femalePrice == null ? null : Number(value.femalePrice),
@@ -129,7 +137,8 @@ export async function fetchAdminIntroContent(): Promise<IntroContentPayload> {
 }
 
 export async function updateIntroDefaultInfo(payload: {
-  eventDate: string | null;
+  dateLabel: string | null;
+  discountNote: string | null;
   endTime: string | null;
   femaleCapacity: number | null;
   femalePrice: number | null;
@@ -144,8 +153,9 @@ export async function updateIntroDefaultInfo(payload: {
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
   const { error } = await supabase.rpc('update_intro_default_info_for_session', {
+    date_label_value: payload.dateLabel,
+    discount_note_value: payload.discountNote,
     end_time_value: payload.endTime,
-    event_date_value: payload.eventDate,
     female_capacity_value: payload.femaleCapacity,
     female_price_value: payload.femalePrice,
     location_value: payload.location,
@@ -156,6 +166,36 @@ export async function updateIntroDefaultInfo(payload: {
     title_value: payload.title,
   });
   if (error) throw new Error(error.message || '기본 행사 정보를 저장하지 못했습니다.');
+}
+
+export async function uploadIntroDefaultCover(file: File): Promise<string | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-intro-default-cover', {
+    body: { photo, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(await extractFunctionErrorMessage(error, data, '대표 이미지 업로드에 실패했습니다.'));
+  }
+  return (data.coverImageUrl as string | null) ?? null;
+}
+
+export async function removeIntroDefaultCover(): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('upload-intro-default-cover', {
+    body: { remove: true, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(await extractFunctionErrorMessage(error, data, '대표 이미지 삭제에 실패했습니다.'));
+  }
 }
 
 export async function createIntroSection(sectionType: IntroSectionType, title: string, content: string): Promise<string> {

@@ -89,12 +89,18 @@ Deno.serve(async (request) => {
 
   const { data: defaultRow } = await supabase
     .from('intro_default_info')
-    .select('title, event_date, start_time, end_time, location, male_price, female_price, male_capacity, female_capacity')
+    .select(
+      'title, date_label, start_time, end_time, location, male_price, female_price, male_capacity, female_capacity, discount_note, default_cover_path',
+    )
     .eq('id', 1)
     .maybeSingle();
 
+  const defaultCoverPath = (defaultRow?.default_cover_path as string | null) ?? null;
+
   const defaultInfo = {
-    eventDate: (defaultRow?.event_date as string | null) ?? null,
+    coverUrl: defaultCoverPath ? await signUrl(supabase, defaultCoverPath) : null,
+    dateLabel: (defaultRow?.date_label as string | null) ?? null,
+    discountNote: (defaultRow?.discount_note as string | null) ?? null,
     endTime: (defaultRow?.end_time as string | null) ?? null,
     femaleCapacity: (defaultRow?.female_capacity as number | null) ?? null,
     femalePrice: (defaultRow?.female_price as number | null) ?? null,
