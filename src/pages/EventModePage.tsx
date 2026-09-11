@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
 import { toPng } from 'html-to-image';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConnectionStatusBanner from '../components/ConnectionStatusBanner';
@@ -8,12 +8,18 @@ import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/P
 import PrimaryButton from '../components/PrimaryButton';
 import ProfileKeywordPicker from '../components/ProfileKeywordPicker';
 import { DRINKING_AMOUNT_OPTIONS, DRINKING_FREQUENCY_OPTIONS } from '../constants/drinkingOptions';
-import { PROFILE_KEYWORD_OPTIONS, resolveProfileKeywordLabel, type ProfileKeywordOption } from '../constants/profileKeywords';
+import {
+  PROFILE_KEYWORD_OPTIONS,
+  profileKeywordLabel,
+  resolveProfileKeywordLabel,
+  type ProfileKeywordOption,
+} from '../constants/profileKeywords';
 import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
 import {
   createParticipantPauseRequest,
   createParticipantReport,
   fetchActiveProfileKeywords,
+  fetchBonusKeywordMission,
   fetchFinalSelectionCandidatePhotos,
   fetchFinalSelectionCandidates,
   fetchMyBonusRating,
@@ -25,10 +31,12 @@ import {
   fetchParticipantRoundProgress,
   saveEventProfileCard,
   saveEventReview,
+  submitBonusKeywordGuess,
   submitFinalSelection,
   submitMyBonusRating,
   submitRoundRating,
   uploadEventProfileCardPhoto,
+  type BonusKeywordMissionState,
   type FinalSelectionCandidate,
   type FinalSelectionCandidateProfile,
   type FinalSelectionData,
@@ -40,10 +48,20 @@ import {
 } from '../services/supabaseApplications';
 import { representativeCropTransform, type RepresentativeCrop } from '../utils/representativeCrop';
 import { isConnectionStale } from '../utils/connectionStatus';
+import { playKeywordGuessSound } from '../utils/keywordGuessAudio';
 import { createRequestGuard } from '../utils/requestGuard';
 import { computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const progressPollIntervalMs = 4_000;
+
+// "나를 표현하는 키워드"는 최소 3개는 있어야 추가라운드 "나를 맞혀봐"
+// 미션이 아이스브레이킹으로 의미가 있다 - 최대 개수 제한은 없다(서버도
+// save_event_profile_card_for_session에서 동일하게 강제).
+const profileKeywordMinCount = 3;
+// 추가라운드 시작 후 이 시간(초)이 지나야 태블릿 미션카드/참가자 폰
+// 키워드 미션이 등장한다 - 서버 타이머 스냅샷 기준 경과 시간으로 계산해
+// 새로고침해도 항상 같은 시점에 나타난다(로컬 setTimeout 아님).
+const bonusMissionRevealDelaySeconds = 5;
 
 // 프로필 키워드 목록(관리자 콘텐츠 관리에서 관리)은 화면(프로필카드 작성,
 // 대화 중, 최종선택)을 열 때마다 매번 새로 받아온다 - 과거엔 브라우저 탭당
@@ -253,6 +271,21 @@ export default function EventModePage() {
     };
   }, [eventId, ticket]);
 
+  // Hooks의 규칙(조건부 return 뒤에 hook을 두지 않기)을 지키기 위해 아래
+  // loading/ticket 조건부 return보다 반드시 앞에 둬야 한다 - 원래 이
+  // 두 useCallback이 return 아래에 있어서, "불러오는 중"/"입장 확인 필요"
+  // 화면에서 실제 참가 화면으로 넘어가는 바로 그 렌더에서 hook 호출
+  // 개수가 늘어나 "Rendered more hooks than during the previous render"
+  // 오류로 화면이 완전히 하얗게 죽는 버그가 있었다(이번 기능 작업 중
+  // 발견 - 이번 기능과 무관하게 기존에 있던 문제라 함께 고쳤다).
+  const handleCriticalSubmitStart = useCallback(() => {
+    suspendPollRef.current = true;
+  }, []);
+  const handleCriticalSubmitEnd = useCallback(() => {
+    suspendPollRef.current = false;
+    pollNowRef.current();
+  }, []);
+
   if (loading) {
     return (
       <main className="min-h-screen overflow-x-hidden bg-white px-4 pt-12 text-black min-[380px]:px-5">
@@ -279,14 +312,6 @@ export default function EventModePage() {
       </main>
     );
   }
-
-  const handleCriticalSubmitStart = useCallback(() => {
-    suspendPollRef.current = true;
-  }, []);
-  const handleCriticalSubmitEnd = useCallback(() => {
-    suspendPollRef.current = false;
-    pollNowRef.current();
-  }, []);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white text-black">
@@ -976,6 +1001,14 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
             <div className="mt-3">
               <ProfileKeywordPicker onChange={setKeywords} options={keywordOptions} selected={keywords} />
             </div>
+            {/* 추가라운드 "나를 맞혀봐" 미션이 상대가 고른 개수만큼 진행되므로,
+                최소 3개는 있어야 아이스브레이킹으로 의미가 있다 - 최대 개수는
+                제한하지 않는다. */}
+            {keywords.length < profileKeywordMinCount ? (
+              <p className="mt-2 text-[12px] font-bold text-meet-pink">
+                특징 키워드를 최소 {profileKeywordMinCount}개 이상 선택해주세요. ({keywords.length}/{profileKeywordMinCount})
+              </p>
+            ) : null}
           </div>
           </div>
 
@@ -988,7 +1021,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
 
           <button
             className="mt-5 h-14 w-full rounded-[18px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
-            disabled={saving || photoUploading}
+            disabled={saving || photoUploading || keywords.length < profileKeywordMinCount}
             onClick={() => void handleSubmit()}
             type="button"
           >
@@ -1341,18 +1374,20 @@ function ConversationScreen({
   }, [eventId, progress.partnerApplicationId]);
 
   const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds);
-  const remaining = Math.max(
-    0,
-    phaseDuration -
-      computeLiveElapsedSeconds(
-        {
-          timerPositionSeconds: progress.timerPositionSeconds ?? 0,
-          timerStatus: progress.timerStatus ?? 'paused',
-          timerUpdatedAt: progress.timerUpdatedAt,
-        },
-        nowTick + (progress.clockOffsetMs ?? 0),
-      ),
+  const elapsedSeconds = computeLiveElapsedSeconds(
+    {
+      timerPositionSeconds: progress.timerPositionSeconds ?? 0,
+      timerStatus: progress.timerStatus ?? 'paused',
+      timerUpdatedAt: progress.timerUpdatedAt,
+    },
+    nowTick + (progress.clockOffsetMs ?? 0),
   );
+  const remaining = Math.max(0, phaseDuration - elapsedSeconds);
+  // 추가라운드 시작 후 약 5초 뒤부터 "나를 맞혀봐" 미션이 등장한다 - 로컬
+  // 타이머가 아니라 서버 타이머 스냅샷 기준 경과 시간이라 새로고침해도
+  // 매번 정확히 같은 시점에 나타난다. 일반 라운드에서는 절대 등장하지
+  // 않는다(progress.isBonusRound가 false).
+  const bonusMissionActive = Boolean(progress.isBonusRound) && elapsedSeconds >= bonusMissionRevealDelaySeconds;
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
@@ -1385,7 +1420,18 @@ function ConversationScreen({
             </p>
           ) : null}
 
-          {card ? <PartnerProfileCardDetails card={card} keywordOptions={keywordOptions} /> : null}
+          {card ? (
+            <PartnerProfileCardDetails
+              card={card}
+              eventId={eventId}
+              // 상대가 바뀌면(라운드 전환) 미션 상태를 완전히 새로 시작해야
+              // 하므로 key로 강제 리마운트한다 - 이전 상대의 추측/결과가
+              // 새 상대 화면에 잠깐이라도 섞여 보이는 일이 없게 한다.
+              key={progress.partnerApplicationId ?? 'no-partner'}
+              keywordOptions={keywordOptions}
+              missionActive={bonusMissionActive}
+            />
+          ) : null}
         </section>
 
         <section className="rounded-[24px] bg-white p-5 shadow-calendar">
@@ -1448,7 +1494,17 @@ const partnerCardFields: Array<{ key: keyof PartnerEventProfileCard; label: stri
 // 필드는 빈 값이라 자연히 표시되지 않고, 전체 카드를 아예 안 만들었어도
 // (fetchParticipantPartnerPhoto가 항상 빈 문자열/빈 배열을 내려주므로)
 // undefined 값이나 오류 없이 조용히 빈 섹션이 된다.
-function PartnerProfileCardDetails({ card, keywordOptions }: { card: PartnerEventProfileCard; keywordOptions: ProfileKeywordOption[] }) {
+function PartnerProfileCardDetails({
+  card,
+  eventId,
+  keywordOptions,
+  missionActive,
+}: {
+  card: PartnerEventProfileCard;
+  eventId: string;
+  keywordOptions: ProfileKeywordOption[];
+  missionActive: boolean;
+}) {
   const filledFields = partnerCardFields.filter((field) => card[field.key]);
   const myKeywordSet = new Set(card.myKeywords);
 
@@ -1467,7 +1523,13 @@ function PartnerProfileCardDetails({ card, keywordOptions }: { card: PartnerEven
         </div>
       ) : null}
 
-      {card.keywords.length > 0 ? (
+      {/* 추가라운드에서는(missionActive) 키워드 영역만 "나를 맞혀봐" 미션
+          모드로 바뀐다 - 나머지 프로필 정보(사진/닉네임/나이/직업 등)는
+          위쪽에서 이미 그대로 유지된다. 일반 라운드에서는 지금까지와
+          동일하게 키워드가 그대로 공개된다. */}
+      {missionActive ? (
+        card.keywords.length > 0 ? <BonusKeywordGuessMission eventId={eventId} /> : null
+      ) : card.keywords.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {card.keywords.map((keyword) => {
             const isCommon = myKeywordSet.has(keyword);
@@ -1485,6 +1547,121 @@ function PartnerProfileCardDetails({ card, keywordOptions }: { card: PartnerEven
           })}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// "나를 맞혀봐" - 상대가 실제로 고른 키워드 수만큼(targetCount) 추측할 수
+// 있다. 완료 전에는 서버가 정답 목록을 절대 내려주지 않고(각 선택의
+// 정답/오답만) 개별 선택 시 계산해 알려준다 - 완료되는 순간에만 놓친
+// 정답(파랑)을 포함한 전체 결과가 함께 내려온다. 결과는 이 컴포넌트가
+// 마운트돼 있는 한(=해당 추가라운드가 끝날 때까지) 그대로 유지된다.
+function BonusKeywordGuessMission({ eventId }: { eventId: string }) {
+  const [state, setState] = useState<BonusKeywordMissionState | null>(null);
+  const [pendingKeyword, setPendingKeyword] = useState<string | null>(null);
+  const [keywordOptions, setKeywordOptions] = useState<ProfileKeywordOption[]>(PROFILE_KEYWORD_OPTIONS);
+
+  useEffect(() => {
+    let active = true;
+    void loadProfileKeywordOptions().then((options) => {
+      if (active) setKeywordOptions(options);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetchBonusKeywordMission(eventId)
+      .then((result) => {
+        if (active) setState(result);
+      })
+      .catch((caughtError) => {
+        console.error('[bonus-keyword-mission] failed to load mission state', caughtError);
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  // active=false면(상대가 이번 라운드 키워드를 아예 고르지 않은 등) 조용히
+  // 아무것도 보여주지 않는다 - 별도의 실패/빈 상태 문구를 만들지 않는다
+  // (요청 9: 결과 문구/연출 없이 아이스브레이킹으로만 짧게 끝나야 함).
+  const guessedMap = useMemo(
+    () => new Map((state?.guesses ?? []).map((guess) => [guess.keyword, guess.correct])),
+    [state],
+  );
+  const revealSet = useMemo(() => new Set(state?.revealKeywords ?? []), [state]);
+  // 추측 버튼 목록은 관리자가 콘텐츠 관리에서 실시간으로 바꿀 수 있는
+  // keywordOptions(live)를 기준으로 하되, 코드 기본값(PROFILE_KEYWORD_
+  // OPTIONS)과 실제 정답/이미 고른 키워드에 등장하지만 두 목록 어디에도
+  // 없는 키(아주 오래된/비활성화된 키)까지 전부 합쳐 절대 빠지지 않게
+  // 한다 - 그래야 상대가 실제로 고른 키워드가 관리자 목록에서 나중에
+  // 빠지거나 이름이 바뀌어도 항상 추측 가능하고, 놓친 정답(파랑)도 항상
+  // 표시할 수 있다.
+  const guessableOptions = useMemo(() => {
+    const merged = new Map<string, ProfileKeywordOption>();
+    for (const option of PROFILE_KEYWORD_OPTIONS) merged.set(option.key, option);
+    for (const option of keywordOptions) merged.set(option.key, option);
+    for (const key of [...guessedMap.keys(), ...revealSet]) {
+      if (!merged.has(key)) merged.set(key, { key, label: profileKeywordLabel(key) });
+    }
+    return Array.from(merged.values());
+  }, [keywordOptions, guessedMap, revealSet]);
+
+  if (!state || !state.active) return null;
+
+  const handlePick = async (keyword: string) => {
+    if (pendingKeyword || guessedMap.has(keyword) || state.completed) return;
+    setPendingKeyword(keyword);
+    try {
+      const result = await submitBonusKeywordGuess(eventId, keyword);
+      setState(result);
+      playKeywordGuessSound(result.correct ? 'correct' : 'incorrect');
+    } catch (caughtError) {
+      console.error('[bonus-keyword-mission] guess failed', caughtError);
+    } finally {
+      setPendingKeyword(null);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[12.5px] font-black text-meet-pink">🔮 나를 맞혀봐</p>
+        <p className="text-[12.5px] font-black tabular-nums text-[#666]">
+          {state.guesses.length} / {state.targetCount}
+        </p>
+      </div>
+      <p className="mt-1.5 text-[11px] font-bold leading-relaxed text-[#999]">
+        상대 프로필의 키워드가 모두 비활성화되었어요. 첫 번째 대화를 떠올리며 상대가 선택했던 키워드를 맞혀보세요.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {guessableOptions.map((option) => {
+          const wasGuessed = guessedMap.has(option.key);
+          const guessedCorrect = guessedMap.get(option.key);
+          const isMissedAnswer = state.completed && !wasGuessed && revealSet.has(option.key);
+          const colorClassName = wasGuessed
+            ? guessedCorrect
+              ? 'border-[#3f9142] bg-[#eaf7ea] text-[#2f7a34]'
+              : 'border-[#ef554a] bg-[#fdeceb] text-[#d8433a]'
+            : isMissedAnswer
+              ? 'border-meet-blue bg-meet-blueSoft text-meet-blue'
+              : 'border-[#eee] bg-white text-[#999]';
+          return (
+            <button
+              className={`rounded-full border px-2.5 py-1 text-[12px] font-bold transition disabled:active:scale-100 ${colorClassName}`}
+              disabled={wasGuessed || state.completed || pendingKeyword !== null}
+              key={option.key}
+              onClick={() => void handlePick(option.key)}
+              type="button"
+            >
+              {resolveProfileKeywordLabel(option.key, keywordOptions)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

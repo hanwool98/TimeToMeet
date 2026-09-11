@@ -11,6 +11,7 @@ import {
   fetchEventProgressForTablet,
   fetchEventTableSeatGuide,
   fetchRoundProgressForTablet,
+  markBonusMissionShownForTablet,
   type EventProgress,
   type EventTableSeatGuide,
   type TabletRoundProgress,
@@ -23,6 +24,9 @@ import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown,
 const progressPollIntervalMs = 3_000;
 const seatPollIntervalMs = 5_000;
 const roundPollIntervalMs = 3_000;
+// EventModePage.tsx의 bonusMissionRevealDelaySeconds와 동일한 값 - 참가자
+// 폰과 태블릿이 대략 같은 시점에 "나를 맞혀봐"를 노출하도록 맞춘다.
+const bonusMissionRevealDelaySeconds = 5;
 const tabletConnectionBannerLines = ['인터넷에 연결되어 있지 않습니다.', '연결을 확인해주세요.'];
 
 // Near-white with only a whisper of warm pink (top-left) and lavender
@@ -94,6 +98,13 @@ export default function AdminTabletSeatPage() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [connTick, setConnTick] = useState(() => Date.now());
+  // "나를 맞혀봐" 미션카드를 이번 기기에서 지금 열어뒀는지 - 어느 추가라운드
+  // 번호에서 열었는지를 기억해두면, 라운드가 바뀌었을 때(다른 round number)
+  // 자동으로 다시 닫힌 것처럼 취급되어 다음 추가라운드에서 정상적으로 다시
+  // 뜬다. 실제 "한 라운드에 한 번만"이라는 서버 진실은 roundProgress.
+  // bonusMissionShown이며, 이 값은 그저 로컬 UI 상태(열림/닫힘)일 뿐이다.
+  const [missionCardOpenRound, setMissionCardOpenRound] = useState<number | null>(null);
+  const missionMarkedRoundsRef = useRef<Set<number>>(new Set());
   const progressGuardRef = useRef(createRequestGuard());
   const seatGuideGuardRef = useRef(createRequestGuard());
   const roundGuardRef = useRef(createRequestGuard());
@@ -435,6 +446,45 @@ export default function AdminTabletSeatPage() {
             ),
         );
 
+  // "나를 맞혀봐" 미션카드 - 추가라운드 대화 phase에서만, 시작 후 약 5초
+  // 지나야 등장한다(참가자 폰과 동일하게 서버 타이머 스냅샷 기준 경과
+  // 시간으로 계산해 새로고침해도 매번 같은 시점에 나타난다). 일반 라운드
+  // (isBonusRound=false)에서는 절대 계산 대상이 아니다.
+  const isBonusConversationPhase =
+    effectiveStage === 'round_active' && roundProgress?.roundPhase === 'conversation' && Boolean(roundProgress?.isBonusRound);
+  const bonusElapsedSeconds = !isBonusConversationPhase
+    ? 0
+    : computeLiveElapsedSeconds(
+        {
+          timerPositionSeconds: roundProgress?.timerPositionSeconds ?? 0,
+          timerStatus: roundProgress?.timerStatus ?? 'paused',
+          timerUpdatedAt: roundProgress?.timerUpdatedAt,
+        },
+        nowTick + (roundProgress?.clockOffsetMs ?? 0),
+      );
+  const bonusMissionEligibleNow = isBonusConversationPhase && bonusElapsedSeconds >= bonusMissionRevealDelaySeconds;
+  const bonusMissionCardVisible =
+    missionCardOpenRound !== null && roundProgress?.currentRound === missionCardOpenRound && isBonusConversationPhase;
+
+  // 조건이 갖춰지는 순간(이번 추가라운드에서 아직 한 번도 안 떴다면) 카드를
+  // 열고, 서버에도 "떴다"고 1번만 기록한다 - 이후 재접속/재렌더로 이
+  // effect가 다시 돌아도 already-open guard와 서버의 bonusMissionShown이
+  // 둘 다 재노출을 막는다.
+  useEffect(() => {
+    if (!eventId || !bonusMissionEligibleNow || !roundProgress?.currentRound) return;
+    if (roundProgress.bonusMissionShown) return;
+    if (missionCardOpenRound === roundProgress.currentRound) return;
+    if (missionMarkedRoundsRef.current.has(roundProgress.currentRound)) return;
+    missionMarkedRoundsRef.current.add(roundProgress.currentRound);
+    setMissionCardOpenRound(roundProgress.currentRound);
+    const stored = readStoredConnection(eventId, tableNumber);
+    if (stored?.connectionToken) {
+      void markBonusMissionShownForTablet(eventId, tableNumber, stored.connectionToken).catch((caughtError) => {
+        console.error('[bonus-keyword-mission] failed to mark tablet mission shown', caughtError);
+      });
+    }
+  }, [bonusMissionEligibleNow, eventId, missionCardOpenRound, roundProgress?.bonusMissionShown, roundProgress?.currentRound, tableNumber]);
+
   // bonus_rating is itself only 1 minute long, so a "1 minute left" warning
   // would fire immediately at phase start - skipped there per spec.
   const shouldWarnForPhase = effectiveStage !== 'bonus_rating';
@@ -689,6 +739,7 @@ export default function AdminTabletSeatPage() {
             ) : null}
           </div>
         </div>
+        {bonusMissionCardVisible ? <BonusMissionAnnounceCard onClose={() => setMissionCardOpenRound(null)} /> : null}
       </main>
     );
   }
@@ -880,6 +931,36 @@ function mixDigitColor(t: number) {
   const g = Math.round(digitColorNormal.g + (digitColorUrgent.g - digitColorNormal.g) * clamped);
   const b = Math.round(digitColorNormal.b + (digitColorUrgent.b - digitColorNormal.b) * clamped);
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+// 태블릿은 안내만 담당한다 - 실제 키워드 선택은 각자 휴대폰에서 진행되고,
+// 이 카드는 "지금부터 시작됐다"는 것만 알려준다. 확인/시작/완료 버튼이
+// 없고 카드 바깥(배경)을 터치하면 그냥 닫힌다 - 닫힌 뒤에는 원래 라운드
+// 타이머/대화카드 화면이 그대로 보인다.
+function BonusMissionAnnounceCard({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-8" onClick={onClose}>
+      <div
+        className="w-full max-w-[480px] rounded-[28px] bg-white px-8 py-9 text-center shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p style={{ fontSize: 'clamp(28px,3.2vh,40px)' }}>🔮</p>
+        <p className="mt-3 font-black text-[#1f292d]" style={{ fontSize: 'clamp(20px,2.6vh,30px)' }}>
+          나를 맞혀봐
+        </p>
+        <p className="mt-4 leading-relaxed text-[#777]" style={{ fontSize: 'clamp(13px,1.7vh,17px)' }}>
+          상대 프로필의 키워드가 모두 비활성화되었어요.
+          <br />
+          첫 번째 대화를 떠올리며 상대가 선택했던 키워드를 맞혀보세요.
+          <br />
+          상대가 고른 키워드 수만큼 선택할 수 있어요.
+        </p>
+        <p className="mt-5 text-[#bbb]" style={{ fontSize: 'clamp(11px,1.4vh,13px)' }}>
+          각자 휴대폰 화면에서 진행해주세요 · 화면을 터치하면 닫혀요
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function RoundTimerRing({

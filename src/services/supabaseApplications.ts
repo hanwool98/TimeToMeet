@@ -2326,6 +2326,7 @@ export async function setCurrentRoundForSession(eventId: string, roundNumber: nu
 }
 
 export interface TabletRoundProgress {
+  bonusMissionShown?: boolean;
   bonusRoundCount?: number;
   bonusRoundIndex?: number;
   clockOffsetMs?: number;
@@ -2358,10 +2359,11 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
 
   if (error) throw error;
   const row = data as { isResting?: boolean | null; ok: boolean } & Partial<
-    RoundProgressJson & { maleNickname: string | null; femaleNickname: string | null }
+    RoundProgressJson & { bonusMissionShown: boolean; maleNickname: string | null; femaleNickname: string | null }
   >;
   if (!row?.ok) return { ok: false } satisfies TabletRoundProgress;
   return {
+    bonusMissionShown: row.bonusMissionShown ?? undefined,
     bonusRoundCount: row.bonusRoundCount ?? undefined,
     bonusRoundIndex: row.bonusRoundIndex ?? undefined,
     clockOffsetMs: computeClockOffsetMs(row.serverNow),
@@ -2379,6 +2381,19 @@ export async function fetchRoundProgressForTablet(eventId: string, tableNumber: 
     timerUpdatedAt: row.timerUpdatedAt ?? undefined,
     totalRounds: row.totalRounds ?? undefined,
   } satisfies TabletRoundProgress;
+}
+
+// 태블릿이 "나를 맞혀봐" 미션카드를 실제로 띄운 순간 딱 한 번 호출한다 -
+// 서버가 (event, 추가라운드, 테이블) 단위로 멱등하게 기록하므로 재접속/
+// 재렌더로 여러 번 불려도 안전하다.
+export async function markBonusMissionShownForTablet(eventId: string, tableNumber: number, connectionToken: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('mark_bonus_mission_shown_for_tablet', {
+    connection_token: connectionToken,
+    event_id_value: eventId,
+    table_number_value: tableNumber,
+  });
+  if (error) throw error;
 }
 
 export interface EventPauseRequest {
@@ -2543,6 +2558,92 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     timerStatus: row.timerStatus ?? undefined,
     timerUpdatedAt: row.timerUpdatedAt ?? undefined,
     totalRounds: row.totalRounds ?? undefined,
+  };
+}
+
+// ── "나를 맞혀봐" 추가라운드 전용 아이스브레이킹 ──────────────────────
+// 정답 키워드(상대가 실제로 고른 것) 자체는 완료 전까지 절대 내려오지
+// 않는다(revealKeywords는 completed=true일 때만 채워짐) - 서버가
+// event_profile_cards와 직접 대조해 정답 여부만 매 호출 계산해서 준다.
+export interface BonusKeywordGuess {
+  correct: boolean;
+  keyword: string;
+}
+
+export interface BonusKeywordMissionState {
+  active: boolean;
+  completed: boolean;
+  guesses: BonusKeywordGuess[];
+  revealKeywords: string[] | null;
+  targetCount: number;
+}
+
+const inactiveBonusKeywordMission: BonusKeywordMissionState = {
+  active: false,
+  completed: false,
+  guesses: [],
+  revealKeywords: null,
+  targetCount: 0,
+};
+
+function mapBonusKeywordMissionState(row: unknown): BonusKeywordMissionState {
+  const value = (row ?? {}) as Record<string, unknown>;
+  if (value.active !== true) return inactiveBonusKeywordMission;
+  return {
+    active: true,
+    completed: Boolean(value.completed),
+    guesses: (Array.isArray(value.guesses) ? value.guesses : []) as BonusKeywordGuess[],
+    revealKeywords: Array.isArray(value.revealKeywords) ? (value.revealKeywords as string[]) : null,
+    targetCount: Number(value.targetCount ?? 0),
+  };
+}
+
+// 추가라운드가 아니거나 상대가 아직 없으면(active:false) 조용히 빈 상태를
+// 반환한다 - 호출하는 화면(ConversationScreen)이 이미 progress.isBonusRound
+// 로 걸러 부르므로 평소엔 오류로 취급할 상황이 아니다.
+export async function fetchBonusKeywordMission(eventId: string): Promise<BonusKeywordMissionState> {
+  if (!supabase) return inactiveBonusKeywordMission;
+  const session = getAppSession();
+  if (!session?.token) return inactiveBonusKeywordMission;
+
+  const { data, error } = await supabase.rpc('get_bonus_keyword_mission_for_session', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as { ok: boolean } | null;
+  if (!row?.ok) return inactiveBonusKeywordMission;
+  return mapBonusKeywordMissionState(data);
+}
+
+export async function submitBonusKeywordGuess(
+  eventId: string,
+  keyword: string,
+): Promise<BonusKeywordMissionState & { correct: boolean }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('submit_bonus_keyword_guess_for_session', {
+    event_id_value: eventId,
+    keyword_value: keyword,
+    session_token: session.token,
+  });
+  if (error) throw new Error(error.message || '선택을 저장하지 못했습니다.');
+  const row = data as {
+    completed?: boolean;
+    correct?: boolean;
+    guesses?: BonusKeywordGuess[];
+    revealKeywords?: string[] | null;
+    targetCount?: number;
+  } | null;
+  return {
+    active: true,
+    completed: Boolean(row?.completed),
+    correct: Boolean(row?.correct),
+    guesses: row?.guesses ?? [],
+    revealKeywords: row?.revealKeywords ?? null,
+    targetCount: Number(row?.targetCount ?? 0),
   };
 }
 
