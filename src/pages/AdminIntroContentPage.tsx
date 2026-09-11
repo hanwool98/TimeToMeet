@@ -925,6 +925,9 @@ function PreviewOverlay({
                 <p>
                   남성 {previewEvent.malePrice.toLocaleString('ko-KR')}원 · 여성 {previewEvent.femalePrice.toLocaleString('ko-KR')}원
                 </p>
+                {defaultInfo?.discountNote ? (
+                  <p className="mt-2 whitespace-pre-line text-meet-blue">{defaultInfo.discountNote}</p>
+                ) : null}
               </div>
             </>
           ) : previewMode === 'default' && hasDefaultInfo && defaultInfo ? (
@@ -961,7 +964,9 @@ function PreviewOverlay({
                       남성 {(defaultInfo.malePrice ?? 0).toLocaleString('ko-KR')}원 · 여성{' '}
                       {(defaultInfo.femalePrice ?? 0).toLocaleString('ko-KR')}원
                     </p>
-                    {defaultInfo.discountNote ? <p className="mt-2 text-meet-blue">{defaultInfo.discountNote}</p> : null}
+                    {defaultInfo.discountNote ? (
+                      <p className="mt-2 whitespace-pre-line text-meet-blue">{defaultInfo.discountNote}</p>
+                    ) : null}
                   </>
                 ) : null}
               </div>

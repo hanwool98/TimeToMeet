@@ -191,6 +191,9 @@ export default function EventInfoPage() {
                       <p>여성 {formatWon(event.femalePrice)}</p>
                     </>
                   )}
+                  {defaultInfo?.discountNote ? (
+                    <p className="mt-5 whitespace-pre-line text-meet-blue">{defaultInfo.discountNote}</p>
+                  ) : null}
                 </div>
               </section>
             </>
@@ -243,7 +246,9 @@ export default function EventInfoPage() {
                   <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
                     <p>남성 {formatWon(defaultInfo.malePrice ?? 0)}</p>
                     <p>여성 {formatWon(defaultInfo.femalePrice ?? 0)}</p>
-                    {defaultInfo.discountNote ? <p className="mt-5 text-meet-blue">{defaultInfo.discountNote}</p> : null}
+                    {defaultInfo.discountNote ? (
+                      <p className="mt-5 whitespace-pre-line text-meet-blue">{defaultInfo.discountNote}</p>
+                    ) : null}
                   </div>
                 </section>
               ) : null}
