@@ -7,7 +7,7 @@ import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
 import { verifyAppSession } from '../services/appAuth';
-import { fetchPublicIntroContent, type IntroSection } from '../services/introContent';
+import { fetchPublicIntroContent, type IntroDefaultInfo, type IntroSection } from '../services/introContent';
 import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
 // 행사소개 페이지 - 두 경로가 이 화면 하나를 공유한다.
@@ -43,6 +43,7 @@ export default function EventInfoPage() {
   const [checkingSession, setCheckingSession] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [introSections, setIntroSections] = useState<IntroSection[] | null>(null);
+  const [defaultInfo, setDefaultInfo] = useState<IntroDefaultInfo | null>(null);
 
   // eventId가 있으면(행사 신청 흐름 진입) 그 행사, 없으면(메인페이지 등에서
   // 특정 행사 없이 진입) 가장 가까운 예정 행사를 기본값으로 쓴다.
@@ -75,16 +76,20 @@ export default function EventInfoPage() {
     };
   }, [event?.id]);
 
-  // 공통 소개 콘텐츠는 행사와 무관하므로 한 번만 불러온다.
+  // 공통 소개 콘텐츠(+기본 행사 정보)는 행사와 무관하므로 한 번만 불러온다.
   useEffect(() => {
     let active = true;
-    void fetchPublicIntroContent().then((sections) => {
-      if (active) setIntroSections(sections);
+    void fetchPublicIntroContent().then((payload) => {
+      if (!active) return;
+      setIntroSections(payload.sections);
+      setDefaultInfo(payload.defaultInfo);
     });
     return () => {
       active = false;
     };
   }, []);
+
+  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.eventDate));
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
@@ -182,6 +187,53 @@ export default function EventInfoPage() {
                   )}
                 </div>
               </section>
+            </>
+          ) : hasDefaultInfo && defaultInfo ? (
+            <>
+              <div className="mt-6 grid min-h-[156px] place-items-center bg-[#d9d9d9] px-4 py-7 text-center">
+                <div>
+                  <p className="text-[18px] font-black text-black">행사 대표 이미지</p>
+                  <p className="mt-7 text-[15px] font-extrabold italic text-white">image</p>
+                </div>
+              </div>
+
+              <h1 className="text-fluid-safe mt-5 px-1 text-[21px] font-black leading-tight">
+                {defaultInfo.title || '타임투밋 로테이션소개팅'}
+              </h1>
+
+              <section className="mt-9">
+                <h2 className="px-1 text-[20px] font-black">핵심정보</h2>
+                <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                  <p className="font-black text-black">일시</p>
+                  <p>
+                    {defaultInfo.eventDate ? formatKoreanWeekday(defaultInfo.eventDate) : '일정 안내 예정'}
+                    {defaultInfo.startTime ? ` ${defaultInfo.startTime.slice(0, 5)}` : ''}
+                    {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
+                  </p>
+                  <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
+                  <p className="mt-5 font-black text-black">장소</p>
+                  <p>{defaultInfo.location ? `${defaultInfo.location} 내 프라이빗 카페` : '장소 안내 예정'}</p>
+                  <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
+                  {defaultInfo.maleCapacity != null || defaultInfo.femaleCapacity != null ? (
+                    <>
+                      <p className="mt-5 font-black text-black">모집 인원</p>
+                      <p>
+                        남성 {defaultInfo.maleCapacity ?? '-'}명 · 여성 {defaultInfo.femaleCapacity ?? '-'}명
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+              </section>
+
+              {defaultInfo.malePrice != null || defaultInfo.femalePrice != null ? (
+                <section className="mt-10">
+                  <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
+                  <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
+                    <p>남성 {formatWon(defaultInfo.malePrice ?? 0)}</p>
+                    <p>여성 {formatWon(defaultInfo.femalePrice ?? 0)}</p>
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : (
             <div className="mt-9 rounded-[16px] bg-meet-blueSoft p-6 text-center text-[14px] font-black text-[#666]">

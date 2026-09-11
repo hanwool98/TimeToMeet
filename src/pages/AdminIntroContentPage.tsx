@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import IntroContentSections from '../components/IntroContentSections';
@@ -11,9 +11,11 @@ import {
   reorderIntroImages,
   reorderIntroSections,
   setIntroSectionVisible,
+  updateIntroDefaultInfo,
   updateIntroImageCaption,
   updateIntroSection,
   uploadIntroImage,
+  type IntroDefaultInfo,
   type IntroImage,
   type IntroSection,
 } from '../services/introContent';
@@ -30,6 +32,7 @@ export default function AdminIntroContentPage() {
   const { error, events, loading, reload: reloadEvents } = useOperationalData({ admin: true });
 
   const [sections, setSections] = useState<IntroSection[] | null>(null);
+  const [defaultInfo, setDefaultInfo] = useState<IntroDefaultInfo | null>(null);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -38,7 +41,9 @@ export default function AdminIntroContentPage() {
   const load = async () => {
     setLoadError('');
     try {
-      setSections(await fetchAdminIntroContent());
+      const payload = await fetchAdminIntroContent();
+      setSections(payload.sections);
+      setDefaultInfo(payload.defaultInfo);
     } catch (caughtError) {
       setLoadError(caughtError instanceof Error ? caughtError.message : '행사소개를 불러오지 못했습니다.');
     }
@@ -192,6 +197,19 @@ export default function AdminIntroContentPage() {
     }
   };
 
+  const handleSaveDefaultInfo = async (next: IntroDefaultInfo) => {
+    setBusy(true);
+    try {
+      await updateIntroDefaultInfo(next);
+      setDefaultInfo(next);
+      flashSaved('default-info');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '기본 행사 정보를 저장하지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reloadEvents} />;
 
@@ -225,10 +243,19 @@ export default function AdminIntroContentPage() {
 
         {loadError ? (
           <p className="mt-4 rounded-[16px] bg-meet-pinkSoft p-4 text-center text-[13px] font-black text-meet-pink">{loadError}</p>
-        ) : !sections ? (
+        ) : !sections || !defaultInfo ? (
           <p className="mt-8 text-center text-[13px] font-bold text-[#9a9a9a]">불러오는 중</p>
         ) : (
-          <div className="mt-5 space-y-3">
+          <>
+            <DefaultInfoCard
+              busy={busy}
+              defaultInfo={defaultInfo}
+              onSave={handleSaveDefaultInfo}
+              saved={savedFlashId === 'default-info'}
+            />
+
+            <h2 className="mb-2.5 mt-8 text-[15px] font-black text-black">소개 콘텐츠</h2>
+          <div className="space-y-3">
             {sections.length === 0 ? (
               <p className="rounded-[18px] bg-meet-blueSoft p-4 text-center text-[13px] font-black text-[#555]">
                 아직 등록된 소개 콘텐츠가 없습니다.
@@ -270,6 +297,7 @@ export default function AdminIntroContentPage() {
               ),
             )}
           </div>
+          </>
         )}
 
         <div className="mt-5 flex gap-2">
@@ -292,7 +320,14 @@ export default function AdminIntroContentPage() {
         </div>
       </div>
 
-      {showPreview ? <PreviewOverlay events={events} onClose={() => setShowPreview(false)} sections={sections ?? []} /> : null}
+      {showPreview ? (
+        <PreviewOverlay
+          defaultInfo={defaultInfo}
+          events={events}
+          onClose={() => setShowPreview(false)}
+          sections={sections ?? []}
+        />
+      ) : null}
     </main>
   );
 }
@@ -407,7 +442,9 @@ function GallerySectionCard({
         onToggleVisible={onToggleVisible}
       />
 
-      <div className="mt-3 space-y-2.5">
+      <p className="mt-2.5 text-[11.5px] font-bold text-[#9aa0a7]">권장 이미지 크기 1080×1350 (4:5)</p>
+
+      <div className="mt-2.5 space-y-2.5">
         {section.images.map((image, imgIndex) => (
           <GalleryImageRow
             image={image}
@@ -560,31 +597,169 @@ function SectionHeader({
   );
 }
 
-// 미리보기용 "가장 가까운 예정 행사" 계산 - EventInfoPage가 /event-info(행사
-// 미지정 진입)에서 쓰는 것과 동일한 기준이라 미리보기가 실제 화면과
-// 어긋나지 않는다.
-function pickNearestUpcomingEvent(events: EventData[]) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return events
-    .filter((event) => new Date(`${event.date}T00:00:00`).getTime() >= today.getTime())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+function DefaultInfoCard({
+  busy,
+  defaultInfo,
+  onSave,
+  saved,
+}: {
+  busy: boolean;
+  defaultInfo: IntroDefaultInfo;
+  onSave: (next: IntroDefaultInfo) => void;
+  saved: boolean;
+}) {
+  const [draft, setDraft] = useState(defaultInfo);
+
+  const update = <K extends keyof IntroDefaultInfo>(key: K, value: IntroDefaultInfo[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const toNumberOrNull = (value: string) => (value.trim() === '' ? null : Number(value));
+
+  return (
+    <section className="mt-6 rounded-[16px] bg-meet-blueSoft p-4">
+      <h2 className="text-[15px] font-black text-black">기본 행사 정보</h2>
+      <p className="mt-1.5 text-[12px] font-bold leading-relaxed text-[#6f7f92]">
+        아래 정보는 연결된 행사가 없을 때 사용하는 기본값입니다. 특정 행사에서 행사소개 페이지를 열면 실제 행사 정보가 우선
+        적용됩니다.
+      </p>
+
+      <div className="mt-4 grid grid-cols-1 gap-2.5">
+        <LabeledInput label="기본 행사명">
+          <input
+            className="h-10 w-full rounded-[10px] bg-white px-3 text-[13.5px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+            onChange={(event) => update('title', event.target.value)}
+            placeholder="타임투밋 로테이션소개팅"
+            value={draft.title ?? ''}
+          />
+        </LabeledInput>
+
+        <div className="grid grid-cols-3 gap-2.5">
+          <LabeledInput label="기본 날짜">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              onChange={(event) => update('eventDate', event.target.value || null)}
+              type="date"
+              value={draft.eventDate ?? ''}
+            />
+          </LabeledInput>
+          <LabeledInput label="시작 시간">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              onChange={(event) => update('startTime', event.target.value || null)}
+              type="time"
+              value={draft.startTime?.slice(0, 5) ?? ''}
+            />
+          </LabeledInput>
+          <LabeledInput label="종료 시간">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              onChange={(event) => update('endTime', event.target.value || null)}
+              type="time"
+              value={draft.endTime?.slice(0, 5) ?? ''}
+            />
+          </LabeledInput>
+        </div>
+
+        <LabeledInput label="기본 장소">
+          <input
+            className="h-10 w-full rounded-[10px] bg-white px-3 text-[13.5px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+            onChange={(event) => update('location', event.target.value)}
+            placeholder="성남"
+            value={draft.location ?? ''}
+          />
+        </LabeledInput>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <LabeledInput label="남성 참가비">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              inputMode="numeric"
+              onChange={(event) => update('malePrice', toNumberOrNull(event.target.value))}
+              value={draft.malePrice ?? ''}
+            />
+          </LabeledInput>
+          <LabeledInput label="여성 참가비">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              inputMode="numeric"
+              onChange={(event) => update('femalePrice', toNumberOrNull(event.target.value))}
+              value={draft.femalePrice ?? ''}
+            />
+          </LabeledInput>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <LabeledInput label="남성 모집 인원">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              inputMode="numeric"
+              onChange={(event) => update('maleCapacity', toNumberOrNull(event.target.value))}
+              value={draft.maleCapacity ?? ''}
+            />
+          </LabeledInput>
+          <LabeledInput label="여성 모집 인원">
+            <input
+              className="h-10 w-full rounded-[10px] bg-white px-2 text-[13px] font-bold outline-none focus:ring-2 focus:ring-meet-blue"
+              inputMode="numeric"
+              onChange={(event) => update('femaleCapacity', toNumberOrNull(event.target.value))}
+              value={draft.femaleCapacity ?? ''}
+            />
+          </LabeledInput>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-2">
+        {saved ? <span className="text-[12px] font-black text-[#2f9e5c]">저장됨</span> : null}
+        <button
+          className="h-9 rounded-[10px] bg-meet-blue px-4 text-[12.5px] font-black text-white disabled:opacity-50"
+          disabled={busy}
+          onClick={() => onSave(draft)}
+          type="button"
+        >
+          저장
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function LabeledInput({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="block">
+      <span className="text-[11.5px] font-black text-[#6f7f92]">{label}</span>
+      <div className="mt-1">{children}</div>
+    </label>
+  );
 }
 
 function PreviewOverlay({
+  defaultInfo,
   events,
   onClose,
   sections,
 }: {
+  defaultInfo: IntroDefaultInfo | null;
   events: EventData[];
   onClose: () => void;
   sections: IntroSection[];
 }) {
-  const previewEvent = pickNearestUpcomingEvent(events);
+  const upcomingEvents = events
+    .filter((event) => new Date(`${event.date}T00:00:00`).getTime() >= new Date().setHours(0, 0, 0, 0))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const nearestEvent = upcomingEvents[0];
+
+  const [previewMode, setPreviewMode] = useState<'default' | 'event'>(nearestEvent ? 'event' : 'default');
+  const [selectedEventId, setSelectedEventId] = useState(nearestEvent?.id ?? '');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
+  const previewEvent = previewMode === 'event' ? upcomingEvents.find((event) => event.id === selectedEventId) : undefined;
+
   useEffect(() => {
-    if (!previewEvent) return;
+    if (!previewEvent) {
+      setCoverUrl(null);
+      return;
+    }
     let active = true;
     void fetchEventCoverUrls([previewEvent.id]).then((covers) => {
       if (active) setCoverUrl(covers[previewEvent.id] ?? null);
@@ -593,6 +768,8 @@ function PreviewOverlay({
       active = false;
     };
   }, [previewEvent?.id]);
+
+  const hasDefaultInfo = Boolean(defaultInfo && (defaultInfo.title || defaultInfo.location || defaultInfo.eventDate));
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8" onClick={onClose} role="presentation">
@@ -606,8 +783,42 @@ function PreviewOverlay({
             닫기
           </button>
         </div>
+
+        <div className="flex items-center gap-2 border-b border-[#f0f3f6] px-4 py-2.5">
+          <button
+            className={`h-8 flex-1 rounded-[8px] text-[12px] font-black ${previewMode === 'default' ? 'bg-meet-blue text-white' : 'bg-[#f2f4f6] text-[#666]'}`}
+            onClick={() => setPreviewMode('default')}
+            type="button"
+          >
+            기본값으로 미리보기
+          </button>
+          <button
+            className={`h-8 flex-1 rounded-[8px] text-[12px] font-black ${previewMode === 'event' ? 'bg-meet-blue text-white' : 'bg-[#f2f4f6] text-[#666]'}`}
+            disabled={upcomingEvents.length === 0}
+            onClick={() => setPreviewMode('event')}
+            type="button"
+          >
+            예정 행사로 미리보기
+          </button>
+        </div>
+        {previewMode === 'event' && upcomingEvents.length > 0 ? (
+          <div className="border-b border-[#f0f3f6] px-4 py-2.5">
+            <select
+              className="h-9 w-full rounded-[8px] bg-[#f2f4f6] px-2 text-[12.5px] font-bold outline-none"
+              onChange={(event) => setSelectedEventId(event.target.value)}
+              value={selectedEventId}
+            >
+              {upcomingEvents.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title} ({event.date})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-y-auto px-4 py-5">
-          {previewEvent ? (
+          {previewMode === 'event' && previewEvent ? (
             <>
               <div className="overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
                 {coverUrl ? <img alt="" className="h-full w-full object-cover" src={coverUrl} /> : null}
@@ -620,15 +831,52 @@ function PreviewOverlay({
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
                 <p>{previewEvent.location}</p>
+                <p className="mt-3 font-black text-black">모집 인원</p>
+                <p>
+                  남성 {previewEvent.maleCapacity ?? '-'}명 · 여성 {previewEvent.femaleCapacity ?? '-'}명
+                </p>
                 <p className="mt-3 font-black text-black">참가비</p>
                 <p>
                   남성 {previewEvent.malePrice.toLocaleString('ko-KR')}원 · 여성 {previewEvent.femalePrice.toLocaleString('ko-KR')}원
                 </p>
               </div>
             </>
+          ) : previewMode === 'default' && hasDefaultInfo && defaultInfo ? (
+            <>
+              <div className="grid min-h-[110px] place-items-center rounded-[16px] bg-[#f1f3f5] text-[12px] font-bold text-[#9a9a9a]">
+                대표 이미지 없음(기본값 미리보기)
+              </div>
+              <h1 className="mt-4 text-[19px] font-black leading-tight">{defaultInfo.title || '타임투밋 로테이션소개팅'}</h1>
+              <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
+                <p className="font-black text-black">일시</p>
+                <p>
+                  {defaultInfo.eventDate ?? '일정 안내 예정'} {defaultInfo.startTime?.slice(0, 5) ?? ''}
+                  {defaultInfo.endTime ? `~${defaultInfo.endTime.slice(0, 5)}` : ''}
+                </p>
+                <p className="mt-3 font-black text-black">장소</p>
+                <p>{defaultInfo.location ?? '장소 안내 예정'}</p>
+                {defaultInfo.maleCapacity != null || defaultInfo.femaleCapacity != null ? (
+                  <>
+                    <p className="mt-3 font-black text-black">모집 인원</p>
+                    <p>
+                      남성 {defaultInfo.maleCapacity ?? '-'}명 · 여성 {defaultInfo.femaleCapacity ?? '-'}명
+                    </p>
+                  </>
+                ) : null}
+                {defaultInfo.malePrice != null || defaultInfo.femalePrice != null ? (
+                  <>
+                    <p className="mt-3 font-black text-black">참가비</p>
+                    <p>
+                      남성 {(defaultInfo.malePrice ?? 0).toLocaleString('ko-KR')}원 · 여성{' '}
+                      {(defaultInfo.femalePrice ?? 0).toLocaleString('ko-KR')}원
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            </>
           ) : (
             <p className="rounded-[16px] bg-meet-blueSoft p-4 text-center text-[13px] font-black text-[#555]">
-              예정된 행사가 없어 핵심 정보 미리보기는 생략됩니다.
+              {previewMode === 'event' ? '예정된 행사가 없습니다.' : '기본 행사 정보가 아직 입력되지 않았습니다.'}
             </p>
           )}
           <IntroContentSections sections={sections} />

@@ -52,9 +52,9 @@ function GallerySection({ section }: { section: IntroSection }) {
         getKey={(image: IntroImage) => image.id}
         items={section.images}
         renderItem={(image: IntroImage) => (
-          <div className="relative overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 3' }}>
+          <div className="relative overflow-hidden rounded-[16px] bg-[#f1f3f5]" style={{ aspectRatio: '4 / 5' }}>
             {image.imageUrl ? (
-              <img alt={image.caption || ''} className="absolute inset-0 h-full w-full object-cover" src={image.imageUrl} />
+              <img alt={image.caption || ''} className="absolute inset-0 h-full w-full object-contain" src={image.imageUrl} />
             ) : null}
             {image.caption ? (
               <p className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent px-4 pb-3 pt-8 text-[13px] font-bold text-white">

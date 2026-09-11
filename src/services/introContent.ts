@@ -27,6 +27,53 @@ export interface IntroSection {
   title: string | null;
 }
 
+// 연결된 실제 행사가 없을 때(홈에서 특정 신청 흐름 없이 들어오는 경우 등)
+// 쓰는 fallback 값. 실제 행사 데이터가 있으면 이 값들은 전혀 쓰이지 않는다.
+export interface IntroDefaultInfo {
+  eventDate: string | null;
+  endTime: string | null;
+  femaleCapacity: number | null;
+  femalePrice: number | null;
+  location: string | null;
+  maleCapacity: number | null;
+  malePrice: number | null;
+  startTime: string | null;
+  title: string | null;
+}
+
+export interface IntroContentPayload {
+  defaultInfo: IntroDefaultInfo;
+  sections: IntroSection[];
+}
+
+const emptyDefaultInfo: IntroDefaultInfo = {
+  eventDate: null,
+  endTime: null,
+  femaleCapacity: null,
+  femalePrice: null,
+  location: null,
+  maleCapacity: null,
+  malePrice: null,
+  startTime: null,
+  title: null,
+};
+
+function mapDefaultInfo(row: unknown): IntroDefaultInfo {
+  if (!row || typeof row !== 'object') return emptyDefaultInfo;
+  const value = row as Record<string, unknown>;
+  return {
+    eventDate: (value.eventDate as string | null) ?? null,
+    endTime: (value.endTime as string | null) ?? null,
+    femaleCapacity: value.femaleCapacity == null ? null : Number(value.femaleCapacity),
+    femalePrice: value.femalePrice == null ? null : Number(value.femalePrice),
+    location: (value.location as string | null) ?? null,
+    maleCapacity: value.maleCapacity == null ? null : Number(value.maleCapacity),
+    malePrice: value.malePrice == null ? null : Number(value.malePrice),
+    startTime: (value.startTime as string | null) ?? null,
+    title: (value.title as string | null) ?? null,
+  };
+}
+
 function mapSections(rows: unknown): IntroSection[] {
   return ((rows ?? []) as Array<Record<string, unknown>>).map((row) => ({
     content: (row.content as string | null) ?? null,
@@ -59,16 +106,16 @@ async function extractFunctionErrorMessage(error: unknown, data: unknown, fallba
 }
 
 // 참가자 화면(공개) - is_visible=true 섹션만 내려온다.
-export async function fetchPublicIntroContent(): Promise<IntroSection[]> {
-  if (!supabase) return [];
+export async function fetchPublicIntroContent(): Promise<IntroContentPayload> {
+  if (!supabase) return { defaultInfo: emptyDefaultInfo, sections: [] };
   const { data, error } = await supabase.functions.invoke('intro-content', { body: {} });
-  if (error || data?.ok !== true) return [];
-  return mapSections(data.sections);
+  if (error || data?.ok !== true) return { defaultInfo: emptyDefaultInfo, sections: [] };
+  return { defaultInfo: mapDefaultInfo(data.defaultInfo), sections: mapSections(data.sections) };
 }
 
 // 관리자 편집/미리보기 - 숨김 섹션도 포함해 전부 내려온다.
-export async function fetchAdminIntroContent(): Promise<IntroSection[]> {
-  if (!supabase) return [];
+export async function fetchAdminIntroContent(): Promise<IntroContentPayload> {
+  if (!supabase) return { defaultInfo: emptyDefaultInfo, sections: [] };
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
 
@@ -78,7 +125,37 @@ export async function fetchAdminIntroContent(): Promise<IntroSection[]> {
   if (error || data?.ok !== true) {
     throw new Error(await extractFunctionErrorMessage(error, data, '행사소개를 불러오지 못했습니다.'));
   }
-  return mapSections(data.sections);
+  return { defaultInfo: mapDefaultInfo(data.defaultInfo), sections: mapSections(data.sections) };
+}
+
+export async function updateIntroDefaultInfo(payload: {
+  eventDate: string | null;
+  endTime: string | null;
+  femaleCapacity: number | null;
+  femalePrice: number | null;
+  location: string | null;
+  maleCapacity: number | null;
+  malePrice: number | null;
+  startTime: string | null;
+  title: string | null;
+}): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('update_intro_default_info_for_session', {
+    end_time_value: payload.endTime,
+    event_date_value: payload.eventDate,
+    female_capacity_value: payload.femaleCapacity,
+    female_price_value: payload.femalePrice,
+    location_value: payload.location,
+    male_capacity_value: payload.maleCapacity,
+    male_price_value: payload.malePrice,
+    session_token: adminSession.token,
+    start_time_value: payload.startTime,
+    title_value: payload.title,
+  });
+  if (error) throw new Error(error.message || '기본 행사 정보를 저장하지 못했습니다.');
 }
 
 export async function createIntroSection(sectionType: IntroSectionType, title: string, content: string): Promise<string> {

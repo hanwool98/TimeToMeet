@@ -87,7 +87,25 @@ Deno.serve(async (request) => {
     title: (row.title as string | null) ?? null,
   }));
 
-  return json({ ok: true, sections });
+  const { data: defaultRow } = await supabase
+    .from('intro_default_info')
+    .select('title, event_date, start_time, end_time, location, male_price, female_price, male_capacity, female_capacity')
+    .eq('id', 1)
+    .maybeSingle();
+
+  const defaultInfo = {
+    eventDate: (defaultRow?.event_date as string | null) ?? null,
+    endTime: (defaultRow?.end_time as string | null) ?? null,
+    femaleCapacity: (defaultRow?.female_capacity as number | null) ?? null,
+    femalePrice: (defaultRow?.female_price as number | null) ?? null,
+    location: (defaultRow?.location as string | null) ?? null,
+    maleCapacity: (defaultRow?.male_capacity as number | null) ?? null,
+    malePrice: (defaultRow?.male_price as number | null) ?? null,
+    startTime: (defaultRow?.start_time as string | null) ?? null,
+    title: (defaultRow?.title as string | null) ?? null,
+  };
+
+  return json({ ok: true, defaultInfo, sections });
 });
 
 async function signUrl(supabase: ReturnType<typeof createClient>, path: string) {
