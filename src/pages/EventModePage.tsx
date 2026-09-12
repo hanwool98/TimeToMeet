@@ -1630,15 +1630,36 @@ function BonusKeywordGuessMission({ eventId }: { eventId: string }) {
   // 한다 - 그래야 상대가 실제로 고른 키워드가 관리자 목록에서 나중에
   // 빠지거나 이름이 바뀌어도 항상 추측 가능하고, 놓친 정답(파랑)도 항상
   // 표시할 수 있다.
+  // 상대가 "+ 직접 입력"으로 추가한 custom keyword(정규화된 "#"로 시작하는
+  // 자유 문구)는 고정 카탈로그 어디에도 없으므로 항상 별도로, 항상 기본
+  // 목록 맨 뒤에 추가한다 - customKeywordOptions는 완료 여부와 무관하게
+  // 서버가 항상 내려주는 "이 옵션이 존재한다" 목록일 뿐 정답 여부는
+  // 알려주지 않는다(그건 revealKeywords가 완료 후에만 담당).
   const guessableOptions = useMemo(() => {
     const merged = new Map<string, ProfileKeywordOption>();
     for (const option of PROFILE_KEYWORD_OPTIONS) merged.set(option.key, option);
     for (const option of keywordOptions) merged.set(option.key, option);
+    // 예전엔 쓰였지만 지금은 카탈로그에서 빠진 고정 키(문구 변경/비활성화)도
+    // 놓치지 않는다 - "#"로 시작하는 custom keyword는 아래에서 별도로
+    // 다루므로 여기서는 제외한다.
     for (const key of [...guessedMap.keys(), ...revealSet]) {
+      if (key.startsWith('#')) continue;
       if (!merged.has(key)) merged.set(key, { key, label: profileKeywordLabel(key) });
     }
-    return Array.from(merged.values());
-  }, [keywordOptions, guessedMap, revealSet]);
+
+    const labelSet = new Set(Array.from(merged.values(), (option) => option.label));
+    const customKeys = new Set<string>();
+    for (const raw of [...(state?.customKeywordOptions ?? []), ...guessedMap.keys(), ...revealSet]) {
+      if (!raw.startsWith('#')) continue;
+      const trimmed = raw.trim();
+      // 빈 문자열 제외 + 기본 키워드(key 또는 화면에 보이는 label)와
+      // 완전히 같은 문구는 중복 표시하지 않는다.
+      if (!trimmed || merged.has(trimmed) || labelSet.has(trimmed) || customKeys.has(trimmed)) continue;
+      customKeys.add(trimmed);
+    }
+
+    return [...merged.values(), ...Array.from(customKeys, (key) => ({ key, label: key }))];
+  }, [keywordOptions, guessedMap, revealSet, state?.customKeywordOptions]);
 
   if (!state || !state.active) return null;
 

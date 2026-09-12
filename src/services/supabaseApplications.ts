@@ -2573,6 +2573,7 @@ export interface BonusKeywordGuess {
 export interface BonusKeywordMissionState {
   active: boolean;
   completed: boolean;
+  customKeywordOptions: string[];
   guesses: BonusKeywordGuess[];
   revealKeywords: string[] | null;
   targetCount: number;
@@ -2581,6 +2582,7 @@ export interface BonusKeywordMissionState {
 const inactiveBonusKeywordMission: BonusKeywordMissionState = {
   active: false,
   completed: false,
+  customKeywordOptions: [],
   guesses: [],
   revealKeywords: null,
   targetCount: 0,
@@ -2592,6 +2594,12 @@ function mapBonusKeywordMissionState(row: unknown): BonusKeywordMissionState {
   return {
     active: true,
     completed: Boolean(value.completed),
+    // 상대가 "+ 직접 입력"으로 추가한 커스텀 키워드 원문 목록 - 정답 여부와
+    // 무관하게(완료 전에도) 항상 내려온다. 고정 카탈로그 전체를 처음부터
+    // 다 보여주는 것과 같은 선상으로, "이 옵션이 존재한다"만 알려줄 뿐
+    // "이게 정답이다"는 알려주지 않는다(그건 revealKeywords가 완료 후에만
+    // 담당).
+    customKeywordOptions: Array.isArray(value.customKeywordOptions) ? (value.customKeywordOptions as string[]) : [],
     guesses: (Array.isArray(value.guesses) ? value.guesses : []) as BonusKeywordGuess[],
     revealKeywords: Array.isArray(value.revealKeywords) ? (value.revealKeywords as string[]) : null,
     targetCount: Number(value.targetCount ?? 0),
@@ -2633,6 +2641,7 @@ export async function submitBonusKeywordGuess(
   const row = data as {
     completed?: boolean;
     correct?: boolean;
+    customKeywordOptions?: string[];
     guesses?: BonusKeywordGuess[];
     revealKeywords?: string[] | null;
     targetCount?: number;
@@ -2641,6 +2650,7 @@ export async function submitBonusKeywordGuess(
     active: true,
     completed: Boolean(row?.completed),
     correct: Boolean(row?.correct),
+    customKeywordOptions: row?.customKeywordOptions ?? [],
     guesses: row?.guesses ?? [],
     revealKeywords: row?.revealKeywords ?? null,
     targetCount: Number(row?.targetCount ?? 0),
