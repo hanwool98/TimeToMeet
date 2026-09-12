@@ -1,6 +1,6 @@
 const maintenanceBypassKey = 'time2meet.maintenanceBypass';
 
-export const isMaintenanceActive = true;
+export const isMaintenanceActive = false;
 
 export function hasMaintenanceBypass() {
   try {
