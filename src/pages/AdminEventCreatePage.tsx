@@ -324,7 +324,7 @@ export default function AdminEventCreatePage() {
 
             <Field label="행사 날짜">
               <DatePicker
-                min={editingEvent ? undefined : toDateInputValue(new Date())}
+                min={editingEvent || isTestEvent ? undefined : toDateInputValue(new Date())}
                 onChange={setEventDate}
                 triggerClassName={inputClassName}
                 value={eventDate}
