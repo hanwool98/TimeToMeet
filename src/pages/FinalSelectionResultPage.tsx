@@ -73,10 +73,8 @@ export default function FinalSelectionResultPage() {
               <section className="rounded-[24px] bg-white px-6 py-14 text-center shadow-calendar">
                 <img alt="" className="mx-auto h-[120px] w-[120px] object-contain" src="/assets/rating-complete-heart.png" />
                 <p className="mt-6 text-[17px] font-black leading-relaxed">아직 결과가 준비되지 않았어요</p>
-                <p className="mt-2 text-[13px] font-bold leading-relaxed text-[#999]">
-                  모든 참가자의 최종선택 제출과 운영자 확인이 끝나면
-                  <br />
-                  결과를 알려드릴게요.
+                <p className="mt-2 break-keep text-[13px] font-bold leading-relaxed text-[#999]">
+                  모든 참가자의 최종선택 제출과 운영자 확인이 끝나면 결과를 알려드릴게요.
                 </p>
               </section>
             ) : (
@@ -84,7 +82,7 @@ export default function FinalSelectionResultPage() {
             )}
 
             <section className="rounded-[20px] bg-meet-pinkSoft px-5 py-5 text-center">
-              <p className="text-[14px] font-black leading-relaxed text-meet-pink">
+              <p className="break-keep text-[14px] font-black leading-relaxed text-meet-pink">
                 다음 만남도 타임투밋과 함께해요 💗
                 <br />
                 재참가 시 5,000원 할인 혜택을 드려요.
@@ -104,18 +102,16 @@ function ResultMessageCard({ nickname, outcome }: { nickname: string; outcome: M
 
   if (outcome.receivedCount > 0 && outcome.matchCount > 0) {
     return (
-      <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
+      <section className="rounded-[24px] bg-white px-5 py-10 text-center shadow-calendar">
         <p className="text-[40px] leading-none">💕</p>
-        <p className="mt-5 text-[16px] font-bold leading-relaxed text-[#333]">
+        <p className="mt-5 break-keep text-[15px] font-bold leading-relaxed text-[#333]">
           오늘 <strong className="font-black text-meet-pink">{name}</strong>님은 {outcome.receivedCount}명의 이성분에게 최종선택을
           받으셨으며,
           <br />
           그중 {outcome.matchCount}명의 이성분과 서로 선택해 매칭되었습니다 💕
         </p>
-        <p className="mt-5 text-[13.5px] font-bold leading-relaxed text-[#888]">
-          곧 호스트가 매칭된 분과 개인 채팅방을 만들어드릴 예정이에요.
-          <br />
-          즐거운 시간 보내세요 💗
+        <p className="mt-5 break-keep text-[13.5px] font-bold leading-relaxed text-[#888]">
+          곧 호스트가 매칭된 분과 개인 채팅방을 만들어드릴 예정이에요. 즐거운 시간 보내세요 💗
         </p>
       </section>
     );
@@ -123,31 +119,27 @@ function ResultMessageCard({ nickname, outcome }: { nickname: string; outcome: M
 
   if (outcome.receivedCount > 0) {
     return (
-      <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
+      <section className="rounded-[24px] bg-white px-5 py-10 text-center shadow-calendar">
         <p className="text-[40px] leading-none">🌸</p>
-        <p className="mt-5 text-[16px] font-bold leading-relaxed text-[#333]">
+        <p className="mt-5 break-keep text-[15px] font-bold leading-relaxed text-[#333]">
           오늘 <strong className="font-black text-meet-pink">{name}</strong>님은 {outcome.receivedCount}명의 이성분에게 최종선택을
           받으셨습니다.
         </p>
-        <p className="mt-5 text-[13.5px] font-bold leading-relaxed text-[#888]">
-          아쉽게도 이번에는 서로의 선택이 이어지지는 않았어요.
-          <br />
-          오늘 나눈 대화와 시간이 좋은 기억으로 남았길 바랍니다.
+        <p className="mt-5 break-keep text-[13.5px] font-bold leading-relaxed text-[#888]">
+          아쉽게도 이번에는 서로의 선택이 이어지지는 않았어요. 오늘 나눈 대화와 시간이 좋은 기억으로 남았길 바랍니다.
         </p>
       </section>
     );
   }
 
   return (
-    <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
+    <section className="rounded-[24px] bg-white px-5 py-10 text-center shadow-calendar">
       <p className="text-[40px] leading-none">🍀</p>
-      <p className="mt-5 text-[16px] font-bold leading-relaxed text-[#333]">
+      <p className="mt-5 break-keep text-[15px] font-bold leading-relaxed text-[#333]">
         오늘 <strong className="font-black text-meet-pink">{name}</strong>님은 아쉽게도 최종선택을 받지 못하셨습니다.
       </p>
-      <p className="mt-5 text-[13.5px] font-bold leading-relaxed text-[#888]">
-        짧은 시간 안에 서로를 알아가는 자리인 만큼
-        <br />
-        한 번의 결과가 모든 매력을 보여주는 건 아니에요.
+      <p className="mt-5 break-keep text-[13.5px] font-bold leading-relaxed text-[#888]">
+        짧은 시간 안에 서로를 알아가는 자리인 만큼 한 번의 결과가 모든 매력을 보여주는 건 아니에요.
         <br />
         오늘의 만남이 좋은 경험으로 남았길 바랍니다 💗
       </p>

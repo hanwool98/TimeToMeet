@@ -19,10 +19,15 @@ export function computeLiveElapsedSeconds(
 // comes down through every progress RPC as conversationDurationSeconds.
 export const CONVERSATION_PHASE_SECONDS = 600;
 export const BONUS_CONVERSATION_PHASE_SECONDS = 420;
-export const TRANSITION_PHASE_SECONDS = 120;
+// 정규 라운드 호감도 작성 + 자리 이동(transition) phase도 추가시간과 동일하게
+// 1분이다 - 서버 authoritative 값(advance_round_state_if_needed의
+// regular_transition_seconds, control_round_timer_for_session의 phase_duration)과
+// 반드시 같은 값을 유지해야 한다. 둘 중 하나만 바뀌면 화면 카운트다운과
+// 실제 라운드 전환 시점이 어긋난다.
+export const TRANSITION_PHASE_SECONDS = 60;
 export const BONUS_RATING_PHASE_SECONDS = 60;
 // 추가시간의 상대 공개, 호감도 수정, 자리이동은 모두 같은 서버 phase에서
-// 1분 동안 진행한다. 정규 라운드 transition은 위의 120초를 그대로 쓴다.
+// 1분 동안 진행한다. 정규 라운드 transition도 위와 동일하게 1분이다.
 export const BONUS_REVEAL_PHASE_SECONDS = 60;
 
 export function phaseDurationSeconds(

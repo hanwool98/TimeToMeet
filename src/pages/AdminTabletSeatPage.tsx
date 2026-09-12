@@ -681,7 +681,7 @@ export default function AdminTabletSeatPage() {
           <PetalDecor />
           <RoundTimerRing offline={isStale} phaseDuration={timerPhaseDuration} remaining={timerRemaining} />
           <p className="px-6 text-center" style={{ color: '#c07f87', fontSize: 'clamp(14px,1.9vh,19px)', fontWeight: 600 }}>
-            2분 안에 자리 이동 및 호감도 작성을 완료해주세요
+            1분 안에 자리 이동 및 호감도 작성을 완료해주세요
           </p>
         </main>
       );

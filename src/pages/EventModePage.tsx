@@ -795,8 +795,12 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       // 보이지만 캡처 시점엔 이미 만료된 URL이라 fetch/toPng이 조용히
       // 실패한다(안드로이드/사파리 등 브라우저 종류와 무관하게 동일하게
       // 발생 - 서버 쪽 만료라서 그렇다). 캡처 직전에 항상 최신 서명 URL을
-      // 다시 받아 갱신한다.
-      if (photoPath) {
+      // 다시 받아 갱신한다 - 행사 전용 사진(photoPath)을 골랐는지와
+      // 무관하게(기본 대표사진을 그대로 쓰는 경우도 photoUrl은 마찬가지로
+      // 서명 URL이라 똑같이 만료될 수 있다 - 예전엔 photoPath가 있을 때만
+      // 갱신해서, 기본 대표사진을 쓰는 참가자는 카드 작성에 시간이 걸리면
+      // 사진만 빠진 채로 저장되는 문제가 있었다).
+      if (photoUrl) {
         try {
           const fresh = await fetchMyEventProfileCard(eventId);
           if (fresh?.photoUrl) setPhotoUrl(fresh.photoUrl);
@@ -808,11 +812,19 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         // 끝나 있어야 한다.
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
+      // 커스텀 웹폰트가 아직 교체 적용되기 전에 캡처하면 fallback 폰트
+      // 기준으로 그려져 화면과 미묘하게 다른 줄바꿈/여백으로 캡처될 수
+      // 있다 - 폰트 로딩이 끝난 뒤에 캡처한다(구형 브라우저는 API 자체가
+      // 없을 수 있어 optional chaining으로 건너뛴다).
+      if (typeof document !== 'undefined' && document.fonts?.ready) {
+        await document.fonts.ready.catch(() => undefined);
+      }
       // toPng는 캡처 시점에 <img>가 아직 픽셀을 다 그리지 못했으면 그
       // 자리를 그냥 비워버린다 - 사진을 방금 고른 직후처럼 브라우저가
       // 아직 디코딩 중인 상태에서 버튼을 누르면 화면엔 보여도 캡처에는
       // 빠질 수 있다. 캡처 직전에 카드 안의 모든 이미지가 실제로 로드+
       // 디코딩까지 끝났는지 기다린다.
+      await waitForImagesToLoad(cardCaptureRef.current);
       console.debug('[PROFILE_CARD_EXPORT] images_ready');
       // cacheBust: true는 html-to-image가 이미지를 다시 받아올 때 URL 끝에
       // ?타임스탬프를 붙여 캐시를 무력화하는 옵션인데, withCaptureSafeImages가
@@ -931,8 +943,15 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       <ScreenHeader onBack={onBack} title="프로필 카드 작성" />
 
       <div className="mobile-container mx-auto mt-6 flex flex-col gap-5 pb-8">
-        <section className="rounded-[24px] bg-white p-6 text-center shadow-calendar">
-          <div ref={cardCaptureRef}>
+        <div>
+        {/* 이 div가 곧 "프로필카드 저장" 캡처 대상이다 - 카드 디자인(둥근
+            모서리/배경/여백/그림자)을 이 요소 자체에 둬서, 저장된 이미지가
+            화면에 보이는 카드와 동일하게 나오도록 한다. 예전엔 이 스타일이
+            바깥 section에만 있고 캡처 대상은 스타일 없는 안쪽 div였어서,
+            저장된 이미지에 둥근 모서리/배경/여백/그림자가 전부 빠진 채로
+            나왔다(제출/저장 버튼은 원래도 카드 내용이 아니므로 캡처 대상
+            밖으로 그대로 뺀다). */}
+        <div className="rounded-[24px] bg-white p-6 text-center shadow-calendar" ref={cardCaptureRef}>
           <div className="relative mx-auto w-fit rounded-full bg-gradient-to-br from-meet-pinkSoft via-white to-meet-blueSoft p-[3px]">
             <ParticipantPhoto
               className="rounded-full bg-[#f5f7fa]"
@@ -1019,34 +1038,36 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
               </p>
             ) : null}
           </div>
+        </div>
+
+          <div className="text-center">
+            {submittedAt ? (
+              <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
+                제출 완료 · 라운드 시작 전까지 언제든 다시 수정할 수 있어요
+              </p>
+            ) : null}
+            {saveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
+
+            <button
+              className="mt-5 h-14 w-full rounded-[18px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
+              disabled={saving || photoUploading || keywords.length < profileKeywordMinCount}
+              onClick={() => void handleSubmit()}
+              type="button"
+            >
+              {photoUploading ? '사진 업로드 중' : saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
+            </button>
+
+            {cardImageSaveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{cardImageSaveError}</p> : null}
+            <button
+              className="mt-3 h-12 w-full rounded-[16px] border border-meet-blue text-[14px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
+              disabled={cardImageSaving}
+              onClick={() => void handleSaveCardImage()}
+              type="button"
+            >
+              {cardImageSaving ? '저장하는 중' : '프로필카드 저장'}
+            </button>
           </div>
-
-          {submittedAt ? (
-            <p className="mt-5 rounded-[14px] bg-meet-blueSoft px-4 py-3 text-[13px] font-black text-meet-blue">
-              제출 완료 · 라운드 시작 전까지 언제든 다시 수정할 수 있어요
-            </p>
-          ) : null}
-          {saveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{saveError}</p> : null}
-
-          <button
-            className="mt-5 h-14 w-full rounded-[18px] bg-meet-blue text-[16px] font-black text-white transition active:scale-[0.99] disabled:opacity-60"
-            disabled={saving || photoUploading || keywords.length < profileKeywordMinCount}
-            onClick={() => void handleSubmit()}
-            type="button"
-          >
-            {photoUploading ? '사진 업로드 중' : saving ? '저장하는 중' : submittedAt ? '다시 제출' : '프로필 카드 제출'}
-          </button>
-
-          {cardImageSaveError ? <p className="mt-3 text-[13px] font-bold text-meet-pink">{cardImageSaveError}</p> : null}
-          <button
-            className="mt-3 h-12 w-full rounded-[16px] border border-meet-blue text-[14px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-60"
-            disabled={cardImageSaving}
-            onClick={() => void handleSaveCardImage()}
-            type="button"
-          >
-            {cardImageSaving ? '저장하는 중' : '프로필카드 저장'}
-          </button>
-        </section>
+        </div>
 
         <section className="rounded-[24px] bg-white p-4 shadow-calendar">
           <p className="mb-2 flex items-center gap-2 text-[12px] font-bold text-[#999]">
@@ -3066,6 +3087,11 @@ function FinalSelectionReviewScreen({
 // 마음 한 줄 - 최종선택과 완전히 독립된 선택 기능. 대상은 한 명만(최종선택
 // 대상과 같아도, 달라도 무방), 메시지는 선택사항. 참가자 화면에는 절대
 // 다시 노출되지 않고(운영자만 확인) 안내 문구로 그 사실을 명시한다.
+//
+// 만난 참가자 전원을 처음부터 세로로 나열하면 인원이 많을수록 이 영역이
+// 지나치게 길어진다 - "참가자 선택" 버튼으로 목록을 시트에 접어두고,
+// 선택한 한 명만 본문에 보여준 뒤(변경하기로 언제든 재선택 가능) 그 아래
+// 넓은 메시지 입력창을 배치한다.
 function HeartNoteSection({
   candidates,
   message,
@@ -3081,6 +3107,9 @@ function HeartNoteSection({
   photoMap: Map<string, FinalSelectionCandidateProfile>;
   targetId: string | null;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const selectedCandidate = candidates.find((candidate) => candidate.applicationId === targetId) ?? null;
+
   return (
     <section className="rounded-[24px] bg-white p-5 shadow-calendar">
       <div className="flex items-center gap-1.5">
@@ -3093,52 +3122,48 @@ function HeartNoteSection({
         상대가 승낙하면 호스트가 개인 채팅방을 만들어드려요.
       </p>
 
-      <div className="mt-4 flex flex-col gap-2">
-        {candidates.map((candidate) => {
-          const selected = candidate.applicationId === targetId;
-          return (
-            <button
-              className={[
-                'flex items-center gap-3 rounded-[16px] border p-2.5 text-left transition active:scale-[0.99]',
-                selected ? 'border-meet-pink bg-meet-pinkSoft' : 'border-[#eee] bg-white',
-              ].join(' ')}
-              key={candidate.applicationId}
-              onClick={() => onTargetChange(selected ? null : candidate.applicationId)}
-              type="button"
-            >
-              <ParticipantPhoto
-                className="rounded-full bg-[#f5f7fa]"
-                crop={photoMap.get(candidate.applicationId)?.representativeCrop}
-                fallback={<PersonPlaceholderGlyph />}
-                photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
-                sizePx={44}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-black">{candidate.nickname}</p>
-                <p className="text-[11px] font-bold text-[#999]">
-                  {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-              <span
-                className={[
-                  'grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 text-[12px] font-black text-white',
-                  selected ? 'border-meet-pink bg-meet-pink' : 'border-[#ddd] bg-white',
-                ].join(' ')}
+      <div className="mt-4">
+        {selectedCandidate ? (
+          <div className="flex items-center gap-3 rounded-[16px] border border-[#eee] bg-white p-3">
+            <ParticipantPhoto
+              className="rounded-full bg-[#f5f7fa]"
+              crop={photoMap.get(selectedCandidate.applicationId)?.representativeCrop}
+              fallback={<PersonPlaceholderGlyph />}
+              photoUrl={photoMap.get(selectedCandidate.applicationId)?.photoUrl}
+              sizePx={48}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-black">{selectedCandidate.nickname}</p>
+              <p className="text-[12px] font-bold text-[#999]">
+                {[selectedCandidate.age ? `${selectedCandidate.age}세` : null, selectedCandidate.job].filter(Boolean).join(' · ')}
+              </p>
+              <button
+                className="mt-0.5 text-[12px] font-black text-meet-pink"
+                onClick={() => setPickerOpen(true)}
+                type="button"
               >
-                {selected ? '✓' : ''}
-              </span>
-            </button>
-          );
-        })}
+                변경하기 &gt;
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="h-12 w-full rounded-[16px] border border-dashed border-meet-pink text-[14px] font-black text-meet-pink transition active:scale-[0.99]"
+            onClick={() => setPickerOpen(true)}
+            type="button"
+          >
+            참가자 선택
+          </button>
+        )}
       </div>
 
-      {targetId ? (
+      {selectedCandidate ? (
         <div className="mt-4">
           <textarea
-            className="h-24 w-full resize-none rounded-[16px] bg-[#f7f8fa] p-3.5 text-[14px] font-medium leading-relaxed outline-none"
+            className="h-40 w-full resize-none rounded-[16px] bg-[#f7f8fa] p-3.5 text-[14px] font-medium leading-relaxed outline-none"
             maxLength={heartNoteMaxLength}
             onChange={(event) => onMessageChange(event.target.value)}
-            placeholder="전하고 싶은 말을 자유롭게 남겨주세요 (선택)"
+            placeholder="마음을 전하고 싶은 말을 자유롭게 작성해주세요."
             value={message}
           />
           <p className="mt-1 text-right text-[11px] font-bold text-[#bbb]">
@@ -3151,7 +3176,93 @@ function HeartNoteSection({
       <p className="mt-3 text-[11px] font-bold text-[#bbb]">
         마음 한 줄은 참가자에게 바로 공개되지 않고 운영자만 확인해요. 내용을 확인한 뒤 필요한 경우에만 개인 카카오톡으로 전달해드려요.
       </p>
+
+      {pickerOpen ? (
+        <HeartNoteTargetPickerSheet
+          candidates={candidates}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(applicationId) => {
+            onTargetChange(applicationId);
+            setPickerOpen(false);
+          }}
+          photoMap={photoMap}
+          targetId={targetId}
+        />
+      ) : null}
     </section>
+  );
+}
+
+// "참가자 선택" 버튼으로 열리는 시트 - 이번 행사에서 만난 이성 참가자
+// 목록(candidates, 최종선택 화면과 동일한 목록)에서 한 명을 고르면 즉시
+// 선택되고 시트가 닫힌다.
+function HeartNoteTargetPickerSheet({
+  candidates,
+  onClose,
+  onSelect,
+  photoMap,
+  targetId,
+}: {
+  candidates: FinalSelectionCandidate[];
+  onClose: () => void;
+  onSelect: (applicationId: string) => void;
+  photoMap: Map<string, FinalSelectionCandidateProfile>;
+  targetId: string | null;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">마음을 전할 상대 선택</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2">
+          {candidates.map((candidate) => {
+            const selected = candidate.applicationId === targetId;
+            return (
+              <button
+                className={[
+                  'flex items-center gap-3 rounded-[16px] border p-2.5 text-left transition active:scale-[0.99]',
+                  selected ? 'border-meet-pink bg-meet-pinkSoft' : 'border-[#eee] bg-white',
+                ].join(' ')}
+                key={candidate.applicationId}
+                onClick={() => onSelect(candidate.applicationId)}
+                type="button"
+              >
+                <ParticipantPhoto
+                  className="rounded-full bg-[#f5f7fa]"
+                  crop={photoMap.get(candidate.applicationId)?.representativeCrop}
+                  fallback={<PersonPlaceholderGlyph />}
+                  photoUrl={photoMap.get(candidate.applicationId)?.photoUrl}
+                  sizePx={44}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-black">{candidate.nickname}</p>
+                  <p className="text-[11px] font-bold text-[#999]">
+                    {[candidate.age ? `${candidate.age}세` : null, candidate.job].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <span
+                  className={[
+                    'grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 text-[12px] font-black text-white',
+                    selected ? 'border-meet-pink bg-meet-pink' : 'border-[#ddd] bg-white',
+                  ].join(' ')}
+                >
+                  {selected ? '✓' : ''}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 

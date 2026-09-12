@@ -201,8 +201,12 @@ export default function ReviewFormPage() {
                 {justSaved ? '후기가 저장됐어요. 소중한 의견 감사합니다 💗' : '이미 제출한 후기예요 · 후기는 한 번만 작성할 수 있어요'}
               </p>
 
+              {/* 후기 제출 → 결과 확인으로 바로 이어지는 진입점을 여기 두지
+                  않는다 - 결과 확인은 반드시 해당 행사 티켓 화면 하단의
+                  "결과 확인" 버튼(MyEventsPage, eventReviewSubmittedAt이
+                  설정되면 자동으로 노출됨)으로만 들어가도록 통일한다. */}
               <div className="mt-6">
-                <PrimaryButton onClick={() => navigate(`/my-events/ticket/${eventId}/result`)}>결과 확인하기</PrimaryButton>
+                <PrimaryButton onClick={() => navigate('/my-events')}>내 행사로 돌아가기</PrimaryButton>
               </div>
             </section>
           </>
