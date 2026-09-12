@@ -179,6 +179,137 @@ async function withCaptureSafeImages<T>(container: HTMLElement, run: () => Promi
   }
 }
 
+// blob 바꿔치기(withCaptureSafeImages) 이후에도 iOS Safari에서는 여전히
+// html-to-image가 SVG <foreignObject> 안의 <img>를 래스터화하는 과정
+// 자체가 간헐적으로 비어버리는 사례가 보고된다(라이브러리가 이미지를
+// 다시 그리는 방식과 WebKit의 SVG 이미지 디코딩 타이밍이 어긋나는
+// 문제로 추정 - Chrome/Android에서는 재현되지 않음). 캡처 라이브러리에
+// 사진의 렌더링 자체를 맡기지 않고, 지금 화면에 실제로 보이는 모습(크롭
+// 위치/확대까지 전부 반영된 최종 결과)을 네이티브 canvas
+// drawImage(브라우저가 이미 계산해준 getBoundingClientRect 좌표 그대로
+// 사용 - crop 수식을 다시 구현할 필요가 없다)로 한 번 평평하게 "구워서"
+// data: URL 오버레이로 덮어씌운 뒤 캡처한다. data: URL은 외부 요청이
+// 전혀 없는 완전한 인라인 데이터라 SVG 안에서도 항상 즉시 사용 가능하다.
+// 사진이 없거나(fallback 아이콘만 있는 경우) 아주 드물게 taint 등으로
+// 굽기 자체가 실패하면 조용히 건너뛰고 기존 방식 그대로 진행한다(더
+// 나빠지지 않음).
+async function withCaptureSafePhoto<T>(container: HTMLElement, run: () => Promise<T>): Promise<T> {
+  const img = container.querySelector('img');
+  const photoContainer = img?.parentElement ?? null;
+  if (!img || !photoContainer) return run();
+
+  const originalDisplay = img.style.display;
+  let overlay: HTMLImageElement | null = null;
+
+  try {
+    if (!img.complete) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          img.removeEventListener('load', done);
+          img.removeEventListener('error', done);
+          resolve();
+        };
+        img.addEventListener('load', done);
+        img.addEventListener('error', done);
+      });
+    }
+    if (typeof img.decode === 'function') {
+      await img.decode().catch(() => undefined);
+    }
+
+    const containerRect = photoContainer.getBoundingClientRect();
+    const imgRect = img.getBoundingClientRect();
+    if (containerRect.width > 0 && containerRect.height > 0 && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      const pixelRatio = Math.min(3, window.devicePixelRatio || 2);
+      const bakeCanvas = document.createElement('canvas');
+      bakeCanvas.width = Math.max(1, Math.round(containerRect.width * pixelRatio));
+      bakeCanvas.height = Math.max(1, Math.round(containerRect.height * pixelRatio));
+      const ctx = bakeCanvas.getContext('2d');
+      if (ctx) {
+        const destX = (imgRect.left - containerRect.left) * pixelRatio;
+        const destY = (imgRect.top - containerRect.top) * pixelRatio;
+        const destW = imgRect.width * pixelRatio;
+        const destH = imgRect.height * pixelRatio;
+        ctx.drawImage(img, destX, destY, destW, destH);
+        const dataUrl = bakeCanvas.toDataURL('image/png');
+
+        overlay = document.createElement('img');
+        overlay.decoding = 'sync';
+        overlay.style.position = 'absolute';
+        overlay.style.inset = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.objectFit = 'cover';
+        overlay.src = dataUrl;
+        img.style.display = 'none';
+        photoContainer.appendChild(overlay);
+        await new Promise<void>((resolve) => {
+          if (!overlay || overlay.complete) return resolve();
+          overlay.onload = () => resolve();
+          overlay.onerror = () => resolve();
+        });
+      }
+    }
+  } catch (bakeError) {
+    console.debug('[PROFILE_CARD_EXPORT] photo_bake_failed', { message: String(bakeError) });
+  }
+
+  try {
+    return await run();
+  } finally {
+    overlay?.remove();
+    img.style.display = originalDisplay;
+  }
+}
+
+// html-to-image는 <input>/<select>/<textarea> 같은 네이티브 폼 컨트롤을
+// SVG <foreignObject> 안에서 제대로 그리지 못하는 경우가 많다(내부 텍스트가
+// 아예 안 보이거나, 아이콘 없는 회색 상자로만 나오거나, 값이 깨져 보이는
+// 등 - 브라우저가 폼 컨트롤을 OS 위젯으로 그리기 때문에 SVG로 표현할 수
+// 없는 부분이다). 캡처 직전에만 각 필드를 "완전히 같은 스타일을 가진,
+// 같은 값이 적힌 일반 텍스트" div로 바꿔치기해서 이 문제를 원천적으로
+// 피한다 - className을 그대로 물려받으므로 배경/테두리/둥근모서리/폰트는
+// 100% 동일하고, flex 정렬만 더해 입력창의 세로 중앙 정렬을 그대로
+// 재현한다. 캡처가 끝나면 항상 원래 엘리먼트로 되돌린다.
+async function withCaptureSafeFormFields<T>(container: HTMLElement, run: () => Promise<T>): Promise<T> {
+  const fields = Array.from(container.querySelectorAll('input, select, textarea')) as Array<
+    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+  >;
+  const swaps: Array<{ original: Element; placeholder: HTMLDivElement }> = [];
+
+  for (const field of fields) {
+    const isSelect = field.tagName === 'SELECT';
+    const isTextarea = field.tagName === 'TEXTAREA';
+    const value = isSelect ? (field as HTMLSelectElement).selectedOptions[0]?.text ?? '' : field.value;
+    const placeholderText = isSelect ? '' : (field as HTMLInputElement | HTMLTextAreaElement).placeholder;
+    const displayText = value || placeholderText || '';
+
+    const placeholder = document.createElement('div');
+    placeholder.className = field.className;
+    placeholder.style.display = 'flex';
+    placeholder.style.alignItems = isTextarea ? 'flex-start' : 'center';
+    if (isTextarea) {
+      placeholder.style.whiteSpace = 'pre-wrap';
+      placeholder.style.wordBreak = 'break-word';
+    } else {
+      placeholder.style.overflow = 'hidden';
+      placeholder.style.whiteSpace = 'nowrap';
+      placeholder.style.textOverflow = 'ellipsis';
+    }
+    if (!value) placeholder.style.opacity = '0.5';
+    placeholder.textContent = displayText;
+
+    field.replaceWith(placeholder);
+    swaps.push({ original: field, placeholder });
+  }
+
+  try {
+    return await run();
+  } finally {
+    swaps.forEach(({ original, placeholder }) => placeholder.replaceWith(original));
+  }
+}
+
 // ProfileFormPage의 대표사진 조정 편집기와 동일한 방식(드래그/핀치/휠로
 // 위치·확대 조절) - 행사 프로필 카드 사진도 같은 방식으로 조정할 수
 // 있어야 한다는 요청에 따라 같은 수식을 그대로 재사용한다.
@@ -812,10 +943,10 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
         // 끝나 있어야 한다.
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
-      // 커스텀 웹폰트가 아직 교체 적용되기 전에 캡처하면 fallback 폰트
-      // 기준으로 그려져 화면과 미묘하게 다른 줄바꿈/여백으로 캡처될 수
-      // 있다 - 폰트 로딩이 끝난 뒤에 캡처한다(구형 브라우저는 API 자체가
-      // 없을 수 있어 optional chaining으로 건너뛴다).
+      // 이 앱은 별도 웹폰트를 로드하지 않고 시스템 폰트 스택을 그대로
+      // 쓰지만(styles.css의 폰트 스택 참고), 혹시 나중에 웹폰트가 추가돼도
+      // 캡처가 안전하도록 폰트 로딩 완료를 한 번 기다려둔다(구형 브라우저는
+      // API 자체가 없을 수 있어 optional chaining으로 건너뛴다).
       if (typeof document !== 'undefined' && document.fonts?.ready) {
         await document.fonts.ready.catch(() => undefined);
       }
@@ -833,8 +964,24 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
       // (실제로 이 조합 때문에 저장이 100% 실패하고 있었다). 캡처 직전마다
       // 매번 새로 만드는 고유 blob: URL을 쓰므로 애초에 캐시 무력화가
       // 필요 없다 - 아예 끈다.
+      //
+      // 세 겹으로 감싼다: (1) withCaptureSafeImages가 사진을 blob: URL로
+      // 바꿔 CORS 자체를 우회하고, (2) withCaptureSafePhoto가 지금 화면에
+      // 실제로 보이는 사진(크롭 위치 포함)을 네이티브 canvas로 한 번 구워
+      // data: URL 오버레이로 덮어씌우고("사진을 캡처 라이브러리에 맡기지
+      // 말고 우리가 직접 그려서 보여준다" - iOS Safari에서 사진만 빈 채로
+      // 캡처되는 문제의 근본 원인이 SVG foreignObject 안의 crossOrigin
+      // 이미지 래스터화 자체이므로, 그 경로를 아예 타지 않게 한다), (3)
+      // withCaptureSafeFormFields가 input/select/textarea를 같은 스타일의
+      // 일반 텍스트로 바꿔 네이티브 폼 위젯이 회색 상자로 깨지는 문제를
+      // 없앤다. 실패해도 항상 finally에서 원래 DOM으로 복구되므로 화면
+      // 자체는 전혀 바뀌지 않는다.
       const dataUrl = await withCaptureSafeImages(cardCaptureRef.current, () =>
-        toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', pixelRatio: 2 }),
+        withCaptureSafePhoto(cardCaptureRef.current as HTMLElement, () =>
+          withCaptureSafeFormFields(cardCaptureRef.current as HTMLElement, () =>
+            toPng(cardCaptureRef.current as HTMLElement, { backgroundColor: '#ffffff', pixelRatio: 2 }),
+          ),
+        ),
       );
       console.debug('[PROFILE_CARD_EXPORT] capture_done');
       const fileName = `${nickname || '프로필카드'}.png`;
