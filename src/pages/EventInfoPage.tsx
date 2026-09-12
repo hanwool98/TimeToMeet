@@ -138,7 +138,7 @@ export default function EventInfoPage() {
                 <div className="flex items-center justify-between px-1">
                   <h2 className="text-[20px] font-black">핵심정보</h2>
                   <span className={`text-[13px] font-black ${isRecruiting ? 'text-meet-pink' : 'text-[#9a9a9a]'}`}>
-                    {isRecruiting ? '🔥 모집중' : '모집 마감'}
+                    {isRecruiting ? '🔥 모집중' : '모집 마감 · 신청 가능'}
                   </span>
                 </div>
                 <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
@@ -155,6 +155,9 @@ export default function EventInfoPage() {
                     남성 {counts.male}/{event.maleCapacity ?? 10} · 여성 {counts.female}/{event.femaleCapacity ?? 10}
                   </p>
                   {(event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6 ? <p>※ 최소 6:6부터 진행됩니다.</p> : null}
+                  {!isRecruiting ? (
+                    <p className="mt-1">※ 현재 정원은 마감되었지만 신청은 계속 가능해요. 대기 또는 추가 승인 여부는 심사 후 안내드립니다.</p>
+                  ) : null}
                 </div>
               </section>
 

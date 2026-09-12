@@ -93,7 +93,7 @@ Deno.serve(async (request) => {
   const { data: event, error: eventError } = await supabase
     .from('events')
     .select(
-      'id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female, is_test_event, male_capacity, female_capacity',
+      'id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female, is_test_event',
     )
     .eq('id', payload.eventId)
     .maybeSingle();
@@ -146,24 +146,13 @@ Deno.serve(async (request) => {
   if (existingError) return json({ message: '기존 신청 내역 확인에 실패했습니다.', stage: 'response' }, 500);
   if (existing) return json({ message: '이미 이 행사에 신청한 내역이 있습니다.', stage: 'response' }, 409);
 
-  // Gender-specific capacity was never actually enforced anywhere (only ever
-  // read for display/derived math) - a pending application still contends
-  // for a seat just as much as a confirmed one, so it counts here too using
-  // the same terminal-status exclusion as the duplicate check above.
-  if (!event.is_test_event) {
-    const genderCapacity = payload.gender === '남성' ? Number(event.male_capacity ?? 0) : Number(event.female_capacity ?? 0);
-    const { count: genderApplicantCount, error: capacityError } = await supabase
-      .from('applications')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', payload.eventId)
-      .eq('gender', payload.gender)
-      .not('status', 'in', `(${terminalStatuses.join(',')})`);
-
-    if (capacityError) return json({ message: '참가 인원 확인에 실패했습니다.', stage: 'response' }, 500);
-    if ((genderApplicantCount ?? 0) >= genderCapacity) {
-      return json({ message: `${payload.gender} 참가 인원이 마감되었습니다.`, stage: 'response' }, 409);
-    }
-  }
+  // 정원이 찼어도 신청 자체는 항상 접수한다(요청). 예전에는 여기서
+  // 성별 정원을 미리 확인해 막았는데, '참여 보류' 같은 실제 좌석을
+  // 점유하지 않는 상태까지 세는 바람에 대기로 돌려도 마감이 안 풀리는
+  // 문제가 있었다 - 이제 이 사전 차단 자체를 없앤다. 실제 정원 검증은
+  // 관리자가 승인(결제 대기 전환)하는 시점에 update_application_review_
+  // for_session RPC가 서버에서 다시 계산해 막는다(그 쪽 카운트는 이미
+  // 처음부터 결제 대기/결제중/입금 확인 중/참가 확정만 세고 있었다).
 
   let idPhotoPath = '';
   let employmentProofPath = '';
