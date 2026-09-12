@@ -74,6 +74,15 @@ function loadProfileKeywordOptions() {
   return fetchActiveProfileKeywords().catch(() => PROFILE_KEYWORD_OPTIONS);
 }
 
+// 저장된 키 값은 숫자만(예: "177") 들어있는 경우가 대부분이지만, 과거에
+// 직접 "177cm"처럼 단위를 붙여 입력한 값도 섞여 있을 수 있다 - 이미 단위가
+// 붙어있으면 중복으로 더 붙이지 않는다.
+function formatHeightLabel(height: string | null | undefined) {
+  const trimmed = height?.trim();
+  if (!trimmed) return null;
+  return /cm$/i.test(trimmed) ? trimmed : `${trimmed}cm`;
+}
+
 // html-to-image(toPng)는 캡처 시점에 아직 로드/디코딩이 끝나지 않은 <img>는
 // 빈 채로 캡처해버린다 - 사진을 방금 고른 직후처럼 브라우저가 여전히
 // 디코딩 중인 상태에서 캡처가 시작되면 화면엔 보여도 저장된 PNG에서는
@@ -949,7 +958,7 @@ function EventProfileCardScreen({ eventId, eventTitle, onBack }: { eventId: stri
           </div>
           {photoUploadError ? <p className="mt-2 text-[12px] font-bold text-meet-pink">{photoUploadError}</p> : null}
           <p className="text-fluid-safe mt-4 break-keep text-[26px] font-black leading-tight">{nickname}</p>
-          <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job, height].filter(Boolean).join(' · ')}</p>
+          <p className="mt-1 text-[14px] font-bold text-[#999]">{[age ? `${age}세` : null, job, formatHeightLabel(height)].filter(Boolean).join(' · ')}</p>
 
           <div className="mt-6 grid grid-cols-2 gap-3 text-left">
             <CardField label="취미" onChange={setHobby} placeholder="예) 영화 감상, 요가" value={hobby} />
@@ -1408,7 +1417,7 @@ function ConversationScreen({
           </p>
           {progress.partnerAge || progress.partnerJob || progress.partnerHeight ? (
             <p className="mt-1.5 text-[15px] font-bold text-[#888]">
-              {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob, progress.partnerHeight]
+              {[progress.partnerAge ? `${progress.partnerAge}세` : null, progress.partnerJob, formatHeightLabel(progress.partnerHeight)]
                 .filter(Boolean)
                 .join(' / ')}
             </p>
@@ -1953,7 +1962,7 @@ function BonusSeatGuideScreen({
               progress.partnerNickname ?? '상대 확인 중',
               progress.partnerAge ? `${progress.partnerAge}세` : null,
               progress.partnerJob,
-              progress.partnerHeight,
+              formatHeightLabel(progress.partnerHeight),
             ]
               .filter(Boolean)
               .join(' / ')}
@@ -1995,7 +2004,7 @@ function BonusSeatGuideScreen({
               {nextNickname}
             </p>
             <p className="mt-2 text-[15px] font-bold text-[#888]">
-              {[progress.nextPartnerAge ? `${progress.nextPartnerAge}세` : null, progress.nextPartnerJob, progress.nextPartnerHeight]
+              {[progress.nextPartnerAge ? `${progress.nextPartnerAge}세` : null, progress.nextPartnerJob, formatHeightLabel(progress.nextPartnerHeight)]
                 .filter(Boolean)
                 .join(' | ')}
             </p>
@@ -2443,7 +2452,7 @@ function RatingScreen({ eventId, onBack, progress }: { eventId: string; onBack: 
             progress.partnerNickname ?? '상대 확인 중',
             progress.partnerAge ? `${progress.partnerAge}세` : null,
             progress.partnerJob,
-            progress.partnerHeight,
+            formatHeightLabel(progress.partnerHeight),
           ]
             .filter(Boolean)
             .join(' / ')}
