@@ -216,7 +216,7 @@ export default function AdminEventCreatePage() {
       setSaveError('잠긴 행사는 수정할 수 없습니다. 먼저 잠금을 해제해주세요.');
       return;
     }
-    if (!editingEvent && eventDate < toDateInputValue(new Date())) {
+    if (isPastDateBlocked) {
       setSaveError('행사 날짜는 오늘 이후여야 합니다.');
       return;
     }
@@ -260,7 +260,10 @@ export default function AdminEventCreatePage() {
   const pageTitle = editingEvent ? '행사 수정' : '새 행사 만들기';
   const submitLabel = editingEvent ? '행사 수정' : '행사 만들기';
   const cancelPath = editingEvent ? `/admin/events/${editingEvent.id}` : '/admin/events';
-  const isPastDateBlocked = !editingEvent && Boolean(eventDate) && eventDate < toDateInputValue(new Date());
+  // 테스트 행사는 지난 날짜로 만들어도 상관없다(실제 참가자 모집이 없는
+  // 시뮬레이션용이라 날짜가 이미 지났어도 무방) - 서버(upsert_event_for_
+  // admin_session)도 동일하게 is_test_event일 때만 이 검사를 건너뛴다.
+  const isPastDateBlocked = !editingEvent && !isTestEvent && Boolean(eventDate) && eventDate < toDateInputValue(new Date());
 
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
