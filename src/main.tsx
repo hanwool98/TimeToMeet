@@ -19,6 +19,7 @@ import AdminHomeContentPage from './pages/AdminHomeContentPage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminIntroContentPage from './pages/AdminIntroContentPage';
+import AdminIntroSlidesPage from './pages/AdminIntroSlidesPage';
 import AdminInquiriesPage from './pages/AdminInquiriesPage';
 import AdminInquiryDetailPage from './pages/AdminInquiryDetailPage';
 import AdminFinalSelectionResultsPage from './pages/AdminFinalSelectionResultsPage';
@@ -100,6 +101,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/content/profile-keywords" element={<AdminProfileKeywordsPage />} />
               <Route path="/admin/content/reviews" element={<AdminReviewsPage />} />
               <Route path="/admin/content/event-intro" element={<AdminIntroContentPage />} />
+              <Route path="/admin/content/intro-slides" element={<AdminIntroSlidesPage />} />
               <Route path="/admin/content/final-selections" element={<AdminFinalSelectionsPage />} />
               <Route path="/admin/content/final-selections/:eventId" element={<AdminFinalSelectionResultsPage />} />
               <Route path="/admin/applications" element={<AdminApplicationsPage />} />

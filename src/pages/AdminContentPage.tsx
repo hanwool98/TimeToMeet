@@ -54,6 +54,11 @@ export default function AdminContentPage() {
             label="행사소개 관리"
             onClick={() => navigate('/admin/content/event-intro')}
           />
+          <MenuCard
+            icon={<SlideIcon />}
+            label="행사 소개 슬라이드"
+            onClick={() => navigate('/admin/content/intro-slides')}
+          />
         </div>
       </div>
     </main>
@@ -125,6 +130,16 @@ function EventIntroIcon() {
     <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
       <rect height="22" rx="3" width="18" x="7" y="4" />
       <path d="M11 11h10M11 15h10M11 19h6" />
+    </svg>
+  );
+}
+
+function SlideIcon() {
+  return (
+    <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} viewBox="0 0 32 32">
+      <rect height="18" rx="2.5" width="24" x="4" y="7" />
+      <path d="m10 20 4.5-5.5L17.5 18l3-4 3.5 6.5" />
+      <circle cx="11" cy="12" fill="currentColor" r="1.6" stroke="none" />
     </svg>
   );
 }

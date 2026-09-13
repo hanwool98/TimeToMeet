@@ -10,14 +10,16 @@ import {
   fetchEventOpenChatQrForTablet,
   fetchEventProgressForTablet,
   fetchEventTableSeatGuide,
+  fetchIntroSlidesForTablet,
   fetchRoundProgressForTablet,
   markBonusMissionShownForTablet,
   type EventProgress,
   type EventTableSeatGuide,
+  type IntroSlide,
   type TabletRoundProgress,
 } from '../services/supabaseApplications';
 import { isConnectionStale } from '../utils/connectionStatus';
-import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
+import { INTRO_SLIDE_ASPECT_CLASS } from '../constants/introSlides';
 import { createRequestGuard } from '../utils/requestGuard';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
@@ -79,7 +81,6 @@ export default function AdminTabletSeatPage() {
   const navigate = useNavigate();
   const { eventId, tableNumber: tableNumberParam } = useParams();
   const tableNumber = Number(tableNumberParam);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [progress, setProgress] = useState<EventProgress | null>(null);
   const [seatGuide, setSeatGuide] = useState<EventTableSeatGuide | null>(null);
@@ -92,9 +93,8 @@ export default function AdminTabletSeatPage() {
   const [seatGuideRetryTick, setSeatGuideRetryTick] = useState(0);
   const [roundProgress, setRoundProgress] = useState<TabletRoundProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [videoMuted, setVideoMuted] = useState(false);
-  const [displayTime, setDisplayTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
+  const [slides, setSlides] = useState<IntroSlide[]>([]);
+  const slidesFetchedRef = useRef(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [connTick, setConnTick] = useState(() => Date.now());
@@ -379,29 +379,30 @@ export default function AdminTabletSeatPage() {
     return () => window.clearInterval(intervalId);
   }, [isRoundStage]);
 
-  // Keep the <video> element in step with the server snapshot: correct
-  // noticeable drift, and mirror play/pause without fighting local playback.
+  // 슬라이드 목록은 관리자가 미리 구성해두는 정적 콘텐츠라 진행 상태처럼
+  // 자주 폴링하지 않는다 - 연결이 처음 확인된(loading이 풀린) 시점에 딱
+  // 한 번만 받아온다(요청 9: 재접속되면 현재 슬라이드 상태로 다시
+  // 동기화 - 인덱스는 progress 폴링이 이미 매번 최신값을 주므로, 여기서는
+  // 목록 자체만 한 번 챙기면 된다).
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !progress || progress.stage !== 'intro_video' || !progress.introVideoUrl) return;
+    if (loading || slidesFetchedRef.current || !eventId || !Number.isFinite(tableNumber)) return;
+    const stored = readStoredConnection(eventId, tableNumber);
+    if (!stored) return;
+    slidesFetchedRef.current = true;
+    void fetchIntroSlidesForTablet(eventId, tableNumber, stored.connectionToken).then((result) => {
+      if (result) setSlides(result);
+    });
+  }, [loading, eventId, tableNumber]);
 
-    const livePosition = computeLiveVideoPosition(progress);
-    if (Number.isFinite(video.duration) && Math.abs(video.currentTime - livePosition) > VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS) {
-      video.currentTime = livePosition;
-    }
-    if (progress.introVideoStatus === 'playing' && video.paused) {
-      video.play().catch(() => {
-        // Autoplay-with-sound is commonly blocked without a fresh user
-        // gesture on a tablet sitting unattended - fall back to muted
-        // playback so the video still starts, and offer a tap to unmute.
-        video.muted = true;
-        setVideoMuted(true);
-        void video.play().catch(() => undefined);
-      });
-    } else if (progress.introVideoStatus === 'paused' && !video.paused) {
-      video.pause();
-    }
-  }, [progress]);
+  // 슬라이드 이미지를 전부 미리 디코딩해둔다 - 넘어갈 때마다 새로
+  // 받아오면 네트워크가 불안정할 때 흰 화면/깜빡임이 생길 수 있다.
+  useEffect(() => {
+    slides.forEach((slide) => {
+      if (!slide.imageUrl) return;
+      const preloadImage = new Image();
+      preloadImage.src = slide.imageUrl;
+    });
+  }, [slides]);
 
   // `progress` and `roundProgress` come from two INDEPENDENT polls (see the
   // two effects above) that can land at different times - deriving phase
@@ -521,58 +522,36 @@ export default function AdminTabletSeatPage() {
   if (loading || !progress) return <DataLoadingState />;
 
   if (progress.stage === 'intro_video') {
+    // 태블릿은 보기 전용 발표 화면이다 - 버튼/조작 UI를 전혀 두지 않고,
+    // 운영자 화면이 바꾼 슬라이드 인덱스를 그대로 따라 보여주기만 한다.
+    // 관리자 미리보기/운영자 화면과 같은 4:3 프레임을 써서(요청 5) 어느
+    // 화면에서 봐도 같은 비율로 보이게 하고, 그 프레임 안에서는
+    // object-contain으로 원본 비율을 그대로 유지한다(찌그러짐/crop 없음).
+    const currentSlideIndex = slides.length > 0 ? Math.min(progress.introSlideIndex, slides.length - 1) : 0;
+    const currentSlide = slides[currentSlideIndex] ?? null;
     return (
       <main className="fixed inset-0 bg-black" style={landscapeRotateStyle}>
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
         <ReconnectedToast visible={showRecoveredToast} />
-        {progress.introVideoUrl ? (
-          <video
-            className="h-full w-full object-contain"
-            onLoadedMetadata={(changeEvent) => setVideoDuration(changeEvent.currentTarget.duration)}
-            onTimeUpdate={(changeEvent) => setDisplayTime(changeEvent.currentTarget.currentTime)}
-            playsInline
-            ref={videoRef}
-            src={progress.introVideoUrl}
-          />
-        ) : (
-          <div className="grid h-full w-full place-items-center px-10 text-center">
-            <p className="text-[16px] font-bold text-white/70">소개영상을 준비 중이에요</p>
-          </div>
-        )}
-
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-6 pt-5 text-white">
-          <span className="flex items-center gap-2 text-[13px] font-black tracking-wide">
-            {progress.introVideoStatus === 'playing' ? <PlayGlyph /> : <PauseGlyph />}
-            {progress.introVideoStatus === 'playing' ? '소개영상 재생 중' : '일시정지'}
-          </span>
-          {videoDuration > 0 ? <span className="text-[13px] font-black tabular-nums">{formatDuration(displayTime)}</span> : null}
+        <div className="flex h-full w-full items-center justify-center p-3">
+          {currentSlide?.imageUrl ? (
+            <div className={`h-full max-w-full ${INTRO_SLIDE_ASPECT_CLASS}`}>
+              <img alt="" className="h-full w-full object-contain" src={currentSlide.imageUrl} />
+            </div>
+          ) : (
+            <p className="px-10 text-center text-[16px] font-bold text-white/70">행사 소개를 준비 중이에요</p>
+          )}
         </div>
 
-        {videoDuration > 0 ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-6">
-            <div className="flex items-center justify-between text-[12px] font-bold text-white/80">
-              <span>{formatDuration(displayTime)}</span>
-              <span>{formatDuration(videoDuration)}</span>
-            </div>
-            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-white/25">
-              <div className="h-full rounded-full bg-[#ef554a]" style={{ width: `${Math.min(100, (displayTime / videoDuration) * 100)}%` }} />
-            </div>
+        {slides.length > 1 ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-5 flex items-center justify-center gap-1.5">
+            {slides.map((slide, index) => (
+              <span
+                className={`h-1.5 rounded-full transition-all ${index === currentSlideIndex ? 'w-5 bg-white' : 'w-1.5 bg-white/35'}`}
+                key={slide.id}
+              />
+            ))}
           </div>
-        ) : null}
-
-        {videoMuted ? (
-          <button
-            className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-5 py-2.5 text-[14px] font-black text-black"
-            onClick={() => {
-              if (videoRef.current) {
-                videoRef.current.muted = false;
-                setVideoMuted(false);
-              }
-            }}
-            type="button"
-          >
-            🔇 탭하여 소리 켜기
-          </button>
         ) : null}
       </main>
     );
@@ -584,7 +563,7 @@ export default function AdminTabletSeatPage() {
         <ConnectionStatusBanner lines={tabletConnectionBannerLines} visible={isStale} />
         <ReconnectedToast visible={showRecoveredToast} />
         <div>
-          <p className="text-[20px] font-black text-[#ef554a]">소개영상 종료</p>
+          <p className="text-[20px] font-black text-[#ef554a]">행사 소개 종료</p>
           <p className="mt-4 text-[32px] font-black leading-snug">소개팅 시작 대기 중</p>
           <p className="mt-3 text-[14px] font-bold text-[#888]">운영자가 라운드를 시작하면 자동으로 전환됩니다</p>
         </div>
@@ -1177,26 +1156,3 @@ function SeatSide({ gradient, nickname, textColor }: { gradient: string; nicknam
   );
 }
 
-function formatDuration(totalSeconds: number) {
-  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function PlayGlyph() {
-  return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M8 5.5v13l11-6.5-11-6.5Z" />
-    </svg>
-  );
-}
-
-function PauseGlyph() {
-  return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
-      <rect height="14" rx="1.5" width="4.5" x="6" y="5" />
-      <rect height="14" rx="1.5" width="4.5" x="13.5" y="5" />
-    </svg>
-  );
-}

@@ -2035,6 +2035,7 @@ export type IntroVideoAction = 'complete' | 'pause' | 'play' | 'restart' | 'skip
 
 export interface EventProgress {
   currentRound?: number;
+  introSlideIndex: number;
   introVideoCompletedAt?: string;
   introVideoDescription?: string;
   introVideoPositionSeconds: number;
@@ -2049,6 +2050,7 @@ export type TabletEventProgress = { ok: false } | ({ ok: true } & EventProgress)
 
 interface EventProgressRow {
   current_round: number | null;
+  intro_slide_index: number | null;
   intro_video_completed_at: string | null;
   intro_video_description: string | null;
   intro_video_position_seconds: number;
@@ -2062,6 +2064,7 @@ interface EventProgressRow {
 function mapEventProgressRow(row: EventProgressRow): EventProgress {
   return {
     currentRound: row.current_round ?? undefined,
+    introSlideIndex: row.intro_slide_index ?? 0,
     introVideoCompletedAt: row.intro_video_completed_at ?? undefined,
     introVideoDescription: row.intro_video_description ?? undefined,
     introVideoPositionSeconds: row.intro_video_position_seconds,
@@ -2130,6 +2133,182 @@ export async function controlEventIntroVideo(eventId: string, action: IntroVideo
     introVideoUpdatedAt: row.intro_video_updated_at ?? undefined,
     stage: row.stage,
   } satisfies IntroVideoControlResult;
+}
+
+// resolveFunctionError와 같은 이유(supabase-js가 4xx/5xx 응답 본문을
+// 버리고 일반 FunctionsHttpError만 남긴다)로 필요하지만, 그 함수는
+// 신청서 제출 전용 stage 타입에 묶여있어 여기서는 재사용하지 않는다.
+async function extractIntroSlideFunctionErrorMessage(
+  error: unknown,
+  data: { message?: string } | null | undefined,
+  fallback: string,
+): Promise<string> {
+  if (data?.message) return data.message;
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.json();
+      if (body?.message) return String(body.message);
+    } catch {
+      // Non-JSON error body (infra/gateway page) - keep the generic message.
+    }
+  }
+  return fallback;
+}
+
+// 행사 소개 슬라이드 - 소개영상을 대체하는 기능. 슬라이드 자체는 전역
+// 하나의 덱(행사별로 따로 관리하지 않음)이라 eventId를 받지 않는다.
+export interface IntroSlide {
+  id: string;
+  imageUrl: string | null;
+  sortOrder: number;
+  title: string;
+}
+
+export async function fetchAdminIntroSlides(): Promise<IntroSlide[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.functions.invoke('admin-list-intro-slides', {
+    body: { sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(await extractIntroSlideFunctionErrorMessage(error, data, '슬라이드 목록을 불러오지 못했습니다.'));
+  }
+  return (data.slides as Array<{ id: string; imageUrl: string | null; sortOrder: number; title: string }>).map((row) => ({
+    id: row.id,
+    imageUrl: row.imageUrl,
+    sortOrder: row.sortOrder,
+    title: row.title,
+  }));
+}
+
+export async function fetchIntroSlidesForTablet(
+  eventId: string,
+  tableNumber: number,
+  connectionToken: string,
+): Promise<IntroSlide[] | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase.functions.invoke('tablet-list-intro-slides', {
+    body: { connectionToken, eventId, tableNumber },
+  });
+  if (error || data?.ok !== true) return null;
+  return (data.slides as Array<{ id: string; imageUrl: string | null; sortOrder: number; title: string }>).map((row) => ({
+    id: row.id,
+    imageUrl: row.imageUrl,
+    sortOrder: row.sortOrder,
+    title: row.title,
+  }));
+}
+
+export async function uploadIntroSlidePhoto(file: File): Promise<{ photoPath: string; photoUrl: string | null }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const resized = await compressImageIfNeeded(file);
+  const photo = await fileToPayload(resized);
+
+  const { data, error } = await supabase.functions.invoke('upload-intro-slide-photo', {
+    body: { photo, sessionToken: adminSession.token },
+  });
+  if (error || data?.ok !== true) {
+    throw new Error(await extractIntroSlideFunctionErrorMessage(error, data, '슬라이드 이미지 업로드에 실패했습니다.'));
+  }
+  return { photoPath: data.photoPath as string, photoUrl: (data.photoUrl as string | null) ?? null };
+}
+
+async function cleanupIntroSlidePaths(paths: Array<string | null | undefined>) {
+  const adminSession = getAdminSession();
+  const cleanPaths = paths.filter((path): path is string => Boolean(path));
+  if (!supabase || !adminSession || cleanPaths.length === 0) return;
+  try {
+    await supabase.functions.invoke('admin-delete-storage-objects', {
+      body: { paths: cleanPaths, sessionToken: adminSession.token },
+    });
+  } catch (cleanupError) {
+    void logClientError('intro-slide:storage-cleanup', cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+  }
+}
+
+export async function createIntroSlide(title: string, imagePath: string): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('create_admin_intro_slide_for_session', {
+    image_path_value: imagePath,
+    session_token: adminSession.token,
+    title_value: title,
+  });
+  if (error) throw new Error(error.message || '슬라이드를 추가하지 못했습니다.');
+  return data as string;
+}
+
+// imagePath를 넘기지 않으면(undefined) 기존 이미지를 그대로 두고 제목만
+// 바꾼다. 이미지를 교체한 경우 서버가 돌려주는 이전 경로를 best-effort로
+// Storage에서 정리한다(실패해도 저장 자체는 이미 끝난 뒤라 무시).
+export async function updateIntroSlide(slideId: string, title: string, imagePath?: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data: oldPath, error } = await supabase.rpc('update_admin_intro_slide_for_session', {
+    image_path_value: imagePath ?? null,
+    session_token: adminSession.token,
+    slide_id_value: slideId,
+    title_value: title,
+  });
+  if (error) throw new Error(error.message || '슬라이드를 수정하지 못했습니다.');
+  await cleanupIntroSlidePaths([oldPath as string | null]);
+}
+
+export async function deleteIntroSlide(slideId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data: removedPath, error } = await supabase.rpc('delete_admin_intro_slide_for_session', {
+    session_token: adminSession.token,
+    slide_id_value: slideId,
+  });
+  if (error) throw new Error(error.message || '슬라이드를 삭제하지 못했습니다.');
+  await cleanupIntroSlidePaths([removedPath as string | null]);
+}
+
+export async function reorderIntroSlides(orderedIds: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('reorder_admin_intro_slides_for_session', {
+    ordered_ids: orderedIds,
+    session_token: adminSession.token,
+  });
+  if (error) throw new Error(error.message || '슬라이드 순서를 저장하지 못했습니다.');
+}
+
+// 이전/다음/직접이동/건너뛰기/소개종료 - 서버가 인덱스 범위를 검증하고
+// 필요하면 stage를 round_waiting으로 전환한다(클라이언트는 그 결과를
+// 그대로 반영만 하면 됨).
+export type IntroSlideAction = 'next' | 'prev' | 'goto' | 'skip' | 'complete';
+
+export async function controlEventIntroSlides(eventId: string, action: IntroSlideAction, targetIndex?: number) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('control_event_intro_slides_for_session', {
+    action,
+    event_id_value: eventId,
+    session_token: adminSession.token,
+    target_index: targetIndex ?? null,
+  });
+  if (error) throw new Error(error.message || '슬라이드 상태를 변경하지 못했습니다.');
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('슬라이드 상태를 변경하지 못했습니다.');
+  return { introSlideIndex: (row.intro_slide_index as number) ?? 0, stage: row.stage as EventProgressStage };
 }
 
 export async function startFirstRound(eventId: string) {

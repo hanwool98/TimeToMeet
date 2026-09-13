@@ -9,7 +9,7 @@ import useOperationalData from '../hooks/useOperationalData';
 import { isConnectionStale } from '../utils/connectionStatus';
 import { createRequestGuard, debounce } from '../utils/requestGuard';
 import {
-  controlEventIntroVideo,
+  controlEventIntroSlides,
   controlRoundTimer,
   endAdminEvent,
   fetchActiveProfileKeywords,
@@ -17,6 +17,7 @@ import {
   fetchAdminEventParticipantMedia,
   fetchAdminEventProgress,
   fetchAdminFinalSelectionResults,
+  fetchAdminIntroSlides,
   fetchAdminMutualRatings,
   fetchAdminParticipantEventProfileCard,
   fetchAdminParticipantRatings,
@@ -34,7 +35,8 @@ import {
   type AdminParticipantEventProfileCard,
   type EventPauseRequest,
   type EventProgress,
-  type IntroVideoAction,
+  type IntroSlide,
+  type IntroSlideAction,
   type MutualRating,
   type ParticipantRating,
   type ParticipantReport,
@@ -42,7 +44,7 @@ import {
   type RoundProgress,
 } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
-import { computeLiveVideoPosition, VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS } from '../utils/introVideoSync';
+import { INTRO_SLIDE_ASPECT_CLASS } from '../constants/introSlides';
 import { BONUS_RATING_PHASE_SECONDS, computeLiveElapsedSeconds, formatCountdown, phaseDurationSeconds } from '../utils/roundTimerSync';
 
 const pollIntervalMs = 2_000;
@@ -51,7 +53,6 @@ const pauseRequestPollIntervalMs = 5_000;
 export default function AdminEventLivePage() {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [event, setEvent] = useState<AdminEventModeSummary | null>(null);
   const [progress, setProgress] = useState<EventProgress | null>(null);
@@ -59,9 +60,8 @@ export default function AdminEventLivePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [actionPending, setActionPending] = useState(false);
-  const [displayTime, setDisplayTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [videoMuted, setVideoMuted] = useState(false);
+  const [slides, setSlides] = useState<IntroSlide[]>([]);
+  const [slidesLoaded, setSlidesLoaded] = useState(false);
   const [ending, setEnding] = useState(false);
 
   const [roundProgress, setRoundProgress] = useState<RoundProgress | null>(null);
@@ -133,32 +133,35 @@ export default function AdminEventLivePage() {
   }, []);
   const isStale = isConnectionStale(lastSuccessAt, nowTick);
 
-  // Reconcile the actual <video> element with the polled server state: only
-  // resync playback position once drift is noticeable, and only touch
-  // play/pause when it disagrees with the server (so remote pause/play from
-  // another admin session or a resumed poll doesn't fight local playback).
+  // 행사 소개 슬라이드 목록은 관리자가 미리 구성해두는 것이라 자주
+  // 바뀌지 않는다 - 진행 상태처럼 2초마다 폴링하지 않고 마운트 시 한 번만
+  // 받아온다(요청 7: 행사 시작 전에 안정적으로 로드되어 있어야 함).
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !progress || progress.stage !== 'intro_video' || !progress.introVideoUrl) return;
-
-    const livePosition = computeLiveVideoPosition(progress);
-    if (Number.isFinite(video.duration) && Math.abs(video.currentTime - livePosition) > VIDEO_DRIFT_RESYNC_THRESHOLD_SECONDS) {
-      video.currentTime = livePosition;
-    }
-    if (progress.introVideoStatus === 'playing' && video.paused) {
-      video.play().catch(() => {
-        // Autoplay-with-sound can be blocked even right after a tap (the
-        // gesture doesn't always carry through the async start-event round
-        // trip) - fall back to muted playback so it still starts, and let
-        // the operator tap to unmute.
-        video.muted = true;
-        setVideoMuted(true);
-        void video.play().catch(() => undefined);
+    let active = true;
+    void fetchAdminIntroSlides()
+      .then((result) => {
+        if (active) setSlides(result);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setSlidesLoaded(true);
       });
-    } else if (progress.introVideoStatus === 'paused' && !video.paused) {
-      video.pause();
-    }
-  }, [progress]);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 슬라이드 이미지를 미리 전부 디코딩해둔다 - 넘길 때마다 새로 받아오면
+  // 네트워크가 불안정할 때 흰 화면/깜빡임이 생길 수 있다. 현재 슬라이드
+  // 뿐 아니라 전체를 한 번에 미리 로드해, 앞/뒤 어느 방향으로 넘겨도
+  // 이미 브라우저 캐시에 있는 상태가 되게 한다.
+  useEffect(() => {
+    slides.forEach((slide) => {
+      if (!slide.imageUrl) return;
+      const preloadImage = new Image();
+      preloadImage.src = slide.imageUrl;
+    });
+  }, [slides]);
 
   const isRoundStage =
     progress?.stage === 'round_active' ||
@@ -290,23 +293,57 @@ export default function AdminEventLivePage() {
     };
   }, [eventId, reportsPanelOpen]);
 
-  const runAction = async (action: IntroVideoAction) => {
+  const currentSlideIndex = Math.min(progress?.introSlideIndex ?? 0, Math.max(0, slides.length - 1));
+  const currentSlide = slides[currentSlideIndex] ?? null;
+  const isFirstSlide = currentSlideIndex <= 0;
+  const isLastSlide = slides.length === 0 || currentSlideIndex >= slides.length - 1;
+
+  const runSlideAction = async (action: IntroSlideAction) => {
     if (!eventId || actionPending) return;
     setActionPending(true);
     setActionError('');
     try {
-      const result = await controlEventIntroVideo(eventId, action);
-      setProgress((current) => (current ? { ...current, ...result } : current));
+      const result = await controlEventIntroSlides(eventId, action);
+      setProgress((current) => (current ? { ...current, introSlideIndex: result.introSlideIndex, stage: result.stage } : current));
     } catch (caughtError) {
-      setActionError(caughtError instanceof Error ? caughtError.message : '영상 상태를 변경하지 못했습니다.');
+      setActionError(caughtError instanceof Error ? caughtError.message : '슬라이드 상태를 변경하지 못했습니다.');
     } finally {
       setActionPending(false);
     }
   };
 
-  const handleSkipOrComplete = (action: 'complete' | 'skip') => {
-    if (!window.confirm('소개영상을 종료하고 다음 단계로 이동하시겠습니까?')) return;
-    void runAction(action);
+  // "다음"은 항상 같은 액션을 보낸다 - 마지막 슬라이드에서는 서버가
+  // 알아서 소개 종료(round_waiting 전환)로 처리한다(요청 1: 마지막
+  // 슬라이드까지 진행 완료 시 라운드 시작 활성화 조건 중 하나). 자연스러운
+  // 완주라 확인 팝업은 띄우지 않는다 - 건너뛰거나 도중에 끝내는 것과 달리
+  // 아무것도 건너뛰지 않기 때문.
+  const handleNext = () => void runSlideAction('next');
+  const handlePrev = () => {
+    if (isFirstSlide) return;
+    void runSlideAction('prev');
+  };
+  const handleSkip = () => {
+    if (!window.confirm('남은 슬라이드를 건너뛰고 다음 단계로 이동하시겠습니까?')) return;
+    void runSlideAction('skip');
+  };
+  const handleEndIntro = () => {
+    if (!window.confirm('행사 소개를 종료하고 다음 단계로 이동하시겠습니까?')) return;
+    void runSlideAction('complete');
+  };
+
+  const touchStartXRef = useRef<number | null>(null);
+  const handleSlideTouchStart = (event: React.TouchEvent) => {
+    touchStartXRef.current = event.touches[0]?.clientX ?? null;
+  };
+  const handleSlideTouchEnd = (event: React.TouchEvent) => {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+    if (startX == null) return;
+    const endX = event.changedTouches[0]?.clientX ?? startX;
+    const delta = endX - startX;
+    const swipeThresholdPx = 40;
+    if (delta <= -swipeThresholdPx) handleNext(); // 좌 스와이프 -> 다음
+    else if (delta >= swipeThresholdPx) handlePrev(); // 우 스와이프 -> 이전
   };
 
   const handleStartRound = async () => {
@@ -486,85 +523,69 @@ export default function AdminEventLivePage() {
         ) : (
           <>
             <section className="mt-5 rounded-[24px] border border-[#f0d9d3] bg-white p-4 shadow-calendar">
-              <h2 className="text-[18px] font-black leading-snug">{progress.introVideoTitle || '소개영상'}</h2>
-              {progress.introVideoDescription ? <p className="mt-1 text-[13px] font-bold text-[#888]">{progress.introVideoDescription}</p> : null}
-
-              <div className="relative mt-4 overflow-hidden rounded-[16px] bg-black">
-                {progress.introVideoUrl ? (
-                  <video
-                    className="aspect-video w-full"
-                    onEnded={() => void runAction('complete')}
-                    onLoadedMetadata={(changeEvent) => setVideoDuration(changeEvent.currentTarget.duration)}
-                    onTimeUpdate={(changeEvent) => setDisplayTime(changeEvent.currentTarget.currentTime)}
-                    playsInline
-                    ref={videoRef}
-                    src={progress.introVideoUrl}
-                  />
-                ) : (
-                  <div className="grid aspect-video w-full place-items-center px-6 text-center">
-                    <p className="text-[14px] font-bold text-white/70">등록된 소개영상이 없습니다. 건너뛰기로 다음 단계로 진행할 수 있어요.</p>
-                  </div>
-                )}
-                {videoMuted ? (
-                  <button
-                    className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-4 py-2 text-[13px] font-black text-black"
-                    onClick={() => {
-                      if (videoRef.current) {
-                        videoRef.current.muted = false;
-                        setVideoMuted(false);
-                      }
-                    }}
-                    type="button"
-                  >
-                    🔇 탭하여 소리 켜기
-                  </button>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-[18px] font-black leading-snug">행사 소개 슬라이드</h2>
+                {progress.stage === 'intro_video' && slides.length > 0 ? (
+                  <span className="shrink-0 text-[13px] font-black tabular-nums text-[#999]">
+                    {currentSlideIndex + 1} / {slides.length}
+                  </span>
                 ) : null}
               </div>
-
-              <div className="mt-3 flex items-center justify-between text-[12px] font-bold text-[#999]">
-                <span>{formatDuration(displayTime)}</span>
-                <span>{formatDuration(videoDuration)}</span>
-              </div>
-              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#f0e3dc]">
-                <div
-                  className="h-full rounded-full bg-[#ef554a] transition-[width]"
-                  style={{ width: `${videoDuration > 0 ? Math.min(100, (displayTime / videoDuration) * 100) : 0}%` }}
-                />
-              </div>
-
-              {progress.stage === 'intro_video' ? (
-                <div className="mt-5 grid grid-cols-3 gap-3">
-                  <ControlButton disabled={actionPending} label="처음부터" onClick={() => void runAction('restart')}>
-                    <RestartIcon />
-                  </ControlButton>
-                  <ControlButton disabled={actionPending} label={progress.introVideoStatus === 'playing' ? '일시정지' : '재생'} onClick={() => void runAction(progress.introVideoStatus === 'playing' ? 'pause' : 'play')} primary>
-                    {progress.introVideoStatus === 'playing' ? <PauseIcon /> : <PlayIcon />}
-                  </ControlButton>
-                  <ControlButton disabled={actionPending} label="건너뛰기" onClick={() => handleSkipOrComplete('skip')}>
-                    <SkipIcon />
-                  </ControlButton>
-                </div>
-              ) : (
-                <p className="mt-5 rounded-[14px] bg-[#eaf6e8] px-4 py-3 text-center text-[13px] font-black text-[#3f9142]">소개영상이 종료되었습니다</p>
-              )}
-
-              {progress.stage === 'intro_video' ? (
-                <button
-                  className="mt-3 h-11 w-full rounded-[12px] border border-[#ef554a]/40 text-[13px] font-black text-[#ef554a] disabled:opacity-50"
-                  disabled={actionPending}
-                  onClick={() => handleSkipOrComplete('complete')}
-                  type="button"
-                >
-                  영상 종료
-                </button>
+              {progress.stage === 'intro_video' && currentSlide?.title ? (
+                <p className="mt-1 text-[13px] font-bold text-[#888]">{currentSlide.title}</p>
               ) : null}
+
+              {progress.stage === 'intro_video' ? (
+                <>
+                  <div
+                    className={`relative mt-4 overflow-hidden rounded-[16px] bg-black ${INTRO_SLIDE_ASPECT_CLASS}`}
+                    onTouchEnd={handleSlideTouchEnd}
+                    onTouchStart={handleSlideTouchStart}
+                  >
+                    {slides.length === 0 ? (
+                      <div className="grid h-full w-full place-items-center px-6 text-center">
+                        <p className="text-[14px] font-bold text-white/70">
+                          {slidesLoaded
+                            ? '등록된 소개 슬라이드가 없습니다. 건너뛰기로 다음 단계로 진행할 수 있어요.'
+                            : '슬라이드를 불러오는 중이에요.'}
+                        </p>
+                      </div>
+                    ) : currentSlide?.imageUrl ? (
+                      <img alt="" className="h-full w-full select-none object-contain" draggable={false} src={currentSlide.imageUrl} />
+                    ) : null}
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    <ControlButton disabled={actionPending || isFirstSlide} label="이전" onClick={handlePrev}>
+                      <BackIcon />
+                    </ControlButton>
+                    <ControlButton disabled={actionPending || slides.length === 0} label={isLastSlide ? '완료' : '다음'} onClick={handleNext} primary>
+                      <ForwardIcon />
+                    </ControlButton>
+                    <ControlButton disabled={actionPending} label="건너뛰기" onClick={handleSkip}>
+                      <SkipIcon />
+                    </ControlButton>
+                  </div>
+
+                  <button
+                    className="mt-3 h-11 w-full rounded-[12px] border border-[#ef554a]/40 text-[13px] font-black text-[#ef554a] disabled:opacity-50"
+                    disabled={actionPending}
+                    onClick={handleEndIntro}
+                    type="button"
+                  >
+                    소개 종료
+                  </button>
+                </>
+              ) : (
+                <p className="mt-4 rounded-[14px] bg-[#eaf6e8] px-4 py-3 text-center text-[13px] font-black text-[#3f9142]">행사 소개가 종료되었습니다</p>
+              )}
             </section>
 
             {actionError ? <p className="mt-3 text-center text-[13px] font-bold text-[#ef554a]">{actionError}</p> : null}
 
             <div className="mt-6">
               {progress.stage === 'intro_video' ? (
-                <p className="mb-2 text-center text-[13px] font-bold text-[#999]">영상 종료 후 활성화</p>
+                <p className="mb-2 text-center text-[13px] font-bold text-[#999]">소개 종료 후 활성화</p>
               ) : progress.stage === 'round_waiting' && roundProgress ? (
                 <p className="mb-2 text-center text-[13px] font-bold text-[#999]">
                   프로필 카드 제출 {roundProgress.profileCardsSubmitted}/{roundProgress.profileCardsTotal}명
@@ -647,17 +668,18 @@ function ControlButton({ children, disabled, label, onClick, primary }: { childr
   );
 }
 
-function formatDuration(totalSeconds: number) {
-  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
 function BackIcon() {
   return (
     <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
       <path d="m15 5-7 7 7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+function ForwardIcon() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+      <path d="m9 5 7 7-7 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
     </svg>
   );
 }
@@ -692,20 +714,6 @@ function SwapIcon() {
   return (
     <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
       <path d="M4 8h13l-3-3M20 16H7l3 3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-    </svg>
-  );
-}
-
-function RestartIcon() {
-  return (
-    <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-      <path
-        d="M4 12a8 8 0 0 1 13.66-5.66L20 8M20 4v4h-4M20 12a8 8 0 0 1-13.66 5.66L4 16M4 20v-4h4"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
     </svg>
   );
 }
