@@ -255,50 +255,52 @@ function InvitationModal({
   );
 }
 
+// 겹 순서(뒷면 → 뒤로 접힌 뚜껑 → 안에 든 편지 → 앞주머니가 편지 아랫부분을
+// 덮음)를 그대로 유지해야 "봉투 속에 편지가 꽂혀있다"는 그림이 성립하므로,
+// 이 순서를 바꾸지 않는다.
 function EnvelopeIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      className="mx-auto block h-[96px] w-[104px]"
-      fill="none"
-      viewBox="0 0 104 96"
-      xmlns="http://www.w3.org/2000/svg"
-    >
+    <svg aria-hidden="true" className="mx-auto block h-[110px] w-[132px]" fill="none" viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg">
+      {/* 1. 봉투 뒷면 */}
+      <rect x="12" y="42" width="96" height="50" rx="4" fill="#dbe9fb" />
+
+      {/* 2. 뒤로 접힌 뚜껑(위를 향한 삼각형) */}
+      <path d="M12 44 L60 9 L108 44 Z" fill="#f8fbff" stroke="#9cc4ee" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M12 44 L60 9 L108 44" stroke="#c8ddf5" strokeWidth="1" strokeLinejoin="round" />
+
+      {/* 3. 안에 들어있는 편지 */}
+      <rect x="23" y="27" width="74" height="47" rx="3" fill="#ffffff" stroke="#dbe6f4" strokeWidth="1.6" />
       <path
-        d="M18 40 46.8 21.7a9.8 9.8 0 0 1 10.4 0L86 40"
-        fill="#EAF6FF"
-        stroke="#A8D3FA"
-        strokeLinecap="round"
+        d="M33.4 38.6c-1.5-1.6-4-.6-4 1.5 0 1.8 2.4 3.4 4 4.5 1.6-1.1 4-2.7 4-4.5 0-2.1-2.5-3.1-4-1.5z"
+        fill="#f2568a"
+        opacity=".8"
+      />
+      <path
+        d="M87 37.6l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z"
+        fill="#3d7fd6"
+        opacity=".8"
+      />
+      <rect x="34" y="52" width="52" height="3.4" rx="1.7" fill="#e8eef6" />
+      <rect x="40" y="59" width="40" height="3.4" rx="1.7" fill="#eef3f9" />
+
+      {/* 4. 봉투 앞주머니 - 편지 아랫부분을 덮음 */}
+      <path
+        d="M12 44 L60 73 L108 44 L108 88 A4 4 0 0 1 104 92 L16 92 A4 4 0 0 1 12 88 Z"
+        fill="#eaf3fd"
+        stroke="#6ea8e8"
+        strokeWidth="2"
         strokeLinejoin="round"
-        strokeWidth="2"
       />
-      <path
-        d="M31 18.5c0-3 2.4-5.5 5.5-5.5h31c3 0 5.5 2.4 5.5 5.5v45.7H31V18.5Z"
-        fill="#FFF7FA"
-        stroke="#F6A8C4"
-        strokeWidth="2"
-      />
-      <path
-        d="M52 33.2c-3.8-3.9-9.9-1.4-9.9 3.5 0 5 6.6 8.4 9.9 11.2 3.3-2.8 9.9-6.2 9.9-11.2 0-4.9-6.1-7.4-9.9-3.5Z"
-        fill="#F36C9D"
-      />
-      <path
-        d="M15 38.5c0-3.6 2.9-6.5 6.5-6.5h61c3.6 0 6.5 2.9 6.5 6.5v40c0 3.6-2.9 6.5-6.5 6.5h-61c-3.6 0-6.5-2.9-6.5-6.5v-40Z"
-        fill="#DFF0FF"
-        stroke="#A8D3FA"
-        strokeWidth="2"
-      />
-      <path
-        d="M16.5 39.5 47.2 61.2a8.4 8.4 0 0 0 9.6 0l30.7-21.7"
-        fill="#EAF6FF"
-        stroke="#8EC7F4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2.5"
-      />
-      <path d="M17 82 42.8 59.2" stroke="#B6DAF8" strokeLinecap="round" strokeWidth="2" />
-      <path d="M87 82 61.2 59.2" stroke="#B6DAF8" strokeLinecap="round" strokeWidth="2" />
-      <path d="M22 85h60" stroke="#C8E5FC" strokeLinecap="round" strokeWidth="2" />
+      <path d="M12 89 L58 73 M108 89 L62 73" stroke="#c3daf3" strokeWidth="1.3" strokeLinecap="round" />
+
+      {/* 5. 앞주머니 위 작은 별 장식 */}
+      <g fill="#a9bedd" opacity=".55">
+        <path d="M28 62l1.1 2.3 2.5.4-1.8 1.8.4 2.5-2.2-1.2-2.2 1.2.4-2.5-1.8-1.8 2.5-.4z" />
+        <path d="M92 62l1.1 2.3 2.5.4-1.8 1.8.4 2.5-2.2-1.2-2.2 1.2.4-2.5-1.8-1.8 2.5-.4z" />
+        <path d="M46 82l.9 1.9 2.1.3-1.5 1.5.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.5 2.1-.3z" />
+        <path d="M74 82l.9 1.9 2.1.3-1.5 1.5.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.5 2.1-.3z" />
+        <path d="M60 86l.8 1.6 1.8.3-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.3z" />
+      </g>
     </svg>
   );
 }

@@ -19,7 +19,6 @@ export default function PaymentPendingPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [refundChecked, setRefundChecked] = useState(false);
-  const [refundExpanded, setRefundExpanded] = useState(false);
   const ticket = useMemo(() => tickets.find((item) => item.applicationId === invitationId), [invitationId, tickets]);
   const [depositorName, setDepositorName] = useState('');
   const isExpired = ticket?.paymentDeadline ? new Date(ticket.paymentDeadline).getTime() < Date.now() : false;
@@ -142,13 +141,12 @@ export default function PaymentPendingPage() {
               </section>
 
               <section className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-[19px] font-black">환불 규정</h3>
-                  <button className="shrink-0 text-[13px] font-black text-meet-blue" onClick={() => setRefundExpanded((value) => !value)} type="button">
-                    {refundExpanded ? '접기' : '전체 내용 보기'}
-                  </button>
-                </div>
-                <RefundPolicyBox expanded={refundExpanded} />
+                <h3 className="text-[19px] font-black">환불 규정</h3>
+                {/* 환불 규정은 원래 총 3줄뿐이라, 2줄만 보여주고 "전체 내용
+                    보기"로 나머지 1줄을 더 보여주는 접기/펼치기 자체가
+                    불필요한 복잡함이었다 - 그냥 항상 3줄 전부 보여준다
+                    (ProfileFormPage의 사용 방식과 동일하게 통일). */}
+                <RefundPolicyBox />
               </section>
 
               {ticket.depositFailureReason ? (
