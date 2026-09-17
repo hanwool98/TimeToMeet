@@ -85,6 +85,7 @@ export default function AdminEventManagementPage() {
         </div>
 
         <Calendar
+          admin
           currentMonth={currentMonth}
           events={filteredEvents}
           onMonthChange={setCurrentMonth}

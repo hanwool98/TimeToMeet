@@ -17,7 +17,11 @@ interface EventCardProps {
 export default function EventCard({ selectedDateLabel, event, coverUrl, onApply, blockedMessage }: EventCardProps) {
   const hasEvent = Boolean(event);
   const isEarlyBird = event ? getDaysUntilEvent(event.date) >= 8 : false;
-  const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
+  // currentParticipants는 행사 시작 3일 전까지 서버에서 0으로 가려지므로
+  // (참가자에게 실제 모집 인원을 조기에 노출하지 않기 위함), 모집중/마감
+  // 판단은 반드시 서버가 실제 인원 기준으로 계산해 내려주는 isRecruiting을
+  // 쓴다. 값이 없을 때만 예전 방식으로 대체한다.
+  const isRecruiting = event ? event.isRecruiting ?? event.currentParticipants < event.targetParticipants : false;
   const isBlocked = Boolean(blockedMessage);
 
   return (

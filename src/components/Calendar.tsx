@@ -1,4 +1,5 @@
 import type { EventData } from '../types/event';
+import { isParticipantListPublic } from '../utils/participantListGate';
 
 interface CalendarProps {
   currentMonth: Date;
@@ -7,6 +8,11 @@ interface CalendarProps {
   events: EventData[];
   onMonthChange: (nextMonth: Date) => void;
   onSelectDate: (date: Date) => void;
+  // 이 컴포넌트는 참가자용 캘린더(CalendarPage)와 관리자 행사 관리 화면
+  // (AdminEventManagementPage) 둘 다에서 공유해서 쓴다 - 관리자는 항상
+  // 실제 참가 인원을 볼 수 있어야 하므로, 관리자 화면에서만 이 값을 true로
+  // 넘겨 아래 3일 공개 게이트를 건너뛴다.
+  admin?: boolean;
 }
 
 const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
@@ -51,6 +57,7 @@ export default function Calendar({
   events,
   onMonthChange,
   onSelectDate,
+  admin = false,
 }: CalendarProps) {
   const monthCells = getMonthCells(currentMonth);
   const eventByDate = new Map(events.map((event) => [event.date, event]));
@@ -147,7 +154,9 @@ export default function Calendar({
                     ].join(' ')}
                   >
                     <span>{event.shortName}</span>
-                    <span>({event.currentParticipants}/{event.targetParticipants})</span>
+                    {admin || isParticipantListPublic(event.date, event.startTime) ? (
+                      <span>({event.currentParticipants}/{event.targetParticipants})</span>
+                    ) : null}
                   </span>
                 ) : null}
               </span>

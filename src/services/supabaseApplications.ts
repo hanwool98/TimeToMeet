@@ -129,6 +129,7 @@ interface PublicEventSummaryRow {
   ended_at?: string | null;
   is_locked?: boolean;
   discount_note?: string | null;
+  is_recruiting: boolean;
 }
 
 interface AdminEventDetailsRow {
@@ -1040,6 +1041,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     malePrice: event.male_price ?? 50000,
     femalePrice: event.female_price ?? 40000,
     discountNote: event.discount_note ?? undefined,
+    isRecruiting: event.is_recruiting,
     femaleApplications: event.female_applications,
     femaleConfirmed: event.female_confirmed,
     maleApplications: event.male_applications,

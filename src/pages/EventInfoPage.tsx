@@ -72,7 +72,10 @@ export default function EventInfoPage() {
   const baseFemalePrice = defaultInfo?.femalePrice ?? event?.femalePrice ?? 0;
   const showMaleBaseDiscount = baseMalePrice > finalMalePrice;
   const showFemaleBaseDiscount = baseFemalePrice > finalFemalePrice;
-  const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
+  // currentParticipants는 행사 시작 3일 전까지 서버에서 0으로 가려지므로
+  // 모집중/마감 판단은 서버가 실제 인원으로 계산해 내려주는 isRecruiting을
+  // 쓴다(값이 없을 때만 예전 방식으로 대체).
+  const isRecruiting = event ? event.isRecruiting ?? event.currentParticipants < event.targetParticipants : false;
 
   useEffect(() => {
     if (!event) {
