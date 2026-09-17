@@ -78,6 +78,22 @@ export default function HomeCarousel<T>({
     clearAutoplay();
     if (!autoPlayIntervalMs || items.length <= 1) return;
     autoplayTimerRef.current = window.setInterval(() => {
+      const track = trackRef.current;
+      // 카드 폭 × 개수가 화면에 보이는 장수와 비슷할 때(현장 스케치처럼
+      // 한 화면에 카드 여러 장이 보이는 경우) 뒤쪽 인덱스 몇 개는 실제
+      // 스크롤 가능 범위를 넘어서는 좌표를 요청하게 되고, 브라우저가 그걸
+      // 전부 같은 최대 스크롤 위치로 clamp해버린다 - 그러면 activeIndex가
+      // 더 이상 올라가지 못해 그 자리에서 멈추고 처음으로도 못 돌아간다
+      // (실제 라이브 테스트로 재현 확인). 매 tick마다 "이미 끝까지
+      // 스크롤됐는지"를 좌표로 직접 확인해서, 끝에 도달했으면 인덱스 계산과
+      // 무관하게 곧장 처음으로 돌아간다.
+      if (track) {
+        const maxScrollLeft = track.scrollWidth - track.clientWidth;
+        if (track.scrollLeft >= maxScrollLeft - 1) {
+          track.scrollTo({ behavior: 'smooth', left: 0 });
+          return;
+        }
+      }
       scrollToIndex((activeIndexRef.current + 1) % items.length);
     }, autoPlayIntervalMs);
   };
