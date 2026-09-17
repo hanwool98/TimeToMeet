@@ -65,6 +65,14 @@ export default function EventInfoPage() {
   const finalMalePrice = Math.max((event?.malePrice ?? 0) - earlyBirdDiscountMale, 0);
   const finalFemalePrice = Math.max((event?.femalePrice ?? 0) - earlyBirdDiscountFemale, 0);
   const hasActiveEarlyBirdDiscount = isEarlyBirdActive && (earlyBirdDiscountMale > 0 || earlyBirdDiscountFemale > 0);
+  // "정가" 기준 - 관리자 "행사소개 관리 > 기본 행사 정보"에 설정된 표준
+  // 가격. 이번 행사 가격(얼리버드 적용 후 최종가)이 이 기준보다 낮으면
+  // 정가를 취소선으로 함께 보여줘 얼마나 할인된 건지 바로 보이게 한다 -
+  // 별도의 얼리버드 할인이 설정돼 있지 않아도 항상 적용된다.
+  const baseMalePrice = defaultInfo?.malePrice ?? event?.malePrice ?? 0;
+  const baseFemalePrice = defaultInfo?.femalePrice ?? event?.femalePrice ?? 0;
+  const showMaleBaseDiscount = baseMalePrice > finalMalePrice;
+  const showFemaleBaseDiscount = baseFemalePrice > finalFemalePrice;
   const isRecruiting = event ? event.currentParticipants < event.targetParticipants : false;
 
   useEffect(() => {
@@ -164,38 +172,29 @@ export default function EventInfoPage() {
               <section className="mt-10">
                 <h2 className="px-1 text-[20px] font-black">참가비 안내</h2>
                 <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[15px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
-                  {hasActiveEarlyBirdDiscount ? (
-                    <>
-                      <p>
-                        남성{' '}
-                        {earlyBirdDiscountMale > 0 ? (
-                          <>
-                            <span className="text-[#aab0b8] line-through">{formatWon(event.malePrice)}</span> {formatWon(finalMalePrice)}
-                          </>
-                        ) : (
-                          formatWon(finalMalePrice)
-                        )}
-                      </p>
-                      <p>
-                        여성{' '}
-                        {earlyBirdDiscountFemale > 0 ? (
-                          <>
-                            <span className="text-[#aab0b8] line-through">{formatWon(event.femalePrice)}</span> {formatWon(finalFemalePrice)}
-                          </>
-                        ) : (
-                          formatWon(finalFemalePrice)
-                        )}
-                      </p>
-                      <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p>
-                    </>
-                  ) : (
-                    <>
-                      <p>남성 {formatWon(event.malePrice)}</p>
-                      <p>여성 {formatWon(event.femalePrice)}</p>
-                    </>
-                  )}
-                  {defaultInfo?.discountNote ? (
-                    <p className="mt-5 whitespace-pre-line text-meet-blue">{defaultInfo.discountNote}</p>
+                  <p>
+                    남성{' '}
+                    {showMaleBaseDiscount ? (
+                      <>
+                        <span className="text-[#aab0b8] line-through">{formatWon(baseMalePrice)}</span> {formatWon(finalMalePrice)}
+                      </>
+                    ) : (
+                      formatWon(finalMalePrice)
+                    )}
+                  </p>
+                  <p>
+                    여성{' '}
+                    {showFemaleBaseDiscount ? (
+                      <>
+                        <span className="text-[#aab0b8] line-through">{formatWon(baseFemalePrice)}</span> {formatWon(finalFemalePrice)}
+                      </>
+                    ) : (
+                      formatWon(finalFemalePrice)
+                    )}
+                  </p>
+                  {hasActiveEarlyBirdDiscount ? <p className="mt-5 text-meet-blue">얼리버드 할인 적용 중</p> : null}
+                  {event.discountNote ?? defaultInfo?.discountNote ? (
+                    <p className="mt-5 whitespace-pre-line text-meet-blue">{event.discountNote ?? defaultInfo?.discountNote}</p>
                   ) : null}
                 </div>
               </section>

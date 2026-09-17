@@ -128,6 +128,7 @@ interface PublicEventSummaryRow {
   is_test_event?: boolean;
   ended_at?: string | null;
   is_locked?: boolean;
+  discount_note?: string | null;
 }
 
 interface AdminEventDetailsRow {
@@ -151,6 +152,7 @@ interface AdminEventDetailsRow {
   early_bird_discount_female: number | null;
   is_test_event?: boolean;
   is_locked?: boolean;
+  discount_note: string | null;
 }
 
 interface PublicParticipantPreviewRow {
@@ -1037,6 +1039,7 @@ function mapPublicEventSummaryRow(event: PublicEventSummaryRow): EventData {
     nicknameInstruction: event.nickname_instruction?.trim() || undefined,
     malePrice: event.male_price ?? 50000,
     femalePrice: event.female_price ?? 40000,
+    discountNote: event.discount_note ?? undefined,
     femaleApplications: event.female_applications,
     femaleConfirmed: event.female_confirmed,
     maleApplications: event.male_applications,
@@ -1100,6 +1103,7 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
     earlyBirdDeadline: row.early_bird_deadline ?? undefined,
     earlyBirdDiscountMale: row.early_bird_discount_male ?? 0,
     earlyBirdDiscountFemale: row.early_bird_discount_female ?? 0,
+    discountNote: row.discount_note ?? undefined,
     endTime: row.end_time.slice(0, 5),
     femaleCapacity: row.female_capacity,
     femalePrice: row.female_price,
@@ -1255,6 +1259,7 @@ export async function upsertEventToSupabase(event: EventData) {
   const { error } = await supabase.rpc('upsert_event_for_admin_session', {
     event_application_deadline: event.applicationDeadline ?? null,
     event_date_value: event.date,
+    event_discount_note: event.discountNote?.trim() || null,
     event_early_bird_deadline: event.earlyBirdDeadline ?? null,
     event_early_bird_discount_female: event.earlyBirdDiscountFemale ?? 0,
     event_early_bird_discount_male: event.earlyBirdDiscountMale ?? 0,

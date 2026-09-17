@@ -6,6 +6,7 @@ import DateTimePicker from '../components/DateTimePicker';
 import PrimaryButton from '../components/PrimaryButton';
 import TimeSelect from '../components/TimeSelect';
 import useOperationalData from '../hooks/useOperationalData';
+import { fetchPublicIntroContent } from '../services/introContent';
 import {
   fetchAdminEventDetailsFromSupabase,
   fetchEventCoverUrls,
@@ -128,6 +129,7 @@ export default function AdminEventCreatePage() {
   });
   const [earlyBirdDiscountMale, setEarlyBirdDiscountMale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountMale ?? 0) : '5000');
   const [earlyBirdDiscountFemale, setEarlyBirdDiscountFemale] = useState(editingEvent ? String(editingEvent.earlyBirdDiscountFemale ?? 0) : '5000');
+  const [discountNote, setDiscountNote] = useState(editingEvent?.discountNote ?? '');
   const [region, setRegion] = useState(editingEvent?.location ?? regions[0]);
   const [venueDetail, setVenueDetail] = useState('');
   const [venueBooked, setVenueBooked] = useState(editingEvent?.venueBooked ?? false);
@@ -152,6 +154,7 @@ export default function AdminEventCreatePage() {
     setEarlyBirdDeadline(editingEvent.earlyBirdDeadline ? toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline)) : '');
     setEarlyBirdDiscountMale(String(editingEvent.earlyBirdDiscountMale ?? 0));
     setEarlyBirdDiscountFemale(String(editingEvent.earlyBirdDiscountFemale ?? 0));
+    setDiscountNote(editingEvent.discountNote ?? '');
     setRegion(toRegionOption(editingEvent.location));
     setVenueBooked(editingEvent.venueBooked);
     setIsTestEvent(editingEvent.isTestEvent ?? false);
@@ -187,6 +190,7 @@ export default function AdminEventCreatePage() {
         setEarlyBirdDeadline(details.earlyBirdDeadline ? toDateTimeInputValue(new Date(details.earlyBirdDeadline)) : '');
         setEarlyBirdDiscountMale(String(details.earlyBirdDiscountMale ?? 0));
         setEarlyBirdDiscountFemale(String(details.earlyBirdDiscountFemale ?? 0));
+        setDiscountNote(details.discountNote ?? '');
         setRegion(toRegionOption(details.location));
         setVenueDetail(details.venueDetail);
         setVenueBooked(details.venueBooked);
@@ -211,6 +215,26 @@ export default function AdminEventCreatePage() {
     };
   }, [eventId]);
 
+  // 새 행사를 만들 때만: "가격 밑 할인정보"의 초기값을 관리자 "행사소개
+  // 관리 > 기본 행사 정보"에 저장된 전역 문구로 미리 채워준다(요청 사항 -
+  // 지금 나오는 값을 기본값으로). 이미 값을 입력했다면(빈 문자열이
+  // 아니면) 덮어쓰지 않는다. 기존 행사를 수정할 때는 그 행사에 저장된
+  // 값(또는 없음)을 그대로 쓰므로 이 로직을 타지 않는다.
+  useEffect(() => {
+    if (editingEvent || eventId) return;
+    let active = true;
+    void fetchPublicIntroContent()
+      .then((payload) => {
+        if (!active) return;
+        setDiscountNote((current) => (current ? current : payload.defaultInfo.discountNote ?? ''));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreate = async () => {
     if (isLocked) {
       setSaveError('잠긴 행사는 수정할 수 없습니다. 먼저 잠금을 해제해주세요.');
@@ -234,6 +258,7 @@ export default function AdminEventCreatePage() {
       endTime,
       location: region.replace(/시$/, ''),
       nicknameInstruction: nicknameInstruction.trim() || undefined,
+      discountNote: discountNote.trim() || undefined,
       venueBooked,
       venueDetail: venueDetail.trim(),
       isTestEvent,
@@ -414,6 +439,17 @@ export default function AdminEventCreatePage() {
                   />
                 </Field>
               </div>
+              <Field label="가격 밑 할인정보 (선택)">
+                <textarea
+                  className="min-h-20 w-full max-w-full min-w-0 resize-y rounded-[18px] bg-white px-4 py-3 text-left text-[14px] font-bold leading-relaxed text-black outline-none focus:ring-2 focus:ring-meet-blue"
+                  onChange={(event) => setDiscountNote(event.target.value)}
+                  placeholder="정가보다 할인된 금액입니다."
+                  value={discountNote}
+                />
+              </Field>
+              <p className="mt-2 text-[12px] font-extrabold text-[#777]">
+                참가자 화면의 참가비 안내 아래에 표시돼요. 기본값은 관리자 &gt; 행사소개 관리에서 설정한 문구이고, 이 행사에서만 자유롭게 바꿀 수 있어요.
+              </p>
             </div>
 
             <div className="w-full max-w-full min-w-0 rounded-[24px] bg-meet-blueSoft p-4">

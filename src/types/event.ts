@@ -14,6 +14,7 @@ export interface EventData {
   maleCapacity?: number;
   femalePrice: number;
   femaleCapacity?: number;
+  discountNote?: string;
   earlyBirdDeadline?: string;
   earlyBirdDiscountMale?: number;
   earlyBirdDiscountFemale?: number;
