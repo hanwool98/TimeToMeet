@@ -44,6 +44,25 @@ function parseDateParam(dateParam: string | null) {
 
 
 
+// 행사 종료 시간 입력은 화면에서 없앴지만(요청 사항 - 시작 시간만
+// 표시), events.end_time은 여전히 필수 컬럼이고 "행사 종료 여부"
+// 판단(admin 목록/티켓 화면) 등에 계속 쓰이므로 값 자체는 그대로
+// 저장해야 한다. 시작 시간 기준 3시간(기존 기본값 15:00~18:00과 동일한
+// 길이)을 자동으로 더해 채운다.
+const DEFAULT_EVENT_DURATION_HOURS = 3;
+
+function addHoursToTime(time: string, hours: number) {
+  const [hourValue, minuteValue] = time.split(':').map(Number);
+  if (!Number.isFinite(hourValue) || !Number.isFinite(minuteValue)) return time;
+  // 자정을 넘겨 시작 시간보다 이른 시각으로 감싸돌면(예: 23:00 시작 + 3시간
+  // → 02:00) 서버 검증("종료 시간은 시작 시간보다 늦어야 함")에 걸리므로,
+  // 넘어가는 대신 하루의 끝(23:59)에서 멈춘다.
+  const totalMinutes = Math.min(hourValue * 60 + minuteValue + hours * 60, 23 * 60 + 59);
+  const nextHour = Math.floor(totalMinutes / 60);
+  const nextMinute = totalMinutes % 60;
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+}
+
 function defaultDeadlineForDate(dateValue: string) {
   const date = parseDateParam(dateValue);
   date.setDate(date.getDate() - 3);
@@ -116,7 +135,7 @@ export default function AdminEventCreatePage() {
   const [nicknameInstruction, setNicknameInstruction] = useState(editingEvent?.nicknameInstruction ?? '');
   const [eventDate, setEventDate] = useState(toDateInputValue(selectedDate));
   const [startTime, setStartTime] = useState(editingEvent?.startTime ?? '15:00');
-  const [endTime, setEndTime] = useState(editingEvent?.endTime ?? '18:00');
+  const [endTime, setEndTime] = useState(editingEvent?.endTime ?? addHoursToTime('15:00', DEFAULT_EVENT_DURATION_HOURS));
   const [deadline, setDeadline] = useState(toDateTimeInputValue(defaultDeadline));
   const [maleCapacity, setMaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
   const [femaleCapacity, setFemaleCapacity] = useState(editingEvent ? String(editingEvent.targetParticipants / 2) : '10');
@@ -139,33 +158,26 @@ export default function AdminEventCreatePage() {
   const [saving, setSaving] = useState(false);
   const [editDetailsLoading, setEditDetailsLoading] = useState(Boolean(eventId));
 
+  // 새 행사를 만들 때만: 화면에서 없앤 종료 시간을 시작 시간 기준으로
+  // 자동으로 따라가게 한다. 기존 행사를 수정할 때는 그 행사에 이미 저장된
+  // endTime을 그대로 두고(아래 프리필 effect들이 담당), 시작 시간을 바꿔도
+  // 임의로 덮어쓰지 않는다.
   useEffect(() => {
-    if (!editingEvent) return;
-    setEventType(editingEvent.shortName.includes('로테이션') ? eventTypes[0] : editingEvent.shortName);
-    setEventName(editingEvent.title);
-    setNicknameInstruction(editingEvent.nicknameInstruction ?? '');
-    setEventDate(editingEvent.date);
-    setStartTime(editingEvent.startTime);
-    setEndTime(editingEvent.endTime);
-    setMaleCapacity(String(editingEvent.maleCapacity ?? editingEvent.targetParticipants / 2));
-    setFemaleCapacity(String(editingEvent.femaleCapacity ?? editingEvent.targetParticipants / 2));
-    setMalePrice(String(editingEvent.malePrice));
-    setFemalePrice(String(editingEvent.femalePrice));
-    setEarlyBirdDeadline(editingEvent.earlyBirdDeadline ? toDateTimeInputValue(new Date(editingEvent.earlyBirdDeadline)) : '');
-    setEarlyBirdDiscountMale(String(editingEvent.earlyBirdDiscountMale ?? 0));
-    setEarlyBirdDiscountFemale(String(editingEvent.earlyBirdDiscountFemale ?? 0));
-    setDiscountNote(editingEvent.discountNote ?? '');
-    setRegion(toRegionOption(editingEvent.location));
-    setVenueBooked(editingEvent.venueBooked);
-    setIsTestEvent(editingEvent.isTestEvent ?? false);
-    setIsLocked(editingEvent.isLocked ?? false);
-    setDeadline(
-      editingEvent.applicationDeadline
-        ? toDateTimeInputValue(new Date(editingEvent.applicationDeadline))
-        : defaultDeadlineForDate(editingEvent.date),
-    );
-  }, [editingEvent]);
+    if (editingEvent || eventId) return;
+    setEndTime(addHoursToTime(startTime, DEFAULT_EVENT_DURATION_HOURS));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTime]);
 
+  // (예전에는 여기서 editingEvent가 바뀔 때마다 폼 전체를 다시 채우는
+  // effect가 하나 더 있었다. editingEvent는 useOperationalData({admin:true})
+  // 가 30초마다(그리고 실시간 구독 이벤트가 올 때마다) 새로 만들어내는
+  // events 배열에서 매번 새로 찾은 객체라, 실제 값이 하나도 안 바뀌었어도
+  // 참조만 바뀌어 이 effect가 계속 재실행됐다 - 그 결과 관리자가 가격/
+  // 할인정보/닉네임 안내 등을 입력하는 도중에 폴링이 한 번만 끼어들어도
+  // 방금 입력한 값이 서버의 마지막 저장값으로 조용히 되돌아가는 버그가
+  // 있었다(실제 보고됨). 아래 effect(eventId 하나로만 동작, 폴링과 무관)가
+  // venueDetail까지 포함해 이미 완전히 같은 일을 하므로 그 effect는
+  // 제거하고 이것 하나만 남긴다.
   useEffect(() => {
     if (!eventId) {
       setEditDetailsLoading(false);
@@ -356,24 +368,14 @@ export default function AdminEventCreatePage() {
               />
             </Field>
 
-            <div>
-              <span className="mb-2 block text-[15px] font-black text-black">진행 시간</span>
-              <div className="grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-                <TimeSelect
-                  className="flex h-12 w-full max-w-full min-w-0 items-center justify-center gap-1 rounded-[18px] bg-meet-blueSoft px-2 focus-within:ring-2 focus-within:ring-meet-blue min-[380px]:px-3"
-                  onChange={setStartTime}
-                  selectClassName="w-full appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none min-[380px]:text-[16px]"
-                  value={startTime}
-                />
-                <span className="shrink-0 text-[18px] font-black text-[#777]">~</span>
-                <TimeSelect
-                  className="flex h-12 w-full max-w-full min-w-0 items-center justify-center gap-1 rounded-[18px] bg-meet-blueSoft px-2 focus-within:ring-2 focus-within:ring-meet-blue min-[380px]:px-3"
-                  onChange={setEndTime}
-                  selectClassName="w-full appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none min-[380px]:text-[16px]"
-                  value={endTime}
-                />
-              </div>
-            </div>
+            <Field label="시작 시간">
+              <TimeSelect
+                className="flex h-12 w-full max-w-full min-w-0 items-center justify-center gap-1 rounded-[18px] bg-meet-blueSoft px-2 focus-within:ring-2 focus-within:ring-meet-blue min-[380px]:px-3"
+                onChange={setStartTime}
+                selectClassName="w-full appearance-none bg-transparent text-center text-[15px] font-bold text-black outline-none min-[380px]:text-[16px]"
+                value={startTime}
+              />
+            </Field>
 
             <Field label="신청 마감">
               <DateTimePicker onChange={setDeadline} triggerClassName={inputClassName} value={deadline} />
