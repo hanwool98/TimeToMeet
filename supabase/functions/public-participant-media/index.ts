@@ -26,8 +26,10 @@ Deno.serve(async (request) => {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
-  // 참가자 리스트는 행사 시작 7일 전부터만 공개(참가자용) - get_public_participant
-  // _previews와 동일 게이트. 그 전에는 사진/음성 URL도 내려주지 않는다.
+  // 참가자 리스트는 행사 시작 3일 전부터만 공개(참가자용) - get_public_participant
+  // _previews와 동일 게이트(실제 기준값은 event_participant_list_public_at
+  // RPC가 갖고 있으므로 여기는 호출만 하고 날짜 계산은 하지 않는다).
+  // 그 전에는 사진/음성 URL도 내려주지 않는다.
   // 유효한 테스트 행사 미리보기 토큰이면 게이트를 우회한다(운영자 확인용).
   {
     const { data: previewOk } = await supabase.rpc('is_test_event_preview_token_valid', {
