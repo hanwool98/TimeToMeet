@@ -76,6 +76,10 @@ export default function EventInfoPage() {
   // 모집중/마감 판단은 서버가 실제 인원으로 계산해 내려주는 isRecruiting을
   // 쓴다(값이 없을 때만 예전 방식으로 대체).
   const isRecruiting = event ? event.isRecruiting ?? event.currentParticipants < event.targetParticipants : false;
+  // 남녀 정원 fallback - EventDetailPage/TicketDetailPage/Admin참가자
+  // 화면과 동일한 계산(총 정원을 반으로 나눔)을 그대로 재사용한다.
+  const eventMaleCapacity = event ? Math.max(1, event.maleCapacity ?? Math.ceil(event.targetParticipants / 2)) : 0;
+  const eventFemaleCapacity = event ? Math.max(1, event.femaleCapacity ?? Math.floor(event.targetParticipants / 2)) : 0;
 
   useEffect(() => {
     if (!event) {
@@ -161,9 +165,9 @@ export default function EventInfoPage() {
                   <p className="mt-5 font-black text-black">모집 대상</p>
                   <p>만 24~33세 미혼 남녀</p>
                   <p className="mt-5">
-                    {event.maleCapacity ?? 8}:{event.femaleCapacity ?? 8} 로테이션소개팅
+                    {eventMaleCapacity}:{eventFemaleCapacity} 로테이션소개팅
                   </p>
-                  {(event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6 ? <p>※ 최소 6:6부터 진행됩니다.</p> : null}
+                  {eventMaleCapacity >= 6 && eventFemaleCapacity >= 6 ? <p>※ 최소 6:6부터 진행됩니다.</p> : null}
                 </div>
               </section>
 

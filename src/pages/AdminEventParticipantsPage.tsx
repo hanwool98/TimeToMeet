@@ -402,9 +402,9 @@ export default function AdminEventParticipantsPage() {
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-fluid-safe text-[25px] font-black leading-tight tracking-normal">타임투밋 로테이션소개팅</h1>
+            <h1 className="text-fluid-safe text-[25px] font-black leading-tight tracking-normal">{event?.title || '타임투밋 로테이션소개팅'}</h1>
             <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-2 py-3 text-[15px] font-black leading-snug">
-              {event ? `${formatShortKoreanDate(event.date)} ${event.startTime} 체험단 소개팅` : '행사 정보를 불러올 수 없습니다'}
+              {event ? `${formatShortKoreanDate(event.date)} ${event.startTime} ${maleCapacity}:${femaleCapacity} 로테이션소개팅` : '행사 정보를 불러올 수 없습니다'}
             </p>
           </div>
 
