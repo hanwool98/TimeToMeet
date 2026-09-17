@@ -29,6 +29,7 @@ import AdminParticipationHistoryPage from './pages/AdminParticipationHistoryPage
 import AdminPreroundSeatsPage from './pages/AdminPreroundSeatsPage';
 import AdminTabletConnectPage from './pages/AdminTabletConnectPage';
 import AdminTabletSeatPage from './pages/AdminTabletSeatPage';
+import AllFieldSketchesPage from './pages/AllFieldSketchesPage';
 import AllReviewsPage from './pages/AllReviewsPage';
 import CalendarPage from './pages/CalendarPage';
 import EmergencyProfileFormPage from './pages/EmergencyProfileFormPage';
@@ -122,6 +123,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin/events/:eventId/tablet/:tableNumber/seat" element={<AdminTabletSeatPage />} />
             <Route path="/event-info" element={<EventInfoPage />} />
             <Route path="/reviews" element={<AllReviewsPage />} />
+            <Route path="/field-sketches" element={<AllFieldSketchesPage />} />
             <Route path="/my-events" element={<MyEventsPage />} />
             <Route path="/my-events/payment/:invitationId" element={<PaymentPendingPage />} />
             <Route path="/my-events/ticket/:eventId" element={<TicketDetailPage />} />

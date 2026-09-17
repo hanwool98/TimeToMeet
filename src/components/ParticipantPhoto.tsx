@@ -26,6 +26,7 @@ export default function ParticipantPhoto({
   className = '',
   crop,
   fallback,
+  loading,
   photoUrl,
   sizePx,
   style,
@@ -33,6 +34,10 @@ export default function ParticipantPhoto({
   className?: string;
   crop?: RepresentativeCrop | null;
   fallback?: ReactNode;
+  // 기본값은 그대로 두고(기존 호출부 동작 변경 없음) 사진이 많이 나열될
+  // 수 있는 화면(현장 스케치 더보기 그리드 등)에서만 명시적으로
+  // loading="lazy"를 넘겨 쓰도록 옵션으로만 추가했다.
+  loading?: 'lazy' | 'eager';
   photoUrl?: string | null;
   sizePx?: number;
   style?: CSSProperties;
@@ -79,6 +84,7 @@ export default function ParticipantPhoto({
             className="absolute left-1/2 top-1/2 h-full max-w-none select-none"
             crossOrigin={useCrossOrigin ? 'anonymous' : undefined}
             key={useCrossOrigin ? 'cors' : 'plain'}
+            loading={loading}
             onError={() => {
               if (useCrossOrigin) setUseCrossOrigin(false);
             }}
