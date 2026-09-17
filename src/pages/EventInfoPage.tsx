@@ -58,7 +58,6 @@ export default function EventInfoPage() {
   // 대체하지 않는다.
   const mode: 'apply' | 'browse' = eventId ? 'apply' : 'browse';
   const event = eventId ? events.find((item) => item.id === eventId) : undefined;
-  const counts = { male: event?.maleConfirmed ?? 0, female: event?.femaleConfirmed ?? 0 };
   const isEarlyBirdActive = Boolean(event?.earlyBirdDeadline && new Date(event.earlyBirdDeadline).getTime() > Date.now());
   const earlyBirdDiscountMale = isEarlyBirdActive ? event?.earlyBirdDiscountMale ?? 0 : 0;
   const earlyBirdDiscountFemale = isEarlyBirdActive ? event?.earlyBirdDiscountFemale ?? 0 : 0;
@@ -158,14 +157,10 @@ export default function EventInfoPage() {
                   <p>※ 상세 장소는 참가 확정 후 안내됩니다.</p>
                   <p className="mt-5 font-black text-black">모집 대상</p>
                   <p>만 24~33세 미혼 남녀</p>
-                  <p className="mt-5 font-black text-black">모집 인원</p>
-                  <p>
-                    남성 {counts.male}/{event.maleCapacity ?? 10} · 여성 {counts.female}/{event.femaleCapacity ?? 10}
+                  <p className="mt-5">
+                    {event.maleCapacity ?? 8}:{event.femaleCapacity ?? 8} 로테이션소개팅
                   </p>
                   {(event.maleCapacity ?? 10) >= 6 && (event.femaleCapacity ?? 10) >= 6 ? <p>※ 최소 6:6부터 진행됩니다.</p> : null}
-                  {!isRecruiting ? (
-                    <p className="mt-1">※ 현재 정원은 마감되었지만 신청은 계속 가능해요. 대기 또는 추가 승인 여부는 심사 후 안내드립니다.</p>
-                  ) : null}
                 </div>
               </section>
 
