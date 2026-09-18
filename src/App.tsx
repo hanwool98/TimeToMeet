@@ -111,7 +111,7 @@ export default function App() {
           </form>
         </div>
       ) : null}
-
+      <BottomTabs />
     </main>
   );
 }
