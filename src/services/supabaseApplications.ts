@@ -1131,36 +1131,73 @@ export interface PublicParticipantMediaRow {
   representativeCrop: { scale: number; offsetX: number; offsetY: number } | null;
 }
 
-export async function fetchPublicParticipantsFromSupabase(eventId: string, previewToken?: string) {
+function mapParticipantPreviewRow(participant: PublicParticipantPreviewRow): ParticipantData {
+  return {
+    avatarIndex: participant.avatar_index,
+    gender: participant.gender === '여성' ? 'female' : 'male',
+    id: participant.id,
+    nickname: participant.nickname,
+    tags: [`${participant.age}세`, participant.job],
+  };
+}
+
+// 참가자 목록의 "텍스트" 부분만(닉네임/성별/나이/직업) - 사진/음성은 별도로
+// fetchPublicParticipantMedia에서 받는다. 두 개를 쪼갠 이유: 이 텍스트는
+// 몇 KB짜리 JSON이라 30초 polling에 계속 걸려있어도 부담이 없지만, 사진은
+// 매번 새 Storage signed URL을 발급받는 작업이라 30초마다 반복하면 같은
+// 사진을 계속 다시 다운로드하게 된다(egress 원인 분석에서 확인된 문제,
+// useOperationalData.ts 참고).
+export async function fetchPublicParticipantPreviews(eventId: string, previewToken?: string): Promise<ParticipantData[]> {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_public_participant_previews', {
+    preview_token: previewToken ?? null,
+    target_event_id: eventId,
+  });
+  if (error) throw error;
+  return (data as PublicParticipantPreviewRow[]).map(mapParticipantPreviewRow);
+}
 
-  const [previewResult, mediaResult] = await Promise.all([
-    supabase.rpc('get_public_participant_previews', { preview_token: previewToken ?? null, target_event_id: eventId }),
-    supabase.functions.invoke('public-participant-media', { body: { eventId, previewToken: previewToken ?? undefined } }).catch(() => null),
-  ]);
-
-  if (previewResult.error) throw previewResult.error;
-
+// 참가자 대표사진/음성 signed URL만 따로 조회한다. 관리자용
+// fetchAdminEventParticipantMedia와 동일한 반환 형태(Map<participantId,
+// media>)로 맞춰서, 호출하는 쪽(useOperationalData)이 이미 검증된 것과 같은
+// 방식으로 다룰 수 있게 한다. 실패해도 조용히 빈 Map을 돌려줘 사진이
+// 잠깐 안 보이는 것 이상으로 화면이 깨지지 않게 한다(기존 동작과 동일).
+export async function fetchPublicParticipantMedia(eventId: string, previewToken?: string): Promise<Map<string, PublicParticipantMediaRow>> {
   const mediaById = new Map<string, PublicParticipantMediaRow>();
-  if (mediaResult && mediaResult.error === null && mediaResult.data?.ok === true) {
-    for (const row of mediaResult.data.media as PublicParticipantMediaRow[]) {
-      mediaById.set(row.id, row);
+  if (!supabase) return mediaById;
+  try {
+    const { data, error } = await supabase.functions.invoke('public-participant-media', {
+      body: { eventId, previewToken: previewToken ?? undefined },
+    });
+    if (!error && data?.ok === true) {
+      for (const row of data.media as PublicParticipantMediaRow[]) mediaById.set(row.id, row);
     }
+  } catch {
+    // best-effort - 실패하면 이전에 갖고 있던 사진을 계속 보여주거나
+    // fallback을 보여주는 쪽이 낫다(기존 .catch(() => null)과 동일한 정책).
   }
+  return mediaById;
+}
 
-  return (previewResult.data as PublicParticipantPreviewRow[]).map((participant) => {
-    const media = mediaById.get(participant.id);
-    return {
-      audioIntroUrl: media?.audioUrl ?? undefined,
-      avatarIndex: participant.avatar_index,
-      gender: participant.gender === '여성' ? 'female' : 'male',
-      id: participant.id,
-      nickname: participant.nickname,
-      photoUrl: media?.photoUrl ?? undefined,
-      representativeCrop: media?.representativeCrop ?? undefined,
-      tags: [`${participant.age}세`, participant.job],
-    };
-  }) satisfies ParticipantData[];
+export function mergeParticipantMedia(participant: ParticipantData, media: PublicParticipantMediaRow | undefined): ParticipantData {
+  if (!media) return participant;
+  return {
+    ...participant,
+    audioIntroUrl: media.audioUrl ?? participant.audioIntroUrl,
+    photoUrl: media.photoUrl ?? participant.photoUrl,
+    representativeCrop: media.representativeCrop ?? participant.representativeCrop,
+  };
+}
+
+// 위 두 함수를 합쳐서 부르는 예전 시그니처 - 지금은 useOperationalData만
+// 이 조합을 쓰지 않고 텍스트/사진을 각자 다른 주기로 갱신하지만, 두 데이터를
+// 한 번에 같이 받아와야 하는 다른 용도가 생길 경우를 위해 그대로 남겨둔다.
+export async function fetchPublicParticipantsFromSupabase(eventId: string, previewToken?: string): Promise<ParticipantData[]> {
+  const [previews, media] = await Promise.all([
+    fetchPublicParticipantPreviews(eventId, previewToken),
+    fetchPublicParticipantMedia(eventId, previewToken),
+  ]);
+  return previews.map((participant) => mergeParticipantMedia(participant, media.get(participant.id)));
 }
 
 export async function fetchAdminEventParticipantMedia(eventId: string) {
@@ -4311,19 +4348,91 @@ function normalizeHomeContentCrop(value: unknown): HomeContentCrop {
   };
 }
 
+const homeContentImageUrlCacheKey = 'time2meet.homeContentImageUrls';
+// home-contents Edge Function이 서명 URL을 7일짜리로 내려주므로(egress 원인
+// 분석 참고), 그보다 충분히 짧은 24시간만 재사용한다 - 캐시된 URL이 실제
+// 만료 시점 근처까지 쓰이는 일이 없도록 안전 마진을 크게 둔다.
+const homeContentImageUrlCacheTtlMs = 24 * 60 * 60 * 1000;
+
+interface HomeContentImageUrlCacheEntry {
+  url: string;
+  cachedAt: number;
+}
+
+function readHomeContentImageUrlCache(): Record<string, HomeContentImageUrlCacheEntry> {
+  try {
+    const raw = window.localStorage.getItem(homeContentImageUrlCacheKey);
+    return raw ? (JSON.parse(raw) as Record<string, HomeContentImageUrlCacheEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeHomeContentImageUrlCache(cache: Record<string, HomeContentImageUrlCacheEntry>) {
+  try {
+    window.localStorage.setItem(homeContentImageUrlCacheKey, JSON.stringify(cache));
+  } catch {
+    // best-effort 캐시일 뿐이라 저장 실패(예: 프라이빗 모드)해도 무시한다.
+  }
+}
+
 // 홈(공개)에서 한 섹션의 노출 이미지만 sort_order 순서로 가져온다. 데이터가
 // 없거나 조회에 실패해도 빈 배열을 돌려줘 홈이 깨지지 않게 한다.
+//
+// storage_path별로 서명 URL을 localStorage에 캐시해서 재사용한다 - 이
+// 콘텐츠는 한 번 업로드되면 캡션/크롭만 바뀔 뿐 파일 자체(storage_path)는
+// 바뀌지 않으므로(교체하려면 삭제 후 새로 올려야 함) 같은 경로면 예전에
+// 캐시해둔 URL을 그대로 재사용해도 사진이 바뀔 걱정이 없다. 홈을 새로
+// 열 때마다 매번 새 서명 URL을 받으면 파일은 같아도 URL 문자열이 달라져
+// 브라우저/CDN 캐시가 무력화되는 문제가 있었다(egress 원인 분석 참고) -
+// 이 캐시가 그 문제를 없앤다. 새 콘텐츠(새 storage_path)는 캐시에 없으니
+// 서버가 방금 발급한 URL을 그대로 쓰고, 그 시점에 캐시에 추가된다.
 export async function fetchPublicHomeContents(sectionType: HomeContentSection): Promise<PublicHomeContent[]> {
   if (!supabase) return [];
   try {
     const { data, error } = await supabase.functions.invoke('home-contents', { body: { sectionType } });
     if (error || data?.ok !== true || !Array.isArray(data.contents)) return [];
-    return (data.contents as Record<string, unknown>[]).map((row) => ({
-      caption: (row.caption as string) ?? '',
-      cropPosition: normalizeHomeContentCrop(row.cropPosition),
-      id: row.id as string,
-      imageUrl: (row.imageUrl as string | null) ?? null,
-    }));
+
+    // 세 섹션(love_reason/field_sketch/recruitment_application)이 각자
+    // fetchPublicHomeContents를 거의 동시에 호출하므로, 여기서 캐시 전체를
+    // 새로 만들어 덮어쓰면 나중에 끝난 호출이 먼저 끝난 다른 섹션의 캐시
+    // 항목을 지워버리는 경쟁 상태가 생긴다 - 그래서 기존 캐시 전체를 먼저
+    // 복사해두고 이 섹션의 storage_path 프리픽스(home-contents/{sectionType}/)
+    // 아래 항목만 이번 응답 기준으로 갱신한다(다른 섹션 항목은 그대로 유지,
+    // 삭제된 이미지의 옛 항목만 이 섹션 범위 안에서 자연스럽게 정리됨).
+    const cache = readHomeContentImageUrlCache();
+    const now = Date.now();
+    const sectionPathPrefix = `home-contents/${sectionType}/`;
+    const nextCache: Record<string, HomeContentImageUrlCacheEntry> = {};
+    for (const [path, entry] of Object.entries(cache)) {
+      if (!path.startsWith(sectionPathPrefix)) nextCache[path] = entry;
+    }
+
+    const contents = (data.contents as Record<string, unknown>[]).map((row) => {
+      const storagePath = typeof row.storagePath === 'string' ? row.storagePath : undefined;
+      const freshUrl = (row.imageUrl as string | null) ?? null;
+      let imageUrl = freshUrl;
+
+      if (storagePath) {
+        const cached = cache[storagePath];
+        if (cached && now - cached.cachedAt < homeContentImageUrlCacheTtlMs) {
+          imageUrl = cached.url;
+          nextCache[storagePath] = cached;
+        } else if (freshUrl) {
+          nextCache[storagePath] = { cachedAt: now, url: freshUrl };
+        }
+      }
+
+      return {
+        caption: (row.caption as string) ?? '',
+        cropPosition: normalizeHomeContentCrop(row.cropPosition),
+        id: row.id as string,
+        imageUrl,
+      };
+    });
+
+    writeHomeContentImageUrlCache(nextCache);
+    return contents;
   } catch {
     return [];
   }

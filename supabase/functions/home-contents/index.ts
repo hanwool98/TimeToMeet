@@ -11,7 +11,12 @@ type Payload = {
   sessionToken?: string;
 };
 
-const signedUrlExpirySeconds = 21_600;
+// 홈 배너/현장 스케치는 참가자 개인정보가 아니라 누구나 보는 마케팅
+// 이미지라 짧게 만료시킬 이유가 없다 - 오히려 만료가 짧으면 방문할 때마다
+// 새 서명 URL이 발급돼 브라우저/CDN이 같은 파일도 매번 새로 받아야 한다.
+// 7일로 넉넉히 늘려서 클라이언트 캐시(fetchPublicHomeContents의 24시간
+// 캐시)가 실제 만료 시점보다 항상 충분히 먼저 갱신되도록 여유를 둔다.
+const signedUrlExpirySeconds = 604_800;
 const allowedSections = ['love_reason', 'field_sketch', 'recruitment_application'];
 
 // 홈 콘텐츠 조회 전용. Storage 서명(service role 필요)이 있어야 하므로 RPC로는
@@ -88,12 +93,20 @@ Deno.serve(async (request) => {
 
   if (rowsError) return json({ ok: true, contents: [] });
 
+  // storagePath를 공개 응답에도 실어준다 - 이미지 자체가 아니라 그냥 경로
+  // 문자열이라 노출에 문제가 없고, 클라이언트가 이 값으로 "같은 파일이면
+  // 이전에 캐시해둔 서명 URL을 재사용" 판단을 할 수 있게 해준다
+  // (fetchPublicHomeContents 참고). 이 콘텐츠는 한 번 업로드되면 캡션/크롭만
+  // 바뀔 뿐 storage_path 자체는 바뀌지 않으므로(교체하려면 삭제 후 새로
+  // 업로드해야 함 - AdminHomeContentPage/updateHomeContent 참고) 경로가
+  // 같다는 것은 곧 같은 이미지라는 뜻이다.
   const contents = await Promise.all(
     (rows ?? []).map(async (row) => ({
       caption: row.caption as string,
       cropPosition: row.crop_position,
       id: row.id as string,
       imageUrl: await signUrl(supabase, row.storage_path as string),
+      storagePath: row.storage_path as string,
     })),
   );
 

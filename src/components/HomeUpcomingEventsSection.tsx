@@ -66,6 +66,10 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
                   className={`absolute inset-0 h-full min-h-[108px] w-full object-cover ${
                     covers[event.id] ? 'object-center' : 'object-[center_30%]'
                   }`}
+                  // HomeCarousel이 카드를 전부 DOM에 렌더하므로, 화면 밖
+                  // 행사 카드의 대표 이미지까지 처음부터 받지 않게 한다
+                  // (현장 스케치/사랑받는 이유 섹션과 동일한 이유).
+                  loading="lazy"
                   src={covers[event.id] ?? eventCoverPlaceholder}
                 />
                 <span className="absolute left-1.5 top-1.5 rounded-full bg-meet-pink px-2 py-0.5 text-[10px] font-black text-white shadow-sm">

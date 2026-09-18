@@ -45,6 +45,10 @@ export default function HomeRecruitmentSection() {
             className="w-full rounded-[16px] shadow-card"
             crop={content.cropPosition}
             fallback={<span className="text-[11px] font-bold">이미지 {index + 1}</span>}
+            // HomeReasonSection과 동일한 이유(egress 원인 분석 참고) - 현장
+            // 스케치 섹션에는 이미 적용돼 있던 loading="lazy"를 여기도
+            // 적용해 화면 밖 카드까지 미리 전부 받지 않게 한다.
+            loading="lazy"
             photoUrl={content.imageUrl}
             style={{ aspectRatio: HOME_BANNER_ASPECT }}
           />

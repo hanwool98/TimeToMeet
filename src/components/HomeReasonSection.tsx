@@ -45,6 +45,14 @@ export default function HomeReasonSection() {
             className="w-full rounded-[16px] shadow-card"
             crop={content.cropPosition}
             fallback={<span className="text-[11px] font-bold">이미지 {index + 1}</span>}
+            // HomeCarousel은 전체 카드를 한 번에 DOM에 렌더한다(스크롤
+            // 스냅 방식 - HomeCarousel.tsx 주석 참고). loading="lazy"가
+            // 없으면 화면에 아직 안 보이는 뒤쪽 카드까지 처음부터 전부
+            // 다운로드된다 - 현장 스케치 섹션에는 이미 적용돼 있던 것과
+            // 동일하게 여기도 적용한다(egress 원인 분석에서 확인된 문제).
+            // 첫 화면에 보이는 카드는 브라우저가 lazy여도 즉시 로드하므로
+            // 첫 카드가 늦게 뜨는 문제는 없다.
+            loading="lazy"
             photoUrl={content.imageUrl}
             style={{ aspectRatio: HOME_BANNER_ASPECT }}
           />
