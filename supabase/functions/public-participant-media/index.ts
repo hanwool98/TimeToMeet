@@ -58,11 +58,35 @@ Deno.serve(async (request) => {
 
   if (error) return json({ message: '참가자 미디어를 불러오지 못했습니다.' }, 500);
 
+  // 게스트 계정 정리(cleanup-expired-guest-accounts)가 체크인한 참가자의
+  // 대표사진을 지우기 전에 event_participant_snapshots에 사본을 남겨둔다
+  // (202609061000_event_participant_snapshots.sql). 그런데 이 함수는 지금까지
+  // applications의 "현재" profile_photo_paths만 봤기 때문에, 정리가 끝난 지난
+  // 행사는 사진이 전부 안 보였다 - 참가자 리스트 텍스트(get_public_participant
+  // _previews)에 적용한 것과 동일한 fallback을 사진에도 적용한다.
+  const { data: snapshots } = await supabase
+    .from('event_participant_snapshots')
+    .select('application_id, photo_path, photo_crop')
+    .eq('event_id', payload.eventId);
+  const snapshotByApplicationId = new Map(
+    (snapshots ?? []).map((snapshot) => [snapshot.application_id as string, snapshot]),
+  );
+
   const media = await Promise.all(
     (applications ?? []).map(async (application) => {
       const photoPaths = Array.isArray(application.profile_photo_paths) ? application.profile_photo_paths as string[] : [];
       const representativeIndex = Number(application.representative_photo_index ?? 0);
-      const photoPath = photoPaths[representativeIndex];
+      const liveCrop = application.representative_crop ?? null;
+      let photoPath = photoPaths[representativeIndex];
+      let representativeCrop = liveCrop;
+
+      if (!photoPath) {
+        const snapshot = snapshotByApplicationId.get(application.id as string);
+        if (snapshot?.photo_path) {
+          photoPath = snapshot.photo_path as string;
+          representativeCrop = snapshot.photo_crop ?? null;
+        }
+      }
 
       const [photoUrl, audioUrl] = await Promise.all([
         photoPath ? signUrl(supabase, photoPath) : Promise.resolve(null),
@@ -73,7 +97,7 @@ Deno.serve(async (request) => {
         id: application.id,
         audioUrl,
         photoUrl,
-        representativeCrop: application.representative_crop ?? null,
+        representativeCrop,
       };
     }),
   );
