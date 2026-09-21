@@ -18,6 +18,12 @@ type SubmitPayload = {
   consents: Record<string, boolean>;
   employmentProof: UploadedFile;
   eventId: string;
+  // Meta Conversions API(Lead) 매칭/중복제거용. 신청 저장 자체와는 무관하고
+  // 전부 선택값 - 없어도 신청은 그대로 저장되고, Meta 전송만 그만큼 매칭
+  // 품질이 낮아지거나(fbp/fbc 없음) event_source_url이 기본값으로 대체된다.
+  eventSourceUrl?: string;
+  fbc?: string;
+  fbp?: string;
   filmingConsent: boolean;
   gender: string;
   height: string;
@@ -50,6 +56,9 @@ const maxAudioBytes = 8 * 1024 * 1024;
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const audioTypes = ['audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-m4a'];
 const allowedGenders = new Set(['남성', '여성']);
+// Meta Pixel ID는 비밀값이 아니다(브라우저에도 그대로 노출되는 공개
+// 스크립트) - src/lib/metaPixel.ts, index.html과 반드시 같은 값으로 유지한다.
+const metaPixelId = '1090793103739228';
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -286,8 +295,200 @@ Deno.serve(async (request) => {
     .eq('user_id', userId);
   if (draftDeleteError) console.error('Application draft cleanup failed', draftDeleteError);
 
-  return json({ ok: true });
+  // 신청서가 확정 저장된 직후(위의 기본 프로필 저장 실패 시 롤백 등 신청
+  // 자체가 취소될 수 있는 경로를 모두 지난 뒤)에만 Meta에 Lead 전환을
+  // 알린다 - 행사 상세 방문/신청 버튼 클릭/폼 진입 시점이 아니라 실제
+  // 저장 성공 시점 기준(요청 사항). 실패해도 절대 신청 자체를 실패로
+  // 되돌리지 않는다.
+  try {
+    await notifyMetaLeadConversion(supabase, request, insertedApplication.id as string, payload);
+  } catch (metaError) {
+    console.error('Meta Lead conversion dispatch failed', metaError);
+  }
+
+  return json({ ok: true, applicationId: insertedApplication.id });
 });
+
+// Deno Deploy(Supabase Edge Functions 런타임)는 응답을 보낸 뒤에도 이
+// 콜백으로 넘긴 작업을 계속 실행해준다 - 있으면 이걸 써서 Meta로 나가는
+// 네트워크 요청이 사용자 응답 시간에 영향을 주지 않게 한다. 혹시 이
+// 런타임에서 지원하지 않으면(구버전 등) 그냥 기다리는 쪽으로 안전하게
+// 대체한다 - fire-and-forget으로만 던지면 함수 인스턴스가 그 사이에
+// 종료돼 요청 자체가 나가지 않을 수 있기 때문이다.
+function runInBackground(task: Promise<unknown>) {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof runtime?.waitUntil === 'function') {
+    runtime.waitUntil(task);
+    return Promise.resolve();
+  }
+  return task;
+}
+
+// applications 테이블에 boolean/timestamp 하나로 "선점"하던 원래 방식은,
+// 선점 직후 Meta 호출이 실패하면 그 신청은 영원히 재시도되지 않는 문제가
+// 있었다(실사용 리뷰로 지적됨). 그래서 "성공 확정"(sent_at)과 "시도 횟수"
+// (attempt_count)를 meta_lead_dispatches 테이블로 분리했다 - sent_at은 Meta가
+// 실제로 2xx를 준 경우에만 채워지고, 그 전까지는 attempt_count가 몇이든
+// retry-failed-meta-lead-events 크론(별도 함수, 재시도 상한을 거기서 관리)이
+// 계속 재시도 대상으로 본다.
+async function notifyMetaLeadConversion(
+  supabase: ReturnType<typeof createClient>,
+  request: Request,
+  applicationId: string,
+  payload: SubmitPayload,
+) {
+  const accessToken = Deno.env.get('META_CONVERSIONS_API_TOKEN');
+  if (!accessToken) return; // Secret이 아직 설정 안 됐으면 조용히 건너뛴다 - 신청 저장에는 영향 없음.
+
+  const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  const clientUserAgent = request.headers.get('user-agent') || null;
+  const eventSourceUrl =
+    typeof payload.eventSourceUrl === 'string' && payload.eventSourceUrl
+      ? payload.eventSourceUrl
+      : `https://time2meet.kr/events/${payload.eventId}/apply/profile`;
+
+  // 실제 신청 완료 시각을 딱 한 번 캡처해서 created_at에 명시적으로
+  // 넣어둔다(컬럼 기본값 now()에 맡기지 않는 이유: 이 값이 곧 Meta
+  // event_time의 유일한 출처가 되어야 하므로, DB가 실제로 무엇을 저장했는지와
+  // 이 함수가 event_time으로 쓰는 값이 100% 같은 값이어야 한다). 재시도할
+  // 때(retry-failed-meta-lead-events)도 이 created_at을 그대로 event_time으로
+  // 다시 쓴다 - "재시도한 시각"이 아니라 "실제 전환이 일어난 시각"이 Meta에
+  // 계속 보고되게 하기 위함(사용자 지적).
+  const submittedAt = new Date();
+
+  // 재시도할 때 원래 요청과 최대한 같은 이벤트를 다시 보낼 수 있도록,
+  // 이 요청의 일시적 컨텍스트(쿠키/헤더)를 먼저 저장해둔다. 이 insert
+  // 자체는 이 application_id에 대해 최초 1회뿐이라(방금 만들어진 신청)
+  // 경쟁 상태 걱정이 없다 - attempt_count=1로 시작해 "1차 시도는 이미
+  // 했다"를 곧바로 반영한다.
+  const { error: dispatchInsertError } = await supabase.from('meta_lead_dispatches').insert({
+    application_id: applicationId,
+    attempt_count: 1,
+    client_ip: clientIp,
+    client_user_agent: clientUserAgent,
+    created_at: submittedAt.toISOString(),
+    event_source_url: eventSourceUrl,
+    fbc: typeof payload.fbc === 'string' && payload.fbc ? payload.fbc : null,
+    fbp: typeof payload.fbp === 'string' && payload.fbp ? payload.fbp : null,
+    last_attempt_at: submittedAt.toISOString(),
+  });
+  if (dispatchInsertError) {
+    console.error('Meta Lead dispatch row insert failed', dispatchInsertError);
+    return;
+  }
+
+  const body = await buildMetaLeadEventBody({
+    applicationId,
+    clientIp,
+    clientUserAgent,
+    eventSourceUrl,
+    eventTimeSeconds: Math.floor(submittedAt.getTime() / 1000),
+    fbc: payload.fbc,
+    fbp: payload.fbp,
+    phone: payload.phone,
+  });
+
+  const send = (async () => {
+    const result = await sendMetaLeadEventOnce(accessToken, body);
+    if (result.ok) {
+      await supabase.from('meta_lead_dispatches').update({ sent_at: new Date().toISOString() }).eq('application_id', applicationId);
+    } else if (isRetryableMetaFailure(result.status)) {
+      // timeout/network/5xx/429 - 일시적일 가능성이 높으니 그대로 재시도
+      // 대상으로 남겨둔다(last_error만 기록, sent_at/permanently_failed_at
+      // 둘 다 안 건드림).
+      console.error('Meta Conversions API request failed (retryable)', result.error);
+      await supabase.from('meta_lead_dispatches').update({ last_error: result.error }).eq('application_id', applicationId);
+    } else {
+      // 그 외 4xx(잘못된 토큰/payload 등) - 다시 시도해도 결과가 똑같을
+      // 가능성이 높으므로 재시도 대상에서 뺀다(불필요한 반복 호출 방지 -
+      // 사용자 지적). 크론이 이 신청을 계속 다시 집지 않는다.
+      console.error('Meta Conversions API request failed (permanent)', result.error);
+      await supabase
+        .from('meta_lead_dispatches')
+        .update({ last_error: result.error, permanently_failed_at: new Date().toISOString() })
+        .eq('application_id', applicationId);
+    }
+  })();
+
+  await runInBackground(send);
+}
+
+// 429(rate limit)와 5xx(Meta 쪽 일시적 오류), 그리고 네트워크 자체가 끊기거나
+// 타임아웃난 경우(status가 없음)는 다시 시도하면 성공할 가능성이 있다.
+// 그 외 4xx(400 잘못된 파라미터, 401 잘못된 토큰, 403 권한 없음 등)는 같은
+// 요청을 몇 번을 다시 보내도 똑같이 거부되므로 재시도 대상에서 뺀다.
+function isRetryableMetaFailure(status: number | null): boolean {
+  if (status === null) return true;
+  if (status === 429) return true;
+  return status >= 500;
+}
+
+async function buildMetaLeadEventBody(params: {
+  applicationId: string;
+  clientIp?: string | null;
+  clientUserAgent?: string | null;
+  eventSourceUrl: string;
+  eventTimeSeconds: number;
+  fbc?: string | null;
+  fbp?: string | null;
+  phone: string;
+}) {
+  const userData: Record<string, unknown> = {};
+  if (params.clientIp) userData.client_ip_address = params.clientIp;
+  if (params.clientUserAgent) userData.client_user_agent = params.clientUserAgent;
+  if (params.fbp) userData.fbp = params.fbp;
+  if (params.fbc) userData.fbc = params.fbc;
+
+  const normalizedPhone = normalizePhone(params.phone);
+  if (normalizedPhone) {
+    // Meta 해시 요구사항: 숫자만, 국가번호 포함(선행 0 제거 후 82 부착),
+    // 소문자/공백 없음(전화번호는 숫자뿐이라 해당 없음) 상태로 SHA-256.
+    const metaFormattedPhone = `82${normalizedPhone.replace(/^0+/, '')}`;
+    userData.ph = [await sha256(metaFormattedPhone)];
+  }
+
+  return {
+    data: [
+      {
+        action_source: 'website',
+        event_id: params.applicationId,
+        event_name: 'Lead',
+        event_source_url: params.eventSourceUrl,
+        event_time: params.eventTimeSeconds,
+        user_data: userData,
+      },
+    ],
+    ...(Deno.env.get('META_TEST_EVENT_CODE') ? { test_event_code: Deno.env.get('META_TEST_EVENT_CODE') } : {}),
+  };
+}
+
+async function sendMetaLeadEventOnce(
+  accessToken: string,
+  body: unknown,
+): Promise<{ ok: true } | { ok: false; error: string; status: number | null }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v21.0/${metaPixelId}/events?access_token=${encodeURIComponent(accessToken)}`,
+      {
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        signal: controller.signal,
+      },
+    );
+    if (response.ok) return { ok: true };
+    const text = await response.text().catch(() => '');
+    return { error: `HTTP ${response.status}: ${text.slice(0, 500)}`, ok: false, status: response.status };
+  } catch (fetchError) {
+    // fetch 자체가 던지는 경우(네트워크 끊김, AbortController 타임아웃 등)는
+    // HTTP status가 아예 없다 - 항상 재시도 대상으로 분류한다.
+    return { error: fetchError instanceof Error ? fetchError.message : String(fetchError), ok: false, status: null };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function validateSubmissionFields(payload: SubmitPayload, eventDate: string) {
   const requiredText: Array<[string, unknown]> = [

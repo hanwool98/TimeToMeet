@@ -8,8 +8,34 @@
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/time2meet-text-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>타임투밋</title>
+    <!--
+      Meta Pixel 기본 설치. index.html은 SPA 안에서 페이지를 아무리
+      돌아다녀도(React Router의 클라이언트 사이드 네비게이션) 다시
+      로드되지 않으므로, 여기 심어둔 표준 스니펫은 앱 전체에서 딱 한 번만
+      실행된다 - 별도의 "이미 초기화됐는지" 체크가 필요 없다.
+      Pixel ID는 비밀값이 아니다(어차피 페이지 소스에 그대로 노출되는
+      공개 스크립트) - src/lib/metaPixel.ts의 META_PIXEL_ID와 반드시
+      같은 값으로 유지한다.
+    -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '1090793103739228');
+      fbq('track', 'PageView');
+    </script>
   </head>
   <body>
+    <!-- HTML 파싱 규칙상 <noscript><img>는 <head> 안에 못 들어가서(메타데이터
+         콘텐츠만 허용) body 맨 앞에 둔다 - Meta 공식 스니펫의 표준 위치. -->
+    <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=1090793103739228&ev=PageView&noscript=1"
+    /></noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

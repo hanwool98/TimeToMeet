@@ -1,5 +1,6 @@
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { getMetaBrowserId, getMetaClickId } from '../lib/metaPixel';
 import { getAdminSession } from './adminAuth';
 import { getAppSession } from './appAuth';
 import type { EventData } from '../types/event';
@@ -432,7 +433,7 @@ export class ApplicationSubmitError extends Error {
   }
 }
 
-export async function submitApplicationToSupabase(input: SubmitApplicationInput) {
+export async function submitApplicationToSupabase(input: SubmitApplicationInput): Promise<{ applicationId: string }> {
   if (!supabase) throw new Error('Supabase is not configured.');
 
   const user = await ensureApplicationSession();
@@ -447,6 +448,12 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
       consents: input.consents,
       employmentProof: await fileToPayload(input.employmentProof),
       eventId: input.eventId,
+      // Meta Conversions API(Lead) 매칭/중복제거용 - 새로 수집하는 개인정보가
+      // 아니라 Meta Pixel이 이미 브라우저에 심어둔 쿠키를 읽기만 한다.
+      // 광고 클릭 없이 들어온 방문자는 fbc가 원래 없으므로 그대로 undefined.
+      eventSourceUrl: window.location.href,
+      fbc: getMetaClickId() ?? undefined,
+      fbp: getMetaBrowserId() ?? undefined,
       filmingConsent: input.filmingConsent,
       gender: input.gender,
       height: input.height,
@@ -488,6 +495,8 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
     const resolved = await resolveFunctionError(error, data, '신청서 저장에 실패했습니다.');
     throw new ApplicationSubmitError(resolved.message, resolved.stage);
   }
+
+  return { applicationId: data.applicationId as string };
 }
 
 /**

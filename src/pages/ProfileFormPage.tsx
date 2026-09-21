@@ -19,6 +19,7 @@ import {
 } from '../services/supabaseApplications';
 import { formatKoreanPhone, normalizeKoreanPhone } from '../services/guestPinAuth';
 import { compressImageIfNeeded, maxTotalUploadBytes } from '../utils/imageCompression';
+import { trackMetaLead } from '../lib/metaPixel';
 import { representativeCropTransform } from '../utils/representativeCrop';
 
 const requiredConsentText = [
@@ -659,8 +660,9 @@ export default function ProfileFormPage() {
         throw new Error(message);
       }
 
+      let submittedApplicationId: string | null = null;
       try {
-        await submitApplicationToSupabase({
+        const submitResult = await submitApplicationToSupabase({
           accessRoute: accessRoute === '기타' ? accessRouteEtc : accessRoute,
           birthDate,
           consents,
@@ -695,6 +697,7 @@ export default function ProfileFormPage() {
           voiceIntro: audioBlob ?? undefined,
           voiceIntroFileName: audioBlob ? getAudioFileName(audioBlob.type) : undefined,
         });
+        submittedApplicationId = submitResult.applicationId;
       } catch (error) {
         // The request/response can fail (network drop, gateway timeout,
         // Safari killing a stalled tab) even after the server has already
@@ -712,6 +715,15 @@ export default function ProfileFormPage() {
         }
 
         if (confirmedExisting) {
+          // 이 응답 유실 복구 경로는 "방금 이 시도로 실제로 저장된 신청"과
+          // "예전부터 이미 있던 신청"(예: 진짜 중복 신청이라 애초에 실패한
+          // 경우)을 구분해야 한다 - 후자에 Lead를 또 보내면 몇 년 전 신청에
+          // 대해 지금 다시 전환이 잡히는 꼴이 된다. submitted_at이 방금
+          // 전이면 이번 시도가 실제로 성공한 것으로 보고 그때만 보낸다.
+          const submittedRecently =
+            typeof confirmedExisting.submitted_at === 'string' &&
+            Date.now() - new Date(confirmedExisting.submitted_at).getTime() < 2 * 60 * 1000;
+          if (submittedRecently) trackMetaLead(confirmedExisting.id);
           window.alert('신청이 정상적으로 접수되었습니다.');
           navigate('/application-complete');
           return;
@@ -725,6 +737,7 @@ export default function ProfileFormPage() {
         return;
       }
 
+      if (submittedApplicationId) trackMetaLead(submittedApplicationId);
       navigate('/application-complete');
     } catch (error) {
       console.error('Application submit failed', error);
