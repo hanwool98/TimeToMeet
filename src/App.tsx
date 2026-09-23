@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import { DataErrorState, DataLoadingState } from './components/DataState';
@@ -9,6 +9,7 @@ import HomeReviewsSection from './components/HomeReviewsSection';
 import HomeUpcomingEventsSection from './components/HomeUpcomingEventsSection';
 import useOperationalData from './hooks/useOperationalData';
 import { loginAdminSession } from './services/adminAuth';
+import { logFunnelEvent } from './services/supabaseApplications';
 
 // 홈(메인 대시보드) - 캘린더로 날짜를 골라 신청하던 기존 화면은
 // src/pages/CalendarPage.tsx로 그대로 옮기고, "/"는 이제 다가오는 행사 /
@@ -21,6 +22,11 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminSubmitting, setAdminSubmitting] = useState(false);
   const { error, events, loading, reload } = useOperationalData();
+
+  // 신청 퍼널 1단계(홈화면 도달) 계측 - 최초 마운트 시 1회만.
+  useEffect(() => {
+    void logFunnelEvent('home_view');
+  }, []);
 
   const handleLogoSecretTap = () => {
     setLogoTapCount((count) => {

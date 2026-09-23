@@ -7,7 +7,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
 import useOperationalData from '../hooks/useOperationalData';
 import { useParticipantListGate } from '../hooks/useParticipantListGate';
-import { cacheTestEventPreviewToken, fetchPublicHomeContents, getCachedTestEventPreviewToken, type PublicHomeContent } from '../services/supabaseApplications';
+import { cacheTestEventPreviewToken, fetchPublicHomeContents, getCachedTestEventPreviewToken, logFunnelEvent, type PublicHomeContent } from '../services/supabaseApplications';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
@@ -20,6 +20,11 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (eventId && event?.isTestEvent && previewToken) cacheTestEventPreviewToken(eventId, previewToken);
   }, [event?.isTestEvent, eventId, previewToken]);
+
+  // 신청 퍼널 2단계(행사정보 확인 도달) 계측 - eventId당 1회.
+  useEffect(() => {
+    if (eventId) void logFunnelEvent('event_detail_view', { eventId });
+  }, [eventId]);
   const maleParticipants = participants.filter((participant) => participant.gender === 'male');
   const femaleParticipants = participants.filter((participant) => participant.gender === 'female');
   // 남녀 정원을 따로 저장하지 않은 아주 오래된 행사를 위한 fallback만

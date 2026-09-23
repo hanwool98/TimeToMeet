@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import { createGuestAccount, formatKoreanPhone, loginGuestAccount, normalizeKoreanPhone, validateGuestPin } from '../services/guestPinAuth';
+import { logFunnelEvent } from '../services/supabaseApplications';
 
 function BackIcon() {
   return (
@@ -25,6 +26,11 @@ export default function GuestPhoneAuthPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const normalizedPhone = useMemo(() => normalizeKoreanPhone(phone), [phone]);
+
+  // 신청 퍼널 3단계(비회원 로그인 화면 도달) 계측 - 최초 마운트 시 1회만.
+  useEffect(() => {
+    void logFunnelEvent('login_screen_view');
+  }, []);
 
   const changeMode = (nextMode: 'signup' | 'login') => {
     setSearchParams({

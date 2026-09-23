@@ -1,4 +1,5 @@
 import { createGuestSession, loginGuestSession } from './appAuth';
+import { logFunnelEvent } from './supabaseApplications';
 
 export function normalizeKoreanPhone(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -26,10 +27,14 @@ export function validateGuestPin(pin: string, phoneNormalized: string) {
 
 export async function createGuestAccount(phoneNormalized: string, pin: string) {
   await createGuestSession(phoneNormalized, pin);
+  // 신청 퍼널 3단계 완료(비회원 로그인 성공) 계측 - 신규 가입/재로그인
+  // 두 경로 모두 여기서 공통으로 기록한다.
+  void logFunnelEvent('login_success');
 }
 
 export async function loginGuestAccount(phoneNormalized: string, pin: string) {
   await loginGuestSession(phoneNormalized, pin);
+  void logFunnelEvent('login_success');
 }
 
 function isSequentialPin(pin: string) {

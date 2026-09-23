@@ -14,6 +14,10 @@ type UploadedFile = {
 
 type SubmitPayload = {
   accessRoute: string;
+  // 신청 퍼널 계측용 익명 식별자(선택값) - 없어도 신청 저장 자체에는
+  // 전혀 영향이 없고, funnel_events에 남기는 submit_success 기록의
+  // anon_id만 비게 된다.
+  anonId?: string;
   birthDate: string;
   consents: Record<string, boolean>;
   employmentProof: UploadedFile;
@@ -298,6 +302,23 @@ Deno.serve(async (request) => {
     .eq('event_id', payload.eventId)
     .eq('user_id', userId);
   if (draftDeleteError) console.error('Application draft cleanup failed', draftDeleteError);
+
+  // 신청 퍼널 최종 단계(제출 완료) 계측. draft 삭제와 달리 이 행은 성공의
+  // "증거"로 영구히 남아야 하므로(application_drafts는 성공 시 지워져서
+  // 퍼널 분석에 못 쓴다는 게 이번 계측을 추가한 이유), 클라이언트가 아니라
+  // 여기서 서버가 직접, 신청 저장이 실제로 확정된 뒤에만 남긴다. 실패해도
+  // 신청 자체를 절대 실패로 되돌리지 않는다.
+  try {
+    await supabase.from('funnel_events').insert({
+      anon_id: payload.anonId || null,
+      event_id: payload.eventId,
+      gender: payload.gender === '남성' || payload.gender === '여성' ? payload.gender : null,
+      step: 'submit_success',
+      user_id: userId,
+    });
+  } catch (funnelError) {
+    console.error('Funnel event logging failed', funnelError);
+  }
 
   // 신청서가 확정 저장된 직후(위의 기본 프로필 저장 실패 시 롤백 등 신청
   // 자체가 취소될 수 있는 경로를 모두 지난 뒤)에만 Meta에 Lead 전환을

@@ -14,6 +14,7 @@ import {
   fetchOwnApplicationForEvent,
   getCachedTestEventPreviewToken,
   logApplicationError,
+  logFunnelEvent,
   saveApplicationDraft,
   submitApplicationToSupabase,
 } from '../services/supabaseApplications';
@@ -293,6 +294,7 @@ export default function ProfileFormPage() {
   const stopTimerRef = useRef<number | null>(null);
   const startingRecordingRef = useRef(false);
   const draftLoadedRef = useRef(false);
+  const genderSelectedLoggedRef = useRef(false);
 
   const [guideConfirmed, setGuideConfirmed] = useState(false);
   const [consentRead, setConsentRead] = useState({ privacy: false, thirdParty: false });
@@ -490,6 +492,20 @@ export default function ProfileFormPage() {
     avoidParticipantNote,
     eventId,
   ]);
+
+  // 신청 퍼널 4단계(프로필 작성 도달) 계측 - eventId당 1회.
+  useEffect(() => {
+    if (eventId) void logFunnelEvent('profile_form_view', { eventId });
+  }, [eventId]);
+
+  // 프로필 폼 안에서 성별을 처음 선택한 시점 계측(성별은 이 화면에서
+  // 처음 수집되는 값이라, 이전 단계에서는 성별별 집계가 불가능하다) -
+  // 이후 번복하더라도 같은 화면 방문 내에서는 다시 기록하지 않는다.
+  useEffect(() => {
+    if (!gender || genderSelectedLoggedRef.current) return;
+    genderSelectedLoggedRef.current = true;
+    void logFunnelEvent('gender_selected', { eventId, gender });
+  }, [gender, eventId]);
 
   const isRequiredComplete = Boolean(
     guideConfirmed &&

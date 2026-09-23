@@ -1,5 +1,6 @@
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { getFunnelAnonId } from '../lib/anonId';
 import { getMetaBrowserId, getMetaClickId } from '../lib/metaPixel';
 import { getAdminSession } from './adminAuth';
 import { getAppSession } from './appAuth';
@@ -450,6 +451,10 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
   try {
     payload = {
       accessRoute: input.accessRoute,
+      // 신청 퍼널 계측용 - 로그인 전 단계(홈/행사정보/로그인 화면)의
+      // funnel_events 행과 이번 제출 성공 기록을 같은 방문자로 이어붙이기
+      // 위한 익명 식별자일 뿐, 개인정보와는 무관하다.
+      anonId: getFunnelAnonId(),
       birthDate: input.birthDate,
       consents: input.consents,
       employmentProof: await fileToPayload(input.employmentProof),
@@ -600,6 +605,39 @@ export async function logClientError(context: string, message: string, extra?: {
   } catch {
     // Fire-and-forget: a logging failure must never surface on top of the
     // real error it was trying to record.
+  }
+}
+
+export type FunnelStep =
+  | 'home_view'
+  | 'event_detail_view'
+  | 'login_screen_view'
+  | 'login_success'
+  | 'profile_form_view'
+  | 'gender_selected'
+  | 'submit_success';
+
+/**
+ * 신청 퍼널(홈 -> 행사정보 확인 -> 비회원 로그인 -> 프로필 작성 -> 신청
+ * 완료) 단계별 도달 인원을 세기 위한 계측 호출. logApplicationError와
+ * 동일한 fire-and-forget 계약: 절대 예외를 던지지 않고, 실패해도 실제
+ * 화면 흐름에는 아무 영향이 없다. 로그인 전(익명) 단계에서도 호출되므로
+ * 세션이 없어도 정상 동작한다.
+ */
+export async function logFunnelEvent(step: FunnelStep, extra?: { eventId?: string; gender?: string }) {
+  try {
+    if (!supabase) return;
+    const session = getAppSession();
+    await supabase.rpc('log_funnel_event', {
+      p_anon_id: getFunnelAnonId(),
+      p_event_id: extra?.eventId ?? null,
+      p_gender: extra?.gender ?? null,
+      p_session_token: session?.token ?? null,
+      p_step: step,
+      p_user_agent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
+    });
+  } catch {
+    // Fire-and-forget: funnel instrumentation must never affect the real flow.
   }
 }
 
