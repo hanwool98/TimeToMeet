@@ -1,4 +1,4 @@
-import { createContext, type PointerEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Children, cloneElement, isValidElement, type PointerEvent, type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BirthDateSelect from '../components/BirthDateSelect';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
@@ -142,23 +142,43 @@ function BackIcon() {
 
 // 프로필 작성 항목 번호는 각 Section 문자열에 "7. " 처럼 직접 박혀 있어서,
 // 중간 항목("이상형 및 만남 참고사항")에 번호를 빠뜨리면 그 뒤로 전부
-// 어긋났다. 이제 번호를 하드코딩하지 않고 렌더 순서대로 자동 부여한다.
-// (Provider가 렌더마다 새 카운터 객체를 만들고, 하위 Section들이 순서대로
-//  읽어가며 증가시킨다. StrictMode 이중 렌더에서도 매번 0에서 시작하므로
-//  결과가 항상 동일하다.)
-const SectionCounterContext = createContext<{ current: number }>({ current: 0 });
-
-function NumberedSections({ children }: { children: React.ReactNode }) {
-  return <SectionCounterContext.Provider value={{ current: 0 }}>{children}</SectionCounterContext.Provider>;
+// 어긋났다. 그래서 번호를 하드코딩하지 않고 렌더 순서대로 자동 부여하는데,
+// 예전엔 Context 객체(counter.current += 1)를 각 Section이 자기 렌더
+// 중에 직접 mutate하는 방식이었다 - 이건 React StrictMode(개발 모드)가
+// 컴포넌트 렌더 함수를 일부러 두 번씩 호출하는 것과 상성이 나빴다: 부모
+// (NumberedSections)는 새 카운터 객체를 만들지만, 그 아래 각 Section은
+// "같은" 카운터 객체를 두 번 연달아 mutate하게 되어 결과가 1,2,3...이
+// 아니라 2,4,6...으로 나오는 실제 버그가 있었다.
+//
+// 지금은 NumberedSections 자기 자신의 렌더 함수 "안에서"(자식 컴포넌트의
+// 렌더를 실행하지 않고, React.Children으로 엘리먼트 트리만 순회) 번호를
+// 계산해 각 Section에 prop으로 내려준다 - 카운팅 자체가 렌더당 정확히
+// 한 번만 일어나므로, 몇 번을 다시 렌더링해도(StrictMode 포함) 항상
+// 1,2,3...으로 나온다.
+interface SectionProps {
+  children: React.ReactNode;
+  numbered?: boolean;
+  sectionNumber?: number;
+  title: string;
 }
 
-function Section({ children, title, numbered = true }: { children: React.ReactNode; numbered?: boolean; title: string }) {
-  const counter = useContext(SectionCounterContext);
-  let heading = title;
-  if (numbered) {
-    counter.current += 1;
-    heading = `${counter.current}. ${title}`;
-  }
+function NumberedSections({ children }: { children: React.ReactNode }) {
+  let count = 0;
+  return (
+    <>
+      {Children.map(children, (child) => {
+        if (!isValidElement(child) || child.type !== Section) return child;
+        const element = child as ReactElement<SectionProps>;
+        if (element.props.numbered === false) return child;
+        count += 1;
+        return cloneElement(element, { sectionNumber: count });
+      })}
+    </>
+  );
+}
+
+function Section({ children, numbered = true, sectionNumber, title }: SectionProps) {
+  const heading = numbered && sectionNumber != null ? `${sectionNumber}. ${title}` : title;
   return (
     <section className="w-full max-w-full min-w-0 rounded-[24px] bg-white p-4 shadow-calendar min-[380px]:p-5">
       <h2 className="mb-5 text-fluid-safe text-[22px] font-black leading-tight">{heading}</h2>
