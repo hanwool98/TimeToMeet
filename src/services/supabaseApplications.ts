@@ -4471,9 +4471,14 @@ export interface AdminHomeContent extends PublicHomeContent {
 
 // 홈 카드/관리자 크롭 편집기가 공유하는 섹션별 표시 비율.
 // 사랑받는 이유·모집방식은 통일된 가로 배너(11:4 = 2.75:1, 권장 원본 1100x400),
-// 현장 스케치는 가로 썸네일(4:3).
+// 현장 스케치는 가로 썸네일(4:3), 행사 신청 화면 후기는 참가자 리스트
+// 영역과 비슷한 높이가 되도록 세로형(3:4) - 텍스트가 많은 후기 카드라
+// 비율을 너무 좁게 잡으면 글씨가 잘리므로, 관리자가 직접 확대/위치
+// 조정으로 읽히는 부분을 맞추게 한다.
 export function homeContentAspectRatio(section: HomeContentSection): string {
-  return section === 'field_sketch' ? '4 / 3' : '11 / 4';
+  if (section === 'field_sketch') return '4 / 3';
+  if (section === 'event_application_reviews') return '3 / 4';
+  return '11 / 4';
 }
 
 function normalizeHomeContentCrop(value: unknown): HomeContentCrop {

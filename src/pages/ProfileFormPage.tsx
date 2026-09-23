@@ -18,7 +18,7 @@ import {
   saveApplicationDraft,
   submitApplicationToSupabase,
 } from '../services/supabaseApplications';
-import { formatKoreanPhone, normalizeKoreanPhone } from '../services/guestPinAuth';
+import { ExistingGuestAccountError, ensureGuestSessionFromProfileForm, formatKoreanPhone, normalizeKoreanPhone } from '../services/guestPinAuth';
 import { compressImageIfNeeded, maxTotalUploadBytes } from '../utils/imageCompression';
 import { trackMetaLead } from '../lib/metaPixel';
 import { representativeCropTransform } from '../utils/representativeCrop';
@@ -295,6 +295,9 @@ export default function ProfileFormPage() {
   const startingRecordingRef = useRef(false);
   const draftLoadedRef = useRef(false);
   const genderSelectedLoggedRef = useRef(false);
+  // true가 되는 순간부터는(우리가 새로 만들었든, 원래 로그인돼 있었든)
+  // 비회원 계정 자동 생성을 다시 시도하지 않는다.
+  const guestSessionEnsuredRef = useRef(false);
 
   const [guideConfirmed, setGuideConfirmed] = useState(false);
   const [consentRead, setConsentRead] = useState({ privacy: false, thirdParty: false });
@@ -331,6 +334,10 @@ export default function ProfileFormPage() {
   const [countdown, setCountdown] = useState(voiceRecordingMaxSeconds);
   const [micError, setMicError] = useState('');
   const [submitError, setSubmitError] = useState('');
+  // 로그인되어 있지 않은 상태에서 입력한 전화번호가 이미 다른 비회원
+  // 계정에 쓰이고 있을 때만 채워진다 - 채워지면 자동 계정 생성을 멈추고
+  // 기존 비회원 로그인으로 안내하는 문구를 보여준다.
+  const [existingAccountPhone, setExistingAccountPhone] = useState<string | null>(null);
   const [height, setHeight] = useState('');
   const [job, setJob] = useState('');
   const [employmentProof, setEmploymentProof] = useState<File | null>(null);
@@ -507,6 +514,37 @@ export default function ProfileFormPage() {
     void logFunnelEvent('gender_selected', { eventId, gender });
   }, [gender, eventId]);
 
+  // 신규 참가자는 이제 별도의 비회원 로그인 화면을 거치지 않고 이 화면에
+  // 바로 들어온다(요청 사항) - 전화번호와 생년월일이 모두 유효해지는
+  // 즉시(둘 다 이 화면에서 어차피 입력받는 값), 백그라운드에서 비회원
+  // 계정/세션을 자동으로 준비해둔다. 이렇게 이 시점부터 세션이 생기면
+  // 이후 입력 내용은 기존 saveApplicationDraft 자동저장으로 그대로
+  // 보호된다(뒤로가기/네트워크 끊김에도 처음부터 다시 쓰지 않도록).
+  // 이미 로그인돼 있으면(회원/기존 비회원 모두) 아무 일도 하지 않는다.
+  useEffect(() => {
+    if (guestSessionEnsuredRef.current || getAppSession()?.token) {
+      guestSessionEnsuredRef.current = true;
+      return;
+    }
+    const normalizedPhone = normalizeKoreanPhone(phone);
+    if (!normalizedPhone || !birthDate || ageError) return;
+    if (existingAccountPhone === normalizedPhone) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void ensureGuestSessionFromProfileForm(normalizedPhone, birthDate)
+        .then(() => {
+          guestSessionEnsuredRef.current = true;
+          setExistingAccountPhone(null);
+        })
+        .catch((error) => {
+          if (error instanceof ExistingGuestAccountError) setExistingAccountPhone(normalizedPhone);
+          // 그 외 실패(네트워크 등)는 조용히 넘어간다 - 다음 입력 변경 때
+          // 다시 시도되거나, 최종 제출 시점에 한 번 더 시도된다.
+        });
+    }, 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [phone, birthDate, ageError, existingAccountPhone]);
+
   const isRequiredComplete = Boolean(
     guideConfirmed &&
       consents.privacy &&
@@ -631,6 +669,22 @@ export default function ProfileFormPage() {
         window.alert('전화번호 형식을 확인해주세요.');
         return;
       }
+
+      // 보통은 위 800ms 디바운스 효과가 이 시점 이전에 이미 세션을
+      // 만들어뒀겠지만, 아직이거나 실패했던 경우를 대비한 안전망 - 여기서
+      // 한 번 더 시도한다(이미 세션이 있으면 즉시 반환되어 아무 일도 안
+      // 일어난다).
+      try {
+        await ensureGuestSessionFromProfileForm(normalizedContactPhone, birthDate);
+      } catch (error) {
+        if (error instanceof ExistingGuestAccountError) {
+          setExistingAccountPhone(normalizedContactPhone);
+          setSubmitError('이미 가입된 번호입니다. 기존 비회원 로그인 후 다시 진행해주세요.');
+          return;
+        }
+        throw error;
+      }
+
       const existingApplication = await fetchOwnApplicationForEvent(eventId);
       if (existingApplication) {
         window.alert('이미 이 행사에 신청한 내역이 있습니다.');
@@ -1017,6 +1071,19 @@ export default function ProfileFormPage() {
               <p className="mt-2 text-fluid-safe text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
                 비회원 로그인에 사용한 번호로 자동 입력되며 수정할 수 없습니다.
               </p>
+            ) : existingAccountPhone && existingAccountPhone === normalizeKoreanPhone(phone) ? (
+              <div className="mt-2 rounded-[14px] bg-meet-pinkSoft px-4 py-3">
+                <p className="text-fluid-safe text-[13px] font-black text-meet-pink">
+                  이미 가입된 번호입니다. 기존 비회원 로그인 후 다시 진행해주세요.
+                </p>
+                <button
+                  className="mt-2 text-[13px] font-black text-meet-blue underline"
+                  onClick={() => navigate(`/guest-phone?mode=login&entry=tab&returnTo=${encodeURIComponent(`/events/${eventId}/apply/profile`)}`)}
+                  type="button"
+                >
+                  로그인하러 가기
+                </button>
+              </div>
             ) : null}
             <ErrorText>{touched && !phone.trim() ? '전화번호를 입력해주세요.' : ''}</ErrorText>
           </Section>

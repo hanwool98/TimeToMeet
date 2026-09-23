@@ -130,6 +130,13 @@ export default function GuestPhoneAuthPage() {
               <p className="mt-4 text-fluid-safe text-center text-[13px] font-extrabold leading-relaxed text-[#777]">
                 설정한 PIN 번호는 비회원 로그인과 신청 내역 확인에 사용됩니다. 별도의 본인인증을 진행하지 않으므로 PIN 번호를 분실하면 직접 재설정할 수 없습니다. 반드시 기억해 주세요.
               </p>
+              {mode === 'login' ? (
+                <p className="mt-3 text-fluid-safe text-center text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
+                  비회원 PIN 번호의 초기 설정값은 생년월일 6자리입니다. (예: 1998년 6월 18일 → 980618)
+                  <br />
+                  기존에 직접 PIN 번호를 설정하신 경우에는 설정하신 PIN 번호를 입력해주세요.
+                </p>
+              ) : null}
               <p className="mt-3 text-fluid-safe text-center text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
                 PIN 번호를 잊으셨나요? DM으로 문의해 주세요.
               </p>

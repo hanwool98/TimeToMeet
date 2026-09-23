@@ -116,10 +116,23 @@ export default function EventDetailPage() {
 
           {participantAreaContent ? <div className="mt-5">{participantAreaContent}</div> : null}
 
-          <div className="pt-5">
-            <PrimaryButton onClick={() => navigate(`/events/${eventId}/info`)}>
-              행사내용 확인하고 나만의 프로필 만들기
+          <div className="space-y-2.5 pt-5">
+            {/* 메인 CTA: 행사소개를 거치지 않고 바로 프로필 작성으로
+                이동한다(요청 사항: 광고 유입자가 최소 단계로 신청을 시작할
+                수 있어야 함). */}
+            <PrimaryButton onClick={() => navigate(`/events/${eventId}/apply/profile`)}>
+              1분만에 프로필 작성하기
             </PrimaryButton>
+            {/* 서브 CTA: 자세한 내용을 먼저 보고 싶은 사람을 위한 기존
+                행사소개 페이지 - 삭제하지 않고 그대로 유지, 메인 버튼보다
+                시각적 강조만 낮춘다. */}
+            <button
+              className="h-14 w-full rounded-[18px] bg-meet-blueSoft px-5 text-[16px] font-extrabold text-meet-blue transition active:scale-[0.99]"
+              onClick={() => navigate(`/events/${eventId}/info`)}
+              type="button"
+            >
+              행사내용 확인하고 계속하기
+            </button>
           </div>
         </section>
         <Link className="mx-auto mt-5 text-sm font-extrabold text-meet-blue" to="/">

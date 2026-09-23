@@ -11,7 +11,6 @@ const actionLabels = [
   '회원가입',
   '아이디 찾기',
   '비밀번호 찾기',
-  '비회원으로 계속하기',
 ];
 
 function showPreparing() {
@@ -185,6 +184,11 @@ export default function LoginPage() {
                   value={guestPin}
                 />
               </label>
+              <p className="text-fluid-safe text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
+                비회원 PIN 번호의 초기 설정값은 생년월일 6자리입니다. (예: 1998년 6월 18일 → 980618)
+                <br />
+                기존에 직접 PIN 번호를 설정하신 경우에는 설정하신 PIN 번호를 입력해주세요.
+              </p>
               {guestError ? <p className="text-fluid-safe text-[12px] font-black text-meet-pink">{guestError}</p> : null}
             </form>
           ) : null}
@@ -231,13 +235,6 @@ export default function LoginPage() {
             </div>
           ) : null}
 
-          <button
-            className="mx-auto mt-8 block border-b-2 border-black pb-1 text-[17px] font-black leading-none"
-            onClick={() => navigate(returnTo ? `/guest-phone?returnTo=${encodeURIComponent(returnTo)}` : '/guest-phone')}
-            type="button"
-          >
-            비회원으로 계속하기
-          </button>
           <p className="mx-auto mt-7 max-w-[310px] text-fluid-safe text-center text-[17px] font-black leading-snug">
             타임투밋 회원이 되시면 프로필 저장/쿠폰 등 다양한 혜택을 받으실 수 있습니다!
           </p>

@@ -6,7 +6,6 @@ import IntroContentSections from '../components/IntroContentSections';
 import LogoMark from '../components/LogoMark';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
-import { verifyAppSession } from '../services/appAuth';
 import { fetchPublicIntroContent, type IntroDefaultInfo, type IntroSection } from '../services/introContent';
 import { fetchEventCoverUrls, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
 
@@ -46,7 +45,6 @@ export default function EventInfoPage() {
   const { eventId } = useParams();
   const previewToken = getCachedTestEventPreviewToken(eventId);
   const { error, events, loading, reload } = useOperationalData({ eventId, previewToken });
-  const [checkingSession, setCheckingSession] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [introSections, setIntroSections] = useState<IntroSection[] | null>(null);
   const [defaultInfo, setDefaultInfo] = useState<IntroDefaultInfo | null>(null);
@@ -267,25 +265,13 @@ export default function EventInfoPage() {
 
           <div className="sticky bottom-4 mt-10">
             {mode === 'apply' ? (
-              <PrimaryButton
-                disabled={!eventId || checkingSession}
-                onClick={async () => {
-                  if (!eventId || checkingSession) return;
-                  const returnTo = `/events/${eventId}/apply/profile`;
-                  setCheckingSession(true);
-                  try {
-                    const hasValidSession = await verifyAppSession();
-                    if (hasValidSession) {
-                      navigate(returnTo);
-                      return;
-                    }
-                    navigate(`/guest-phone?entry=tab&returnTo=${encodeURIComponent(returnTo)}`);
-                  } finally {
-                    setCheckingSession(false);
-                  }
-                }}
-              >
-                내 프로필 만들기
+              // 예전엔 여기서 로그인 세션 여부를 먼저 확인해 없으면
+              // 비회원 로그인 화면으로 우회시켰다 - 이제 신규 참가자는
+              // 프로필 작성 화면에서 전화번호/생년월일로 비회원 계정을
+              // 자동 처리하므로(요청 사항), 로그인 여부와 무관하게 항상
+              // 바로 프로필 작성 화면으로 이동한다.
+              <PrimaryButton disabled={!eventId} onClick={() => eventId && navigate(`/events/${eventId}/apply/profile`)}>
+                1분만에 프로필 작성하기
               </PrimaryButton>
             ) : (
               <PrimaryButton onClick={() => navigate('/calendar')}>캘린더로 이동하기</PrimaryButton>
