@@ -16,6 +16,7 @@ import AdminEventLivePage from './pages/AdminEventLivePage';
 import AdminEventPreparePage from './pages/AdminEventPreparePage';
 import AdminEventModeHomePage from './pages/AdminEventModeHomePage';
 import AdminHomeContentPage from './pages/AdminHomeContentPage';
+import AdminDeletedEventsPage from './pages/AdminDeletedEventsPage';
 import AdminEventManagementPage from './pages/AdminEventManagementPage';
 import AdminEventParticipantsPage from './pages/AdminEventParticipantsPage';
 import AdminIntroContentPage from './pages/AdminIntroContentPage';
@@ -108,6 +109,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/admin/applications" element={<AdminApplicationsPage />} />
               <Route path="/admin/participation-history" element={<AdminParticipationHistoryPage />} />
               <Route path="/admin/events" element={<AdminEventManagementPage />} />
+              <Route path="/admin/events/deleted" element={<AdminDeletedEventsPage />} />
               <Route path="/admin/events/new" element={<AdminEventCreatePage />} />
               <Route path="/admin/event-mode" element={<AdminEventModeHomePage />} />
               <Route path="/admin/events/:eventId" element={<AdminEventParticipantsPage />} />

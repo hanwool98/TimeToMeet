@@ -12,6 +12,7 @@ import {
   createTestParticipants,
   deleteEventFromSupabase,
   fetchAdminApplicationFiles,
+  fetchAdminEventDetailsFromSupabase,
   fetchAdminEventParticipantMedia,
   fetchAdminRoundProgress,
   resetTestEventData,
@@ -49,8 +50,30 @@ export default function AdminEventParticipantsPage() {
   const [emergencyTokenBusy, setEmergencyTokenBusy] = useState(false);
   const [emergencyApproveBusyId, setEmergencyApproveBusyId] = useState<string | null>(null);
   const [testFlagBusy, setTestFlagBusy] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletedEventInfo, setDeletedEventInfo] = useState<{ deletedAt: string; title: string } | null>(null);
   const { applications, error, events, loading, reload } = useOperationalData({ admin: true, eventId });
   const event = events.find((item) => item.id === eventId);
+
+  // 삭제 대기 행사는 일반 목록(useOperationalData)에서 제외되므로 여기서는
+  // event가 undefined로 나온다 - "행사를 찾을 수 없습니다"와 "삭제된
+  // 행사입니다"를 구분하려고, 목록에 없을 때만 id로 직접 한 번 더 조회한다.
+  useEffect(() => {
+    setDeletedEventInfo(null);
+    if (loading || event || !eventId) return;
+    let active = true;
+    fetchAdminEventDetailsFromSupabase(eventId)
+      .then((details) => {
+        if (!active) return;
+        if (details?.deletedAt) setDeletedEventInfo({ deletedAt: details.deletedAt, title: details.title });
+      })
+      .catch(() => {
+        if (active) setDeletedEventInfo(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [event, eventId, loading]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -125,8 +148,7 @@ export default function AdminEventParticipantsPage() {
 
   const handleDeleteEvent = async () => {
     if (!event || !eventId) return;
-    if (!window.confirm('행사를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
-
+    setShowDeleteConfirm(false);
     setDeleting(true);
     try {
       await deleteEventFromSupabase(eventId);
@@ -402,9 +424,15 @@ export default function AdminEventParticipantsPage() {
             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-fluid-safe text-[25px] font-black leading-tight tracking-normal">{event?.title || '타임투밋 로테이션소개팅'}</h1>
+            <h1 className="text-fluid-safe text-[25px] font-black leading-tight tracking-normal">
+              {event?.title || deletedEventInfo?.title || '타임투밋 로테이션소개팅'}
+            </h1>
             <p className="mt-4 rounded-[18px] bg-meet-blueSoft px-2 py-3 text-[15px] font-black leading-snug">
-              {event ? `${formatShortKoreanDate(event.date)} ${event.startTime} ${maleCapacity}:${femaleCapacity} 로테이션소개팅` : '행사 정보를 불러올 수 없습니다'}
+              {event
+                ? `${formatShortKoreanDate(event.date)} ${event.startTime} ${maleCapacity}:${femaleCapacity} 로테이션소개팅`
+                : deletedEventInfo
+                  ? '삭제 대기 중인 행사입니다'
+                  : '행사 정보를 불러올 수 없습니다'}
             </p>
           </div>
 
@@ -413,6 +441,21 @@ export default function AdminEventParticipantsPage() {
               <div className="grid w-full max-w-full min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
                 <ParticipantList capacity={maleCapacity} onProfileClick={setPreviewParticipant} participants={maleParticipants} title="남" />
                 <ParticipantList capacity={femaleCapacity} onProfileClick={setPreviewParticipant} participants={femaleParticipants} title="여" />
+              </div>
+            ) : deletedEventInfo ? (
+              <div className="px-6 py-16 text-center">
+                <p className="text-[18px] font-black">삭제된 행사입니다</p>
+                <p className="mt-2 text-[13px] font-bold text-[#8a93a3]">
+                  참가자 관리, 행사 시작, 행사모드 등은 이용할 수 없습니다.
+                  <br />
+                  '삭제된 행사' 목록에서 복구하거나 남은 유예기간을 확인할 수 있어요.
+                </p>
+                <Link
+                  className="mt-4 inline-block rounded-[14px] bg-meet-blue px-5 py-3 text-[13px] font-black text-white transition active:scale-[0.98]"
+                  to="/admin/events/deleted"
+                >
+                  삭제된 행사 목록으로
+                </Link>
               </div>
             ) : (
               <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
@@ -466,7 +509,7 @@ export default function AdminEventParticipantsPage() {
             <button
               className="h-14 rounded-[18px] bg-meet-pink px-5 text-[16px] font-extrabold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!event || deleting || Boolean(event?.isLocked)}
-              onClick={handleDeleteEvent}
+              onClick={() => setShowDeleteConfirm(true)}
               type="button"
             >
               {deleting ? '삭제 중' : '행사 삭제'}
@@ -728,7 +771,44 @@ export default function AdminEventParticipantsPage() {
           </div>
         </div>
       ) : null}
+      {showDeleteConfirm ? (
+        <DeleteEventConfirmModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={() => void handleDeleteEvent()} />
+      ) : null}
     </main>
+  );
+}
+
+function DeleteEventConfirmModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5" onClick={onCancel} role="dialog">
+      <section className="w-full max-w-[340px] rounded-[24px] bg-white p-6 text-center shadow-calendar" onClick={(event) => event.stopPropagation()}>
+        <h2 className="text-[19px] font-black">정말 이 행사를 삭제하시겠습니까?</h2>
+        <p className="mt-3 text-[14px] font-extrabold leading-relaxed text-[#666]">
+          삭제된 행사는 참가자에게 더 이상 정상적으로 표시되지 않으며, 티켓을 이용할 수 없습니다.
+          <br />
+          <br />
+          삭제 후 3일 이내에는 '삭제된 행사'에서 복구할 수 있습니다.
+          <br />
+          3일이 지나면 자동으로 영구 삭제됩니다.
+        </p>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button className="h-12 rounded-[16px] bg-[#eee] text-[14px] font-black text-black" onClick={onCancel} type="button">
+            취소
+          </button>
+          <button className="h-12 rounded-[16px] bg-meet-pink text-[14px] font-black text-white" onClick={onConfirm} type="button">
+            행사 삭제
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 

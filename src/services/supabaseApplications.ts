@@ -155,6 +155,8 @@ interface AdminEventDetailsRow {
   is_test_event?: boolean;
   is_locked?: boolean;
   discount_note: string | null;
+  deleted_at: string | null;
+  scheduled_purge_at: string | null;
 }
 
 interface PublicParticipantPreviewRow {
@@ -261,6 +263,8 @@ export interface MyEventTicket {
   bankAccountHolder: string;
   eventReviewSubmittedAt?: string;
   eventEndedAt?: string;
+  eventDeletedAt?: string;
+  eventScheduledPurgeAt?: string;
 }
 
 export interface ConfirmedEventVenue {
@@ -304,6 +308,8 @@ interface MyEventTicketRow {
   bank_account_holder: string;
   event_review_submitted_at: string | null;
   event_ended_at: string | null;
+  event_deleted_at: string | null;
+  event_scheduled_purge_at: string | null;
 }
 
 export interface AdminCheckInResult {
@@ -1123,6 +1129,8 @@ export async function fetchAdminEventDetailsFromSupabase(eventId: string) {
     nicknameInstruction: row.nickname_instruction?.trim() || undefined,
     isLocked: row.is_locked ?? false,
     isTestEvent: row.is_test_event,
+    deletedAt: row.deleted_at ?? undefined,
+    scheduledPurgeAt: row.scheduled_purge_at ?? undefined,
     maleCapacity: row.male_capacity,
     malePrice: row.male_price,
     shortName: row.short_name,
@@ -1430,6 +1438,65 @@ export async function deleteEventFromSupabase(eventId: string) {
   });
 
   if (error || data?.ok !== true) throw error ?? new Error('행사를 삭제하지 못했습니다.');
+}
+
+export interface AdminDeletedEventSummary {
+  id: string;
+  title: string;
+  date: string;
+  startTime: string;
+  isTestEvent: boolean;
+  deletedAt: string;
+  scheduledPurgeAt: string;
+  purgeAttemptCount: number;
+  purgeLastError?: string;
+}
+
+interface AdminDeletedEventSummaryRow {
+  id: string;
+  title: string;
+  event_date: string;
+  start_time: string;
+  is_test_event: boolean;
+  deleted_at: string;
+  scheduled_purge_at: string;
+  purge_attempt_count: number;
+  purge_last_error: string | null;
+}
+
+export async function fetchAdminDeletedEvents(): Promise<AdminDeletedEventSummary[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_deleted_event_summaries', {
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  return (data as AdminDeletedEventSummaryRow[]).map((row) => ({
+    id: row.id,
+    title: row.title,
+    date: row.event_date,
+    startTime: row.start_time.slice(0, 5),
+    isTestEvent: row.is_test_event,
+    deletedAt: row.deleted_at,
+    scheduledPurgeAt: row.scheduled_purge_at,
+    purgeAttemptCount: row.purge_attempt_count,
+    purgeLastError: row.purge_last_error ?? undefined,
+  }));
+}
+
+export async function restoreDeletedEvent(eventId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { error } = await supabase.rpc('restore_deleted_event_for_admin_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
 }
 
 export async function createTestEventPreviewLink(eventId: string) {
@@ -4185,6 +4252,8 @@ function mapMyEventTicketRow(row: MyEventTicketRow): MyEventTicket {
     endTime: row.end_time.slice(0, 5),
     eventDate: row.event_date,
     eventEndedAt: row.event_ended_at ?? undefined,
+    eventDeletedAt: row.event_deleted_at ?? undefined,
+    eventScheduledPurgeAt: row.event_scheduled_purge_at ?? undefined,
     eventId: row.event_id,
     eventReviewSubmittedAt: row.event_review_submitted_at ?? undefined,
     eventTitle: row.event_title,

@@ -102,13 +102,17 @@ Deno.serve(async (request) => {
   const { data: event, error: eventError } = await supabase
     .from('events')
     .select(
-      'id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female, is_test_event',
+      'id, event_date, application_deadline, male_price, female_price, early_bird_deadline, early_bird_discount_male, early_bird_discount_female, is_test_event, deleted_at',
     )
     .eq('id', payload.eventId)
     .maybeSingle();
 
   if (eventError) return json({ message: '행사 정보를 확인하지 못했습니다.', stage: 'response' }, 500);
   if (!event) return json({ message: '선택한 행사를 찾을 수 없습니다.', stage: 'response' }, 404);
+  // 삭제 대기(유예기간) 중인 행사는 이미 목록/상세에서 보이지 않지만, 이미
+  // 열려 있던 신청서 탭이나 예전 링크로 직접 제출을 시도하는 경우까지
+  // 서버에서 막는다.
+  if (event.deleted_at) return json({ message: '삭제된 행사입니다.', stage: 'response' }, 410);
 
   // Test events are invisible to the public app entirely - the only way to
   // legitimately reach the submit form for one is through an admin-issued,

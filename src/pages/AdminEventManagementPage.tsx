@@ -68,7 +68,15 @@ export default function AdminEventManagementPage() {
           <span className="min-w-0 translate-y-[3px] text-[11px] font-black leading-none text-black">for administrators</span>
         </header>
 
-        <div className="mt-4 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
+        <button
+          className="mt-3 self-end text-[12px] font-black text-[#999] underline decoration-[#ccc] underline-offset-2"
+          onClick={() => navigate('/admin/events/deleted')}
+          type="button"
+        >
+          삭제된 행사 보기
+        </button>
+
+        <div className="mt-2 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
           {(['all', 'real', 'test'] as const).map((filter) => (
             <button
               className={[

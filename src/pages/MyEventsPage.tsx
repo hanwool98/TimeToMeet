@@ -76,11 +76,22 @@ export default function MyEventsPage() {
     window.addEventListener('focus', onRefresh);
     window.addEventListener('online', onRefresh);
     document.addEventListener('visibilitychange', onRefresh);
+    // subscribeToMyApplicationChanges의 Realtime 구독은 이 화면을 켜둔 채로
+    // 계속 앞에 두고 있으면(포커스/가시성 변화가 한 번도 없으면) 사실상
+    // 절대 다시 조회되지 않는다는 뜻이다(이 프로젝트는 custom
+    // session-token 인증이라 anon 연결로 붙는데, applications 테이블 RLS가
+    // {authenticated} 전용이라 Realtime 이벤트 자체가 브로드캐스트되지
+    // 않음 - useOperationalData.ts와 동일하게 라이브로 확인된 사실). 다른
+    // 화면들(useOperationalData, TicketDetailPage 등)과 동일한 30초 주기로
+    // 가볍게 다시 불러와, 화면을 켜둔 채로도 "행사 삭제" 같은 상태 변화가
+    // 새로고침 없이 합리적인 시간 안에 반영되게 한다.
+    const intervalId = window.setInterval(() => void loadTickets(), 30_000);
     return () => {
       unsubscribe();
       window.removeEventListener('focus', onRefresh);
       window.removeEventListener('online', onRefresh);
       document.removeEventListener('visibilitychange', onRefresh);
+      window.clearInterval(intervalId);
     };
   }, [isLoggedIn, loadTickets]);
 
@@ -120,6 +131,10 @@ export default function MyEventsPage() {
             ) : null}
             <div className="mt-5 space-y-6">
               {tickets.map((ticket) => {
+                if (ticket.eventDeletedAt) {
+                  return <DeletedEventTicketCard key={ticket.applicationId} ticket={ticket} />;
+                }
+
                 const openTicketDetail =
                   ticket.status === '결제 대기' || ticket.status === '참가 확정' || ticket.status === '참여 보류'
                     ? () => navigate(`/my-events/ticket/${ticket.eventId}`)
@@ -214,6 +229,33 @@ export default function MyEventsPage() {
       ) : null}
     </main>
   );
+}
+
+// 관리자가 삭제(72시간 유예)한 행사의 티켓 - 정상 티켓처럼 보이면 안 되므로
+// EventTicket(비행기 티켓 UI, QR/결제 버튼 포함)을 아예 쓰지 않고 완전히
+// 다른 카드로 보여준다. 여기서는 클릭해도 상세로 들어가지 않는다(QR/입장/
+// 참가자리스트 등은 서버에서도 deleted_at을 검사해 막혀 있다).
+function DeletedEventTicketCard({ ticket }: { ticket: MyEventTicket }) {
+  const remaining = ticket.eventScheduledPurgeAt ? formatRemainingUntilPurge(ticket.eventScheduledPurgeAt) : null;
+
+  return (
+    <section className="rounded-[18px] border border-[#e5e5e5] bg-[#fafafa] p-5">
+      <p className="inline-block rounded-[8px] bg-[#e5e5e5] px-2 py-1 text-[11px] font-black text-[#666]">삭제된 행사</p>
+      <h2 className="mt-2 text-[16px] font-black text-[#555]">{ticket.eventTitle}</h2>
+      <p className="mt-2 text-[13px] font-bold leading-relaxed text-[#999]">
+        해당 행사는 삭제되어 이용할 수 없습니다.
+        <br />
+        {remaining ? `티켓은 ${remaining} 후 자동으로 삭제됩니다.` : '티켓이 곧 자동으로 삭제됩니다.'}
+      </p>
+    </section>
+  );
+}
+
+function formatRemainingUntilPurge(scheduledPurgeAtValue: string) {
+  const remainingMs = new Date(scheduledPurgeAtValue).getTime() - Date.now();
+  if (remainingMs <= 0) return null;
+  const days = Math.ceil(remainingMs / 86_400_000);
+  return `${days}일`;
 }
 
 function ReasonModal({

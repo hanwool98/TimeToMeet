@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
 };
 
+const GRACE_PERIOD_MS = 72 * 60 * 60 * 1000;
+
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -20,21 +22,10 @@ async function sha256(value: string) {
     .join('');
 }
 
-type ApplicationFilesRow = {
-  id: string;
-  employment_proof_path: string | null;
-  id_photo_path: string | null;
-  profile_photo_paths: string[] | null;
-  voice_intro_path: string | null;
-};
-
-type ProfileFilesRow = {
-  employment_proof_path: string | null;
-  id_photo_path: string | null;
-  profile_photo_paths: string[] | null;
-  voice_intro_path: string | null;
-};
-
+// 행사 삭제는 더 이상 즉시 영구 삭제하지 않는다 - deleted_at/
+// scheduled_purge_at만 기록해 72시간 유예기간을 준다. 실제 파일/DB 영구
+// 삭제는 별도 cron Edge Function(purge-expired-deleted-events)이 유예기간이
+// 지난 뒤에 처리한다. 그래서 이 함수는 더 이상 Storage를 건드리지 않는다.
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -73,80 +64,32 @@ Deno.serve(async (request) => {
     return json({ message: 'Admin session required.' }, 401);
   }
 
-  // 행사 잠금 - 프론트에서 버튼을 숨기는 것과 별개로, 서버에서도 실제로
-  // 삭제를 거부한다(set_event_lock_for_admin_session으로 잠근 행사).
-  const { data: eventLockRow, error: eventLockError } = await supabase
+  const { data: eventRow, error: eventError } = await supabase
     .from('events')
-    .select('is_locked')
+    .select('is_locked, deleted_at')
     .eq('id', eventId)
     .maybeSingle();
 
-  if (eventLockError) return json({ message: 'Event could not be inspected.' }, 500);
-  if (eventLockRow?.is_locked) return json({ message: '잠긴 행사는 삭제할 수 없습니다.' }, 409);
+  if (eventError) return json({ message: 'Event could not be inspected.' }, 500);
+  if (!eventRow) return json({ message: '행사를 찾을 수 없습니다.' }, 404);
+  if (eventRow.is_locked) return json({ message: '잠긴 행사는 삭제할 수 없습니다.' }, 409);
 
-  const { data: applicationFiles, error: applicationFilesError } = await supabase
-    .from('applications')
-    .select('id, id_photo_path, profile_photo_paths, voice_intro_path, employment_proof_path')
-    .eq('event_id', eventId);
-
-  if (applicationFilesError) {
-    return json({ message: 'Event application files could not be inspected.' }, 500);
+  // 이미 삭제 대기 중이면 유예기간을 초기화/연장하지 않고 그대로 성공
+  // 처리한다(반복 삭제 요청이 들어와도 최초 삭제 시각 기준을 유지).
+  if (eventRow.deleted_at) {
+    return json({ ok: true, alreadyDeleted: true });
   }
 
-  const applicationRows = (applicationFiles ?? []) as ApplicationFilesRow[];
-  const applicationIds = applicationRows.map((row) => row.id);
-  let protectedProfilePaths = new Set<string>();
+  const deletedAt = new Date();
+  const scheduledPurgeAt = new Date(deletedAt.getTime() + GRACE_PERIOD_MS);
 
-  if (applicationIds.length > 0) {
-    const { data: profileFiles, error: profileFilesError } = await supabase
-      .from('participant_profiles')
-      .select('id_photo_path, profile_photo_paths, voice_intro_path, employment_proof_path')
-      .in('source_application_id', applicationIds);
-
-    if (profileFilesError) {
-      console.error('Participant profile file references could not be inspected', profileFilesError);
-      return json({ message: '저장된 회원 프로필 파일을 확인하지 못해 행사 삭제를 중단했습니다.' }, 500);
-    }
-
-    protectedProfilePaths = new Set(collectStoragePaths((profileFiles ?? []) as ProfileFilesRow[]));
-  }
-
-  const storagePaths = collectStoragePaths(applicationRows).filter((path) => !protectedProfilePaths.has(path));
-  if (storagePaths.length > 0) {
-    const { error: storageError } = await supabase.storage.from('application-files').remove(storagePaths);
-    if (storageError) {
-      console.error('Event storage cleanup failed', { eventId, message: storageError.message });
-      return json({ message: '행사 신청 파일 삭제에 실패해 행사 삭제를 중단했습니다.' }, 500);
-    }
-  }
-
-  const { error: draftError } = await supabase
-    .from('application_drafts')
-    .delete()
-    .eq('event_id', eventId);
-  if (draftError) return json({ message: 'Event drafts could not be deleted.' }, 500);
-
-  const { error: applicationError } = await supabase
-    .from('applications')
-    .delete()
-    .eq('event_id', eventId);
-  if (applicationError) return json({ message: 'Event applications could not be deleted.' }, 500);
-
-  const { error: eventError } = await supabase
+  const { error: updateError } = await supabase
     .from('events')
-    .delete()
-    .eq('id', eventId);
-  if (eventError) return json({ message: 'Event could not be deleted.' }, 500);
+    .update({ deleted_at: deletedAt.toISOString(), scheduled_purge_at: scheduledPurgeAt.toISOString() })
+    .eq('id', eventId)
+    .is('deleted_at', null);
 
-  return json({ ok: true, removedStorageFileCount: storagePaths.length });
+  if (updateError) return json({ message: '행사를 삭제하지 못했습니다.' }, 500);
+
+  return json({ ok: true, deletedAt: deletedAt.toISOString(), scheduledPurgeAt: scheduledPurgeAt.toISOString() });
 });
-
-function collectStoragePaths(rows: Array<ApplicationFilesRow | ProfileFilesRow>) {
-  const paths = rows.flatMap((row) => [
-    row.id_photo_path,
-    row.voice_intro_path,
-    row.employment_proof_path,
-    ...(row.profile_photo_paths ?? []),
-  ]);
-  return [...new Set(paths.filter((path): path is string => Boolean(path)))];
-}

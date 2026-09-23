@@ -25,7 +25,6 @@ export default function TicketDetailPage() {
     let active = true;
 
     const load = async () => {
-      setVenue(null);
       try {
         const tickets = await fetchMyEventTickets();
         if (!active) return;
@@ -36,7 +35,7 @@ export default function TicketDetailPage() {
         ) ?? null;
         setTicket(nextTicket);
 
-        if (nextTicket?.status === '참가 확정') {
+        if (nextTicket?.status === '참가 확정' && !nextTicket.eventDeletedAt) {
           try {
             const latestVenue = await fetchMyConfirmedEventVenue(nextTicket.eventId);
             if (active) setVenue(latestVenue);
@@ -46,6 +45,8 @@ export default function TicketDetailPage() {
             // temporarily unavailable, while retaining the same status gate.
             console.error('Confirmed event venue lookup failed', venueError);
           }
+        } else {
+          setVenue(null);
         }
       } catch {
         if (active) setTicket(null);
@@ -55,8 +56,21 @@ export default function TicketDetailPage() {
     };
 
     void load();
+    // 이 페이지는 단 한 번만 조회하고 그대로 열어두는 경우가 많다(QR을
+    // 띄워두고 입장 대기) - 그 사이 관리자가 행사를 삭제하면 원래는 이
+    // 화면이 갱신될 방법이 전혀 없었다. 다른 화면들과 동일한 주기(30초
+    // polling + 재연결 시그널)로 다시 조회해 "삭제됨" 전환도 놓치지 않는다.
+    const intervalId = window.setInterval(() => void load(), 30_000);
+    const handleReconnectSignal = () => void load();
+    window.addEventListener('online', handleReconnectSignal);
+    window.addEventListener('focus', handleReconnectSignal);
+    document.addEventListener('visibilitychange', handleReconnectSignal);
     return () => {
       active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('online', handleReconnectSignal);
+      window.removeEventListener('focus', handleReconnectSignal);
+      document.removeEventListener('visibilitychange', handleReconnectSignal);
     };
   }, [eventId]);
 
@@ -69,6 +83,32 @@ export default function TicketDetailPage() {
       <main className="min-h-screen overflow-x-hidden bg-white px-4 with-bottom-tabs pt-12 text-black min-[380px]:px-5">
         <div className="mobile-container mx-auto grid min-h-[calc(100dvh-10rem)] place-items-center">
           <p className="text-[16px] font-black text-[#999]">불러오는 중</p>
+        </div>
+        <BottomTabs />
+      </main>
+    );
+  }
+
+  if (ticket.eventDeletedAt) {
+    return (
+      <main className="min-h-screen overflow-x-hidden bg-white px-4 with-bottom-tabs pt-12 text-black min-[380px]:px-5">
+        <div className="mobile-container mx-auto flex min-h-[calc(100dvh-10rem)] flex-col gap-6 pb-8">
+          <button
+            className="w-fit text-[14px] font-black text-[#777]"
+            onClick={() => navigate('/my-events')}
+            type="button"
+          >
+            ← 내 행사
+          </button>
+          <section className="mt-6 rounded-[18px] border border-[#e5e5e5] bg-[#fafafa] p-6 text-center">
+            <p className="inline-block rounded-[8px] bg-[#e5e5e5] px-2 py-1 text-[11px] font-black text-[#666]">삭제된 행사</p>
+            <h1 className="mt-3 text-[18px] font-black text-[#555]">{ticket.eventTitle}</h1>
+            <p className="mt-3 text-[13px] font-bold leading-relaxed text-[#999]">
+              해당 행사는 삭제되어 QR 입장 및 행사 진행을 이용할 수 없습니다.
+              <br />
+              티켓은 자동으로 곧 삭제됩니다.
+            </p>
+          </section>
         </div>
         <BottomTabs />
       </main>
