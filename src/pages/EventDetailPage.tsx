@@ -1,12 +1,13 @@
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
+import EventApplicationReviewGallery from '../components/EventApplicationReviewGallery';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import LogoMark from '../components/LogoMark';
 import useOperationalData from '../hooks/useOperationalData';
-import { cacheTestEventPreviewToken, getCachedTestEventPreviewToken } from '../services/supabaseApplications';
-import { isParticipantListPublic, PARTICIPANT_LIST_LOCKED_NOTICE } from '../utils/participantListGate';
+import { useParticipantListGate } from '../hooks/useParticipantListGate';
+import { cacheTestEventPreviewToken, fetchPublicHomeContents, getCachedTestEventPreviewToken, type PublicHomeContent } from '../services/supabaseApplications';
 
 export default function EventDetailPage() {
   const navigate = useNavigate();
@@ -29,8 +30,53 @@ export default function EventDetailPage() {
   const maleCapacity = event ? Math.max(1, event.maleCapacity ?? Math.ceil(event.targetParticipants / 2)) : 0;
   const femaleCapacity = event ? Math.max(1, event.femaleCapacity ?? Math.floor(event.targetParticipants / 2)) : 0;
 
+  // 관리자가 발급한 previewToken으로 테스트 행사를 미리 보는 경우는 서버
+  // (get_public_participant_previews 등)가 이미 72시간 제한을 건너뛰고 실제
+  // 데이터를 내려준다 - 화면도 같은 기준으로 "공개됨"으로 취급해야 실제
+  // 참가자 리스트가 보인다(후기 콘텐츠로 가려지면 안 됨). previewToken이
+  // test event가 아닌 경우까지 이 예외를 넓히지 않는다(서버도 정확히 이
+  // 조건에서만 우회함).
+  const previewBypass = Boolean(event?.isTestEvent) && Boolean(previewToken);
+  const isParticipantListRevealed = useParticipantListGate(event?.date, event?.startTime, previewBypass);
+
+  // 후기 콘텐츠는 "아직 공개 전"일 때만 필요하므로 그때만 가져온다 - 공개된
+  // 뒤에는 두 번 다시 쓰이지 않을 데이터라 미리 받아둘 이유가 없다.
+  const [reviewContents, setReviewContents] = useState<PublicHomeContent[] | null>(null);
+  useEffect(() => {
+    if (isParticipantListRevealed) return undefined;
+    let active = true;
+    void fetchPublicHomeContents('event_application_reviews').then((rows) => {
+      if (active) setReviewContents(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isParticipantListRevealed]);
+
   if (loading) return <DataLoadingState />;
   if (error) return <DataErrorState message={error} onRetry={reload} />;
+
+  // 참가자 리스트와 후기 콘텐츠는 절대 동시에 렌더링되지 않는다 - 이 삼항이
+  // 셋 중 정확히 하나만 고른다(리스트 / 후기 / 아무것도 없음). 후기가 아직
+  // 로딩 중이거나(reviewContents === null) 등록된 게 하나도 없으면 이 박스
+  // 자체를 렌더링하지 않아 아래 CTA 버튼이 자연스럽게 올라온다 - 옛
+  // "3일부터 공개" 안내 문구를 다시 보여주지 않는다.
+  const participantAreaContent = !event ? (
+    <div className="rounded-[16px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
+    </div>
+  ) : isParticipantListRevealed ? (
+    <div className="rounded-[16px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="grid grid-cols-2 gap-1.5">
+        <ParticipantList capacity={maleCapacity} participants={maleParticipants} title="남" />
+        <ParticipantList capacity={femaleCapacity} participants={femaleParticipants} title="여" />
+      </div>
+    </div>
+  ) : reviewContents && reviewContents.length > 0 ? (
+    <div className="rounded-[16px] bg-meet-blueSoft p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <EventApplicationReviewGallery contents={reviewContents} />
+    </div>
+  ) : null;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-white px-2 py-12 text-black">
@@ -59,20 +105,7 @@ export default function EventDetailPage() {
             </p>
           </div>
 
-          <div className="mt-5 rounded-[16px] bg-meet-blueSoft p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-            {!event ? (
-              <div className="px-6 py-16 text-center text-[18px] font-black">행사를 찾을 수 없습니다</div>
-            ) : isParticipantListPublic(event.date, event.startTime) ? (
-              <div className="grid grid-cols-2 gap-1.5">
-                <ParticipantList capacity={maleCapacity} participants={maleParticipants} title="남" />
-                <ParticipantList capacity={femaleCapacity} participants={femaleParticipants} title="여" />
-              </div>
-            ) : (
-              <p className="px-5 py-14 text-center text-[14px] font-black leading-relaxed text-[#8a94a0]">
-                {PARTICIPANT_LIST_LOCKED_NOTICE}
-              </p>
-            )}
-          </div>
+          {participantAreaContent ? <div className="mt-5">{participantAreaContent}</div> : null}
 
           <div className="pt-5">
             <PrimaryButton onClick={() => navigate(`/events/${eventId}/info`)}>

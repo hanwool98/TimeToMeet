@@ -25,7 +25,7 @@ type Payload = {
 const maxImageBytes = 6 * 1024 * 1024;
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 const signedUrlExpirySeconds = 21_600;
-const allowedSections = ['love_reason', 'field_sketch', 'recruitment_application'];
+const allowedSections = ['love_reason', 'field_sketch', 'recruitment_application', 'event_application_reviews'];
 
 // 관리자 "홈 콘텐츠 관리"에서 캐러셀용 이미지를 업로드한다. 기존 단일 버킷
 // (application-files)의 home-contents/{sectionType}/ 프리픽스에 새 오브젝트로

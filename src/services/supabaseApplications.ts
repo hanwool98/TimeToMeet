@@ -4316,7 +4316,7 @@ export async function deleteConversationTopic(topicId: string): Promise<void> {
 }
 
 // ── 홈 콘텐츠(메인 대시보드 캐러셀) 관리 ──────────────────────────────
-export type HomeContentSection = 'love_reason' | 'field_sketch' | 'recruitment_application';
+export type HomeContentSection = 'love_reason' | 'field_sketch' | 'recruitment_application' | 'event_application_reviews';
 
 export interface HomeContentCrop {
   scale: number;

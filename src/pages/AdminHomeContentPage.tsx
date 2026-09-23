@@ -22,10 +22,28 @@ import {
 
 const DEFAULT_CROP: HomeContentCrop = { offsetX: 0, offsetY: 0, scale: 1 };
 
-const sections: { key: HomeContentSection; label: string; managed: boolean; hint: string }[] = [
+interface SectionConfig {
+  key: HomeContentSection;
+  label: string;
+  managed: boolean;
+  hint: string;
+  // event_application_reviews는 세로로 긴 후기 카드 이미지를 crop 없이
+  // 원본 비율 그대로 보여줘야 해서(요청 사항), 다른 섹션들과 달리 크롭
+  // 편집기 자체를 건너뛴다.
+  noCrop?: boolean;
+}
+
+const sections: SectionConfig[] = [
   { hint: '홈 "타임투밋이 사랑받는 이유" 캐러셀에 노출됩니다. 권장 이미지 크기 1100 x 400 px (비율 11:4).', key: 'love_reason', label: '타임투밋이 사랑받는 이유', managed: true },
   { hint: '홈 "모집방식 & 신청방식" 캐러셀에 노출됩니다. "사랑받는 이유"와 같은 크기 — 권장 1100 x 400 px (비율 11:4).', key: 'recruitment_application', label: '모집방식 & 신청방식', managed: true },
   { hint: '홈 "현장 스케치" 영역에 앞쪽 순서 3개가 노출됩니다. 가로 썸네일(4:3), 캡션(해시태그) 입력 가능.', key: 'field_sketch', label: '현장 스케치', managed: true },
+  {
+    hint: '행사 신청 화면(참가자 리스트 자리)에서 행사 시작 72시간 전까지 노출됩니다. 세로형 후기 이미지를 원본 비율 그대로(크롭 없이) 보여줍니다.',
+    key: 'event_application_reviews',
+    label: '행사 신청 화면 후기 콘텐츠',
+    managed: true,
+    noCrop: true,
+  },
 ];
 
 type Tab = HomeContentSection | 'reviews';
@@ -179,12 +197,23 @@ export default function AdminHomeContentPage() {
                 <div className="mt-4 space-y-2.5 pb-6">
                   {sectionItems.map((item, index) => (
                     <article className="flex gap-3 rounded-[16px] border border-[#f0f3f6] bg-white p-3 shadow-sm" key={item.id}>
-                      <ParticipantPhoto
-                        className="w-[104px] shrink-0 rounded-[12px] bg-[#f1f3f5]"
-                        crop={item.cropPosition}
-                        photoUrl={item.imageUrl}
-                        style={{ aspectRatio: homeContentAspectRatio(activeSection) }}
-                      />
+                      {sectionMeta.noCrop ? (
+                        // 크롭을 안 쓰는 섹션은 원본 비율 그대로 - 목록
+                        // 썸네일에서도 실제 신청 화면과 똑같이 잘림 없이
+                        // 보여준다(폭만 맞추고 높이는 원본 비율대로).
+                        <img
+                          alt=""
+                          className="w-[104px] shrink-0 rounded-[12px] bg-[#f1f3f5] object-contain"
+                          src={item.imageUrl ?? undefined}
+                        />
+                      ) : (
+                        <ParticipantPhoto
+                          className="w-[104px] shrink-0 rounded-[12px] bg-[#f1f3f5]"
+                          crop={item.cropPosition}
+                          photoUrl={item.imageUrl}
+                          style={{ aspectRatio: homeContentAspectRatio(activeSection) }}
+                        />
+                      )}
                       <div className="flex min-w-0 flex-1 flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-[12px] font-black text-[#999]">#{index + 1}</span>
@@ -219,10 +248,21 @@ export default function AdminHomeContentPage() {
                           >
                             ↓
                           </button>
-                          <button className="ml-auto text-[12px] font-black text-meet-blue" onClick={() => setEditing(item)} type="button">
-                            수정
-                          </button>
-                          <button className="text-[12px] font-black text-[#e0554a]" onClick={() => void handleDelete(item)} type="button">
+                          {/* noCrop 섹션(현재 event_application_reviews만
+                              해당)은 캡션도 크롭도 없어 수정할 게 아예
+                              없다 - 이미지를 바꾸려면 삭제 후 새로
+                              추가한다(Storage 원본은 불변이라 이 프로젝트
+                              전체가 같은 방식). */}
+                          {sectionMeta.noCrop ? null : (
+                            <button className="ml-auto text-[12px] font-black text-meet-blue" onClick={() => setEditing(item)} type="button">
+                              수정
+                            </button>
+                          )}
+                          <button
+                            className={sectionMeta.noCrop ? 'ml-auto text-[12px] font-black text-[#e0554a]' : 'text-[12px] font-black text-[#e0554a]'}
+                            onClick={() => void handleDelete(item)}
+                            type="button"
+                          >
                             삭제
                           </button>
                         </div>
@@ -250,6 +290,7 @@ export default function AdminHomeContentPage() {
             setUploadOpen(false);
             replaceItems((current) => [...current, created]);
           }}
+          noCrop={sectionMeta.noCrop}
           section={activeSection}
           withCaption={activeSection === 'field_sketch'}
         />
@@ -258,6 +299,7 @@ export default function AdminHomeContentPage() {
       {editing ? (
         <HomeContentEditModal
           item={editing}
+          noCrop={sections.find((section) => section.key === editing.sectionType)?.noCrop}
           onClose={() => setEditing(null)}
           onSaved={(caption, crop) => {
             replaceItems((current) =>
@@ -281,11 +323,13 @@ function ModalShell({ children }: { children: React.ReactNode }) {
 }
 
 function HomeContentUploadModal({
+  noCrop,
   onClose,
   onSaved,
   section,
   withCaption,
 }: {
+  noCrop?: boolean;
   onClose: () => void;
   onSaved: (created: AdminHomeContent) => void;
   section: HomeContentSection;
@@ -340,7 +384,13 @@ function HomeContentUploadModal({
       ) : (
         <div className="mt-4">
           {previewUrl ? (
-            <HomeContentCropEditor aspectRatio={homeContentAspectRatio(section)} imageUrl={previewUrl} onChange={setCrop} value={crop} />
+            noCrop ? (
+              // 크롭 없이 원본 비율 그대로 미리보기만 보여준다 - 실제
+              // 신청 화면에 뜨는 모습과 동일하게(요청 사항: crop 금지).
+              <img alt="" className="mx-auto max-h-[50vh] w-full rounded-[12px] object-contain" src={previewUrl} />
+            ) : (
+              <HomeContentCropEditor aspectRatio={homeContentAspectRatio(section)} imageUrl={previewUrl} onChange={setCrop} value={crop} />
+            )
           ) : null}
           <button className="mt-2 text-[12px] font-black text-meet-blue" onClick={() => fileInputRef.current?.click()} type="button">
             다른 파일 선택
@@ -379,11 +429,13 @@ function HomeContentUploadModal({
 
 function HomeContentEditModal({
   item,
+  noCrop,
   onClose,
   onSaved,
   withCaption,
 }: {
   item: AdminHomeContent;
+  noCrop?: boolean;
   onClose: () => void;
   onSaved: (caption: string, crop: HomeContentCrop) => void;
   withCaption: boolean;
@@ -410,15 +462,17 @@ function HomeContentEditModal({
     <ModalShell>
       <h2 className="text-[17px] font-black">이미지 수정</h2>
       <div className="mt-4">
-        {item.imageUrl ? (
+        {!item.imageUrl ? (
+          <p className="text-[13px] font-bold text-[#999]">이미지를 불러올 수 없습니다.</p>
+        ) : noCrop ? (
+          <img alt="" className="mx-auto max-h-[50vh] w-full rounded-[12px] object-contain" src={item.imageUrl} />
+        ) : (
           <HomeContentCropEditor
             aspectRatio={homeContentAspectRatio(item.sectionType)}
             imageUrl={item.imageUrl}
             onChange={setCrop}
             value={crop}
           />
-        ) : (
-          <p className="text-[13px] font-bold text-[#999]">이미지를 불러올 수 없습니다.</p>
         )}
       </div>
 

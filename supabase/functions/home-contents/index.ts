@@ -17,7 +17,7 @@ type Payload = {
 // 7일로 넉넉히 늘려서 클라이언트 캐시(fetchPublicHomeContents의 24시간
 // 캐시)가 실제 만료 시점보다 항상 충분히 먼저 갱신되도록 여유를 둔다.
 const signedUrlExpirySeconds = 604_800;
-const allowedSections = ['love_reason', 'field_sketch', 'recruitment_application'];
+const allowedSections = ['love_reason', 'field_sketch', 'recruitment_application', 'event_application_reviews'];
 
 // 홈 콘텐츠 조회 전용. Storage 서명(service role 필요)이 있어야 하므로 RPC로는
 // 못 하고 Edge Function으로 처리한다.
