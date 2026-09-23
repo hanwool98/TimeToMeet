@@ -21,14 +21,19 @@ export default function EventApplicationReviewGallery({ contents }: { contents: 
       getKey={(content) => content.id}
       items={contents}
       renderItem={(content, index) => (
+        // 슬라이드(카드 한 장 자리)는 화면 너비를 그대로 쓰고(옆 카드가
+        // 삐져나와 보이지 않게), 실제 사진만 그 안에서 87.5%로 줄인다 -
+        // 가로/세로 비율은 그대로라 위아래도 같이 줄어든다(가로만 줄이고
+        // 세로는 그대로면 옆에 남는 게 아니라 사진 자체가 잘못 늘어나
+        // 보였을 것).
         <img
           alt={content.caption || '참가 후기'}
-          className="w-full rounded-[14px]"
+          className="mx-auto w-[87.5%] rounded-[14px]"
           loading={index === 0 ? 'eager' : 'lazy'}
           src={content.imageUrl ?? undefined}
         />
       )}
-      slideClassName="w-[87.5%]"
+      slideClassName="w-full"
       trackClassName="items-start"
     />
   );
