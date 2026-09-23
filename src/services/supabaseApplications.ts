@@ -2749,10 +2749,24 @@ export async function updatePauseRequestStatus(requestId: string, status: EventP
 }
 
 export interface ParticipantRoundProgress {
+  // 불참/중도이탈 처리된 본인이 조회한 경우 true - 이 경우 다른 필드(대화
+  // 상대/라운드 등)는 채워지지 않는다. 운영자가 '복귀' 처리하면 다음
+  // polling에서 false로 돌아온다.
+  excludedFromEvent?: boolean;
+  attendanceStatus?: string;
   clockOffsetMs?: number;
   conversationDurationSeconds?: number;
   currentRound?: number;
   gender?: '남성' | '여성';
+  // stage==='bonus_seat_guide'일 때만 의미 있음 - "다음 추가대화가 설정
+  // 횟수 안에 있고 실제로도 생성됐는지"를 서버가 advance_round_state_if_needed와
+  // 동일한 기준으로 직접 알려준다. nextPartnerNickname의 유무만으로
+  // "최종선택 임박"을 추론하면 성비 불균형으로 이번만 쉬는 경우를
+  // 최종선택 직전으로 잘못 표시하게 된다.
+  hasNextBonusRound?: boolean;
+  // hasNextBonusRound가 true인데 본인은 다음 추가대화에 상대가 없는 경우
+  // (=순환 휴식 대상) true.
+  nextBonusIsResting?: boolean;
   // 지각 체크인 등으로 한 번도 프로필 카드를 제출한 적이 없으면 false -
   // 이 경우 라운드가 진행 중이어도 카드 작성 화면을 계속 보여줘야 한다.
   hasSubmittedProfileCard?: boolean;
@@ -2802,9 +2816,13 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
   });
   if (error) throw error;
   const row = data as {
+    excludedFromEvent?: boolean | null;
+    attendanceStatus?: string | null;
     conversationDurationSeconds?: number | null;
     currentRound?: number;
     gender?: '남성' | '여성' | null;
+    hasNextBonusRound?: boolean | null;
+    nextBonusIsResting?: boolean | null;
     hasSubmittedBonusRating?: boolean | null;
     hasSubmittedProfileCard?: boolean | null;
     isBonusRound?: boolean | null;
@@ -2830,11 +2848,17 @@ export async function fetchParticipantRoundProgress(eventId: string): Promise<Pa
     totalRounds?: number;
   };
   if (!row?.ok) return { ok: false };
+  if (row.excludedFromEvent) {
+    return { attendanceStatus: row.attendanceStatus ?? undefined, excludedFromEvent: true, ok: true };
+  }
   return {
+    excludedFromEvent: false,
     clockOffsetMs: computeClockOffsetMs(row.serverNow),
     conversationDurationSeconds: row.conversationDurationSeconds ?? undefined,
     currentRound: row.currentRound ?? undefined,
     gender: row.gender ?? undefined,
+    hasNextBonusRound: row.hasNextBonusRound ?? undefined,
+    nextBonusIsResting: row.nextBonusIsResting ?? undefined,
     hasSubmittedBonusRating: row.hasSubmittedBonusRating ?? undefined,
     hasSubmittedProfileCard: row.hasSubmittedProfileCard ?? undefined,
     isBonusRound: row.isBonusRound ?? undefined,

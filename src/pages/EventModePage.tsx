@@ -497,6 +497,23 @@ function ParticipantEventScreen({
     );
   }
 
+  // 불참/중도이탈 처리된 본인 - 서버가 명시적으로 알려준다(닉네임/상대
+  // 등 데이터는 전혀 내려오지 않음). polling은 계속 돌고 있으므로 운영자가
+  // '복귀' 처리하면 다음 조회에서 자동으로 정상 화면으로 돌아온다.
+  if (progress.excludedFromEvent) {
+    return (
+      <div className="px-4 pt-12 min-[380px]:px-5">
+        <ScreenHeader onBack={onBack} />
+        <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
+          <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
+            <p className="text-[18px] font-black leading-tight">현재 행사 참여 대상에서 제외된 상태입니다</p>
+            <p className="mt-3 text-[14px] font-extrabold text-[#888]">도움이 필요하시면 운영자에게 문의해주세요.</p>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   // No event_progress row yet (행사 시작 전), or the operator has started
   // the event but is still on 자리유도/소개영상/라운드 대기 - this entire
   // span now renders ONE component (EventProfileCardScreen) instead of a
@@ -555,7 +572,7 @@ function ParticipantEventScreen({
         <div className="mobile-container mx-auto grid min-h-[calc(100dvh-14rem)] place-items-center">
           <section className="w-full rounded-[24px] bg-white p-6 text-center shadow-calendar">
             <p className="text-[18px] font-black leading-tight">이번 라운드는 잠시 쉬어가는 시간이에요</p>
-            <p className="mt-3 text-[14px] font-extrabold text-[#888]">다음 라운드부터 다시 만남이 이어집니다</p>
+            <p className="mt-3 text-[14px] font-extrabold text-[#888]">잠시 후 다음 안내가 이어집니다</p>
           </section>
         </div>
       </div>
@@ -2082,6 +2099,12 @@ function BonusSeatGuideScreen({
   const isFemale = progress.gender === '여성';
   const nextNickname = progress.nextPartnerNickname;
   const hasNextPartner = Boolean(nextNickname);
+  // "다음 상대 없음"은 두 가지 서로 다른 상황을 의미할 수 있다 - (A) 정말
+  // 추가대화가 모두 끝나 최종선택으로 넘어가는 경우, (B) 다음 추가대화는
+  // 아직 남아있지만 성비 불균형으로 이번엔 나에게만 상대가 없는 경우(순환
+  // 휴식). 서버가 내려주는 hasNextBonusRound로 이 둘을 명확히 구분한다 -
+  // nextPartnerNickname의 유무만으로 최종선택 임박을 추론하지 않는다.
+  const isRestingNextBonusRound = Boolean(progress.hasNextBonusRound) && !hasNextPartner;
 
   const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds, hasNextPartner);
   const remaining = Math.max(
@@ -2221,6 +2244,12 @@ function BonusSeatGuideScreen({
               </p>
             </div>
           </section>
+        ) : isRestingNextBonusRound ? (
+          <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
+            <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
+            <p className="mt-3 break-keep text-[18px] font-black leading-tight">다음 추가대화는 잠시 쉬어가요</p>
+            <p className="mt-2 text-[14px] font-extrabold text-[#888]">잠시 후 다음 안내가 시작됩니다</p>
+          </section>
         ) : (
           <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
             <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
@@ -2231,7 +2260,7 @@ function BonusSeatGuideScreen({
         {progress.timerUpdatedAt ? (
           <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#888]">
             <ClockGlyph />
-            {!showReveal ? '다음 단계까지' : hasNextPartner ? '다음 대화까지' : '최종 선택까지'}{' '}
+            {!showReveal ? '다음 단계까지' : hasNextPartner ? '다음 대화까지' : isRestingNextBonusRound ? '다음 안내까지' : '최종 선택까지'}{' '}
             <span className="font-black text-meet-blue tabular-nums">{formatCountdown(remaining)}</span>
           </p>
         ) : null}

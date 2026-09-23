@@ -24,7 +24,7 @@ import {
   simulateTestEventProfileCards,
   updateApplicationReviewInSupabase,
 } from '../services/supabaseApplications';
-import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
+import type { AdminApplicationFiles, RoundProgress, SignedApplicationFile } from '../services/supabaseApplications';
 import type { ParticipantData, ParticipantProfile } from '../types/participant';
 import type { ParticipantAttendanceStatus, StoredApplication } from '../utils/adminApplications';
 
@@ -191,8 +191,10 @@ export default function AdminEventParticipantsPage() {
   };
 
   // 불참/중도이탈/복귀 클릭 시 실제 서버 계산 전에 결과를 미리 보여준다 -
-  // fetchAdminRoundProgress가 event_progress 행이 없으면(행사 시작 전)
-  // 예외를 던지는 기존 동작을 그대로 "행사 시작 여부" 판단에 재사용한다.
+  // 실제로 서버가 무엇을 유지/재계산하는지(set_participant_attendance_status_for_session)
+  // 와 정확히 일치하는 문구를, 지금 행사가 어느 단계인지에 따라 다르게
+  // 보여준다 - "라운드 배정이 처음부터 다시 계산됩니다" 식의 뭉뚱그린
+  // 문구를 모든 단계에 똑같이 쓰지 않는다.
   const handleSetAttendanceStatus = async (status: ParticipantAttendanceStatus) => {
     if (!previewApplication || !eventId || attendanceBusy) return;
     const targetId = previewApplication.dbId ?? previewApplication.id;
@@ -200,23 +202,35 @@ export default function AdminEventParticipantsPage() {
     const actionLabel = status === 'no_show' ? '불참' : status === 'left_early' ? '중도이탈' : '복귀';
     const { male, female } = countActiveByGender(applications, eventId, targetId, status);
 
-    let message = `${nickname}님을 ${actionLabel} 처리하면 남 ${male}명 / 여 ${female}명이 됩니다.`;
-    if (male !== female) {
-      message += ` 이후 라운드에는 ${male > female ? '남성' : '여성'} 참가자가 매 라운드 번갈아 휴식합니다.`;
+    let stageProgress: RoundProgress | null = null;
+    try {
+      stageProgress = await fetchAdminRoundProgress(eventId);
+    } catch {
+      stageProgress = null;
     }
 
-    let eventStarted = false;
-    let completedRounds = 0;
-    try {
-      const progress = await fetchAdminRoundProgress(eventId);
-      eventStarted = true;
-      completedRounds = progress.completedRounds;
-    } catch {
-      eventStarted = false;
+    let message: string;
+    if (status === 'active') {
+      message = `${nickname}님을 복귀 처리할까요?\n\n복귀하면 이미 완료된 대화는 변경하지 않고, 다음 진행 가능한 라운드/추가대화부터 다시 매칭 대상에 포함됩니다.`;
+    } else if (!stageProgress || ['seat_guide', 'intro_video', 'round_waiting'].includes(stageProgress.stage)) {
+      // event_progress 행이 아직 없거나(행사 시작 전, fetchAdminRoundProgress가
+      // 예외를 던지는 기존 동작을 그대로 재사용) 시작은 됐지만 아직 라운드
+      // 자체가 시작 전인 단계 - 둘 다 "완료된 대화"가 아직 하나도 없으므로
+      // 같은 안내를 쓴다.
+      message = `${nickname}님을 ${actionLabel} 처리할까요?\n\n${actionLabel} 처리하면 행사 진행 대상에서 제외되며, 남은 참가자 기준으로 자리와 대화 배정이 다시 정리됩니다.`;
+    } else if (stageProgress.stage === 'round_active' && !stageProgress.isBonusRound) {
+      message = `${nickname}님을 ${actionLabel} 처리할까요?\n\n현재 진행 중인 라운드 기록은 유지하고, 다음 라운드부터 해당 참가자를 제외한 인원으로 다시 배정합니다.`;
+    } else {
+      // round_complete(정규 종료~추가대화 시작 전) / bonus_seat_guide /
+      // round_active+isBonusRound / final_selection - 전부 "추가대화 진행
+      // 중 또는 사이" 구간으로 묶어 안내한다(정규 라운드는 이미 전부
+      // 끝났으므로 "이미 완료된 대화 기록"이라는 표현이 항상 정확하다).
+      message = `${nickname}님을 ${actionLabel} 처리할까요?\n\n이미 완료된 대화 기록은 유지하고, 아직 시작하지 않은 추가대화 배정은 남은 참가자를 기준으로 다시 계산합니다.`;
     }
-    message += eventStarted && completedRounds > 0
-      ? ` 완료된 ${completedRounds}개 라운드는 그대로 유지하고 ${completedRounds + 1}라운드 이후만 재배정됩니다.`
-      : ' 라운드 배정이 처음부터 다시 계산됩니다.';
+
+    if (male !== female) {
+      message += `\n\n남녀 인원이 맞지 않을 경우 일부 참가자는 라운드별로 잠시 쉬게 될 수 있습니다. (처리 후 남 ${male}명 / 여 ${female}명)`;
+    }
 
     if (!window.confirm(`${message}\n\n계속하시겠습니까?`)) return;
 
