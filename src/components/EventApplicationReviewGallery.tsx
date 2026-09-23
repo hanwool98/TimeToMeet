@@ -21,14 +21,13 @@ export default function EventApplicationReviewGallery({ contents }: { contents: 
       getKey={(content) => content.id}
       items={contents}
       renderItem={(content, index) => (
-        // 슬라이드(카드 한 장 자리)는 화면 너비를 그대로 쓰고(옆 카드가
-        // 삐져나와 보이지 않게), 실제 사진만 그 안에서 87.5%로 줄인다 -
-        // 가로/세로 비율은 그대로라 위아래도 같이 줄어든다(가로만 줄이고
-        // 세로는 그대로면 옆에 남는 게 아니라 사진 자체가 잘못 늘어나
-        // 보였을 것).
+        // 사진이 슬라이드(카드 자리)를 항상 꽉 채운다 - 크기를 줄이는 건
+        // 여기가 아니라 이 갤러리를 감싸는 액자 박스 자체를 줄이는 쪽으로
+        // 처리한다(EventDetailPage.tsx). 여기서 사진만 따로 줄이면 액자는
+        // 그대로 커서 액자와 사진 크기가 안 맞고 빈 공간이 생긴다.
         <img
           alt={content.caption || '참가 후기'}
-          className="mx-auto w-[87.5%] rounded-[14px]"
+          className="w-full rounded-[14px]"
           loading={index === 0 ? 'eager' : 'lazy'}
           src={content.imageUrl ?? undefined}
         />

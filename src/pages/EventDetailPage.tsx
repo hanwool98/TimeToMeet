@@ -73,7 +73,11 @@ export default function EventDetailPage() {
       </div>
     </div>
   ) : reviewContents && reviewContents.length > 0 ? (
-    <div className="rounded-[16px] bg-meet-blueSoft p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+    // 액자(파란 배경 박스)와 사진을 같이 줄인다 - 박스는 그대로 두고
+    // 사진만 안에서 작게 넣으면 액자만 커서 빈 공간이 남는다(요청 사항).
+    // 박스 자체를 87.5% 폭으로 줄이고 가운데 정렬해, 사진은 그 안을 항상
+    // 꽉 채우게 한다(EventApplicationReviewGallery는 슬라이드를 100%로 채움).
+    <div className="mx-auto w-[87.5%] rounded-[16px] bg-meet-blueSoft p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
       <EventApplicationReviewGallery contents={reviewContents} />
     </div>
   ) : null;
