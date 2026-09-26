@@ -2045,7 +2045,15 @@ function BonusSeatGuideScreen({
   // locallySubmitted는 제출 버튼을 누른 즉시 다음 폴링을 기다리지 않고
   // 바로 화면을 넘기기 위한 낙관적 업데이트일 뿐이다.
   const isReveal = progress.roundPhase === 'reveal';
-  const showReveal = isReveal || locallySubmitted || Boolean(progress.hasSubmittedBonusRating);
+  // 성비 불균형으로 방금 끝난 이번 추가대화에 실제 상대가 없었던 경우
+  // (=이번 라운드 휴식) - partnerApplicationId는 "방금 끝난 이번 라운드"의
+  // 상대를 가리키므로(다음 라운드 상대는 nextPartnerNickname으로 별도 제공),
+  // 이 값이 없으면 평가할 대상 자체가 없다는 뜻이다. 이 경우 폼을 아예
+  // 보여주지 않고 곧바로 다음 안내(다음 상대/다음 휴식/최종선택 임박)로
+  // 넘어간다 - 실제 상대가 없어 제출이 원천적으로 불가능한데도 폼만
+  // 계속 떠서 다음 단계로 넘어가지 못하던 문제.
+  const hadPartnerThisBonusRound = Boolean(progress.partnerApplicationId);
+  const showReveal = isReveal || locallySubmitted || Boolean(progress.hasSubmittedBonusRating) || !hadPartnerThisBonusRound;
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTick(Date.now()), 1_000);
@@ -2121,7 +2129,7 @@ function BonusSeatGuideScreen({
   );
 
   const handleSubmit = async () => {
-    if (score === null || submitting) return;
+    if (score === null || submitting || !hadPartnerThisBonusRound) return;
     setSubmitting(true);
     setSubmitError('');
     // 제출 응답이 오기 전에 poll이 먼저 도착해 "다음 단계로 넘어감"을
@@ -2149,7 +2157,7 @@ function BonusSeatGuideScreen({
   // poll도 "이제 다음 단계"라고 판단하기 딱 좋은 순간이라, 자동 제출
   // 요청과 poll이 거의 동시에 서버로 향할 수 있다.
   useEffect(() => {
-    if (isReveal || remaining > 0 || autoSubmitted || score === null || submitting) return;
+    if (isReveal || remaining > 0 || autoSubmitted || score === null || submitting || !hadPartnerThisBonusRound) return;
     if (!progress.currentRound || !progress.partnerApplicationId) return;
     setAutoSubmitted(true);
     onCriticalSubmitStart();
@@ -2157,7 +2165,7 @@ function BonusSeatGuideScreen({
       .then(() => setLocallySubmitted(true))
       .catch(() => undefined)
       .finally(() => onCriticalSubmitEnd());
-  }, [autoSubmitted, eventId, isReveal, memo, onCriticalSubmitEnd, onCriticalSubmitStart, progress.currentRound, progress.partnerApplicationId, remaining, score, submitting]);
+  }, [autoSubmitted, eventId, hadPartnerThisBonusRound, isReveal, memo, onCriticalSubmitEnd, onCriticalSubmitStart, progress.currentRound, progress.partnerApplicationId, remaining, score, submitting]);
 
   return (
     <div className="px-4 pt-12 min-[380px]:px-5">
@@ -2246,13 +2254,13 @@ function BonusSeatGuideScreen({
           </section>
         ) : isRestingNextBonusRound ? (
           <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
-            <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
+            {hadPartnerThisBonusRound ? <p className="text-[15px] font-black text-meet-blue">제출 완료</p> : null}
             <p className="mt-3 break-keep text-[18px] font-black leading-tight">다음 추가대화는 잠시 쉬어가요</p>
             <p className="mt-2 text-[14px] font-extrabold text-[#888]">잠시 후 다음 안내가 시작됩니다</p>
           </section>
         ) : (
           <section className="rounded-[24px] bg-white px-6 py-10 text-center shadow-calendar">
-            <p className="text-[15px] font-black text-meet-blue">제출 완료</p>
+            {hadPartnerThisBonusRound ? <p className="text-[15px] font-black text-meet-blue">제출 완료</p> : null}
             <p className="mt-3 break-keep text-[18px] font-black leading-tight">곧 최종 선택으로 넘어갑니다</p>
           </section>
         )}
