@@ -24,6 +24,7 @@ import {
   fetchAdminParticipantReports,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
+  restartBonusPhaseForTestSession,
   resumeAfterRegularRounds,
   setCurrentRoundForSession,
   startFirstRound,
@@ -399,6 +400,31 @@ export default function AdminEventLivePage() {
     }
   };
 
+  // 테스트 행사 전용 - 정규 라운드 결과/호감도는 그대로 두고 추가대화
+  // 이후 데이터만 지워 "추가대화 시작 전" 상태로 되돌린다. 서버(RPC)가
+  // 테스트 행사 여부를 다시 검증하므로, 이 버튼이 실수로 노출되더라도
+  // 실제 행사에서는 실행되지 않는다.
+  const handleRestartBonusPhase = async () => {
+    if (!eventId || timerActionPending) return;
+    if (
+      !window.confirm(
+        '추가대화를 다시 시작할까요?\n\n정규 라운드 기록과 호감도는 유지됩니다.\n\n추가대화 배정, 추가대화 진행 기록, 최종선택 등 추가대화 이후의 테스트 데이터는 초기화되고 추가대화 시작 전 휴식시간으로 돌아갑니다.\n\n이 기능은 테스트 행사에서만 사용할 수 있습니다.',
+      )
+    ) {
+      return;
+    }
+    setTimerActionPending(true);
+    try {
+      await restartBonusPhaseForTestSession(eventId);
+      await roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress);
+      window.alert('추가대화를 재시작했습니다. 정규 라운드는 유지되며, 추가대화 시작 전 상태로 돌아갔습니다.');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '추가대화 재시작에 실패했습니다.');
+    } finally {
+      setTimerActionPending(false);
+    }
+  };
+
   const handleJumpToRound = async (roundNumber: number) => {
     if (!eventId || timerActionPending) return;
     if (!window.confirm(`${roundNumber}라운드로 이동하시겠습니까? 현재 라운드 타이머는 일시정지 상태로 초기화됩니다.`)) return;
@@ -516,7 +542,21 @@ export default function AdminEventLivePage() {
             timerActionPending={timerActionPending}
             totalTables={tabletRequired}
           />
-        ) : progress.stage === 'ended' ? (
+        ) : null}
+
+        {isRoundStage && event.isTestEvent ? (
+          <button
+            className="mt-3 h-11 w-full rounded-[14px] bg-white text-[13px] font-black text-[#ef554a] shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+            disabled={timerActionPending}
+            onClick={() => void handleRestartBonusPhase()}
+            type="button"
+          >
+            🧪 추가대화 재시작 (테스트 전용)
+          </button>
+        ) : null}
+
+        {!isRoundStage ? (
+          progress.stage === 'ended' ? (
           <section className="mt-8 rounded-[24px] border border-[#f0d9d3] bg-white px-6 py-16 text-center">
             <p className="text-[20px] font-black">행사가 종료되었습니다</p>
           </section>
@@ -604,7 +644,8 @@ export default function AdminEventLivePage() {
               </button>
             </div>
           </>
-        )}
+          )
+        ) : null}
 
         <section className="mt-6 rounded-[16px] bg-[#fff1ee] px-5 py-4">
           <div className="flex items-center justify-between">
