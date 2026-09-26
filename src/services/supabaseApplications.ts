@@ -1817,6 +1817,28 @@ export async function restartTestEventProgress(eventId: string) {
   }
 }
 
+// "행사 진행 초기화"(restartTestEventProgress, 체크인부터 전부 지움)보다
+// 훨씬 좁은 범위 - 정규 라운드 배정/완료기록/호감도는 그대로 두고 추가대화
+// 이후 데이터(is_bonus 배정, 추가대화 호감도, 최종선택, 마음 한 줄, 추가대화
+// 키워드 미션)만 지우고 "정규 라운드 완료 -> 추가대화 시작 전" 상태로
+// 되돌린다. 추가대화 매칭 알고리즘을 반복 검증할 때 매번 체크인/정규
+// 라운드부터 다시 하지 않아도 되게 하기 위한 기능. RPC 자체가 테스트
+// 행사가 아니면 예외를 던지므로(하드 서버 가드), 실제 행사에서는 절대
+// 실행되지 않는다.
+export async function restartBonusPhaseForTestSession(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('restart_bonus_phase_for_test_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw new Error(error.message || '추가대화 재시작에 실패했습니다.');
+  return data as { ok: boolean; totalRegularRounds: number };
+}
+
 export function subscribeToSupabaseChanges(onChange: () => void) {
   if (!supabase) return () => undefined;
 

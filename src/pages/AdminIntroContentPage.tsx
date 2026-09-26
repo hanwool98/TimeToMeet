@@ -911,7 +911,7 @@ function PreviewOverlay({
               <div className="mt-3 rounded-[16px] bg-meet-blueSoft p-4 text-[13px] font-extrabold leading-relaxed text-[#555]">
                 <p className="font-black text-black">일시</p>
                 <p>
-                  {previewEvent.date} {previewEvent.startTime}~{previewEvent.endTime}
+                  {previewEvent.date} {previewEvent.startTime}
                 </p>
                 <p className="mt-3 font-black text-black">장소</p>
                 <p>{previewEvent.location}</p>

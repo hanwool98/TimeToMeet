@@ -16,6 +16,7 @@ import {
   fetchAdminEventParticipantMedia,
   fetchAdminRoundProgress,
   resetTestEventData,
+  restartBonusPhaseForTestSession,
   restartTestEventProgress,
   setEventLock,
   setParticipantAttendanceStatus,
@@ -430,6 +431,32 @@ export default function AdminEventParticipantsPage() {
     }
   };
 
+  // restartTestEventProgress("행사 진행 초기화")와 달리 체크인/정규 라운드
+  // 배정/완료기록/호감도는 전혀 건드리지 않고, 추가대화 이후 데이터만 지워
+  // "정규 라운드 완료 -> 추가대화 시작 전" 상태로 되돌린다. 추가대화
+  // 매칭만 반복 검증하고 싶을 때 매번 체크인부터 다시 하지 않아도 되게
+  // 하기 위한 기능(요청 사항).
+  const handleRestartBonusPhase = async () => {
+    if (!eventId || testActionBusy) return;
+    if (
+      !window.confirm(
+        '추가대화를 다시 시작할까요?\n\n정규 라운드 기록과 호감도는 유지됩니다.\n\n추가대화 배정, 추가대화 진행 기록, 최종선택 등 추가대화 이후의 테스트 데이터는 초기화되고 추가대화 시작 전 휴식시간으로 돌아갑니다.\n\n이 기능은 테스트 행사에서만 사용할 수 있습니다.',
+      )
+    ) {
+      return;
+    }
+    setTestActionBusy(true);
+    try {
+      await restartBonusPhaseForTestSession(eventId);
+      await reload();
+      window.alert('추가대화를 재시작했습니다. 정규 라운드는 유지되며, 추가대화 시작 전 상태로 돌아갔습니다.');
+    } catch (caughtError) {
+      window.alert(caughtError instanceof Error ? caughtError.message : '추가대화 재시작에 실패했습니다.');
+    } finally {
+      setTestActionBusy(false);
+    }
+  };
+
   return (
     <main className="admin-page min-h-screen w-full max-w-full min-w-0 bg-white px-2 py-12 text-black">
       <div className="mobile-container mx-auto flex min-h-[calc(100dvh-6rem)] w-full max-w-full min-w-0 flex-col justify-center">
@@ -597,6 +624,17 @@ export default function AdminEventParticipantsPage() {
                 >
                   테스트 최종선택 자동 제출
                 </button>
+                <div className="col-span-2 rounded-[14px] bg-white p-1.5 shadow-sm">
+                  <button
+                    className="h-12 w-full rounded-[12px] bg-meet-blueSoft text-[13px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-50"
+                    disabled={testActionBusy}
+                    onClick={() => void handleRestartBonusPhase()}
+                    type="button"
+                  >
+                    추가대화 재시작
+                  </button>
+                  <p className="mt-1.5 px-1 text-center text-[11px] font-bold text-[#8a93a3]">정규 라운드 결과는 유지하고 추가대화 시작 전으로만 되돌립니다</p>
+                </div>
                 <div className="col-span-2 rounded-[14px] bg-white p-1.5 shadow-sm">
                   <button
                     className="h-12 w-full rounded-[12px] bg-meet-blueSoft text-[13px] font-black text-meet-blue transition active:scale-[0.99] disabled:opacity-50"

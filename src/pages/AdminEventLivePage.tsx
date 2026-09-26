@@ -957,7 +957,9 @@ function RoundProgressSection({
         </div>
         {roundProgress.unassignedParticipants.length > 0 ? (
           <div className="mt-2.5 rounded-[12px] border border-dashed border-[#f0c9a0] bg-[#fff8ef] p-3">
-            <p className="text-[11px] font-black text-[#b9793a]">이번 라운드 배정 없음 (지각 합류 등)</p>
+            <p className="text-[11px] font-black text-[#b9793a]">
+              {roundProgress.isBonusRound ? '이번 추가대화 휴식' : '이번 라운드 배정 없음 (지각 합류 등)'}
+            </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {roundProgress.unassignedParticipants.map((participant) => (
                 <span

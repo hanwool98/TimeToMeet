@@ -155,7 +155,7 @@ export default function EventInfoPage() {
                 </div>
                 <div className="mt-4 rounded-[16px] bg-meet-blueSoft p-4 text-fluid-safe text-[14px] font-extrabold leading-relaxed text-[#555] min-[380px]:p-5">
                   <p className="font-black text-black">일시</p>
-                  <p>{formatKoreanWeekday(event.date)} {event.startTime}~{event.endTime}</p>
+                  <p>{formatKoreanWeekday(event.date)} {event.startTime}</p>
                   <p>※ 참가 인원과 현장 진행 상황에 따라 달라질 수 있습니다.</p>
                   <p className="mt-5 font-black text-black">장소</p>
                   <p>{event.location} 내 프라이빗 카페</p>

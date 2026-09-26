@@ -191,7 +191,7 @@ function MiniTicket({ ticket }: { ticket: MyEventTicket }) {
       <div className="min-w-0 p-4">
         <h3 className="truncate text-[21px] font-black">{ticket.eventTitle}</h3>
         <p className="mt-3 text-[14px] font-extrabold text-[#666]">📅 {formatKoreanDate(ticket.eventDate)}</p>
-        <p className="mt-2 text-[14px] font-extrabold text-[#666]">🕒 오후 {ticket.startTime} - {ticket.endTime}</p>
+        <p className="mt-2 text-[14px] font-extrabold text-[#666]">🕒 오후 {ticket.startTime}</p>
         <p className="mt-2 text-[14px] font-extrabold text-[#666]">⌖ {ticket.location}</p>
       </div>
       <div className="grid place-items-center border-l border-dashed border-[#d9e8f5] bg-meet-blueSoft text-meet-blue">

@@ -80,7 +80,7 @@ export default function HomeUpcomingEventsSection({ events }: { events: EventDat
                 <h3 className="truncate text-[14.5px] font-black text-black">{event.title}</h3>
                 <p className="mt-1.5 text-[11px] font-bold leading-[1.7] text-[#8a8a8a]">
                   📅 {formatKoreanDate(event.date)}
-                  <br />🕐 {formatTimeRange(event.startTime, event.endTime)}
+                  <br />🕐 {formatStartTime(event.startTime)}
                   <br />📍 {event.location}
                 </p>
                 <span className="mt-auto ml-auto rounded-[12px] bg-meet-blueSoft px-3.5 py-2 text-[11.5px] font-black text-meet-blue">
@@ -113,10 +113,12 @@ function formatKoreanDate(dateValue: string) {
   return `${year}년 ${month}월 ${day}일 (${dayNames[date.getDay()]})`;
 }
 
-function formatTimeRange(startTime: string, endTime: string) {
+// 행사 설정에서 종료 시간 입력 자체가 없어져(시작 시간 기준 자동 계산일
+// 뿐, 운영자가 실제로 정한 값이 아님) 더 이상 의미가 없으므로 시작
+// 시간만 표시한다(요청 사항).
+function formatStartTime(startTime: string) {
   const [startHour, startMinute] = startTime.split(':').map(Number);
-  const [endHour, endMinute] = endTime.split(':').map(Number);
   const period = startHour < 12 ? '오전' : '오후';
   const to12Hour = (hour: number) => hour % 12 || 12;
-  return `${period} ${to12Hour(startHour)}:${String(startMinute).padStart(2, '0')} - ${to12Hour(endHour)}:${String(endMinute).padStart(2, '0')}`;
+  return `${period} ${to12Hour(startHour)}:${String(startMinute).padStart(2, '0')}`;
 }
