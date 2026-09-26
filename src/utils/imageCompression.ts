@@ -25,9 +25,30 @@ export const maxTotalUploadBytes = 12 * 1024 * 1024;
  * certainly fail anyway — in that case we fail fast with a clear, actionable
  * message instead of letting the user hit a mysterious server error after a
  * full network round-trip.
+ *
+ * `force` bypasses both the "skip small files" shortcut and the "only keep
+ * the result if it's smaller" check, and falls back to a raw in-memory
+ * re-wrap if canvas re-encoding isn't possible - the goal isn't file size at
+ * that point, it's producing a File that's no longer backed by the original
+ * OS file handle at all. This matters because on Android (content:// URIs
+ * from the gallery/file picker, worst on embedded WebViews like KakaoTalk's
+ * in-app browser), that underlying read permission can expire between when
+ * a file is picked and when it's actually read - which for this app's long
+ * profile form can be many form sections later, at final submit. Reading
+ * the file immediately after it's picked (see ProfileFormPage's onFiles
+ * handlers) avoids ever touching the original handle again.
  */
-export async function compressImageIfNeeded(file: File): Promise<File> {
-  if (!file.type.startsWith('image/') || file.size <= skipCompressionUnderBytes) return file;
+export async function compressImageIfNeeded(file: File, options?: { force?: boolean }): Promise<File> {
+  const force = options?.force ?? false;
+
+  if (!file.type.startsWith('image/')) {
+    if (!force) return file;
+    return rewrapAsInMemoryFile(file).catch((error) => {
+      console.error('In-memory file rewrap failed', error);
+      return file;
+    });
+  }
+  if (!force && file.size <= skipCompressionUnderBytes) return file;
 
   try {
     // Decoding a source large enough to hit a browser's internal decode
@@ -35,7 +56,7 @@ export async function compressImageIfNeeded(file: File): Promise<File> {
     // always throw — on some engines it can simply hang. A timeout makes
     // that failure mode behave the same as any other compression failure
     // instead of stalling the whole submission indefinitely.
-    const compressed = await withTimeout(compressImage(file), compressionTimeoutMs);
+    const compressed = await withTimeout(compressImage(file, force), compressionTimeoutMs);
     if (compressed) return compressed;
   } catch (error) {
     console.error('Image compression failed', error);
@@ -46,7 +67,22 @@ export async function compressImageIfNeeded(file: File): Promise<File> {
       `사진 용량이 너무 커서 처리할 수 없습니다(${formatMegabytes(file.size)}). "전체 페이지" 캡처처럼 매우 긴 이미지 대신 일반 캡처나 사진을 사용해주세요.`,
     );
   }
+  if (force) {
+    try {
+      return await rewrapAsInMemoryFile(file);
+    } catch (error) {
+      console.error('In-memory file rewrap failed', error);
+    }
+  }
   return file;
+}
+
+/** Reads a file's actual bytes into memory right now and wraps them in a
+ * brand new File - the result has no ongoing dependency on whatever
+ * (possibly time-limited) OS handle the original File referenced. */
+async function rewrapAsInMemoryFile(file: File): Promise<File> {
+  const buffer = await file.arrayBuffer();
+  return new File([buffer], file.name, { type: file.type || 'application/octet-stream' });
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -65,7 +101,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-async function compressImage(file: File): Promise<File | null> {
+async function compressImage(file: File, force = false): Promise<File | null> {
   const source = await loadImageSource(file);
   const { width, height } = getSourceDimensions(source);
   if (!width || !height) return null;
@@ -82,7 +118,11 @@ async function compressImage(file: File): Promise<File | null> {
   context.drawImage(source, 0, 0, targetWidth, targetHeight);
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', jpegQuality));
-  if (!blob || blob.size >= file.size) return null;
+  if (!blob) return null;
+  // force일 때는 용량 절감이 목적이 아니라 원본 OS 파일 참조에서 완전히
+  // 분리된 새 File을 만드는 것 자체가 목적이라, 재인코딩 결과가 원본보다
+  // 커도 그대로 쓴다.
+  if (!force && blob.size >= file.size) return null;
 
   const nextName = `${file.name.replace(/\.[^./\\]+$/, '')}.jpg`;
   return new File([blob], nextName, { type: 'image/jpeg' });

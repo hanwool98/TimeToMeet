@@ -82,6 +82,27 @@ function clampRepresentativeOffset(offset: number, scale: number) {
   return Math.max(-maxOffsetFraction, Math.min(maxOffsetFraction, offset));
 }
 
+// 신분증/재직증명/프로필 사진은 폼 중간쯤에서 첨부되고, 실제 제출은 나머지
+// 항목을 전부 채운 뒤 한참 지나서 일어난다. Android(특히 카카오톡 인앱
+// 브라우저처럼 리소스를 더 적극적으로 회수하는 WebView)에서는 그 사이에
+// 갤러리가 내준 파일 접근 권한이 만료돼, 제출 시점에 다시 읽으려 하면
+// "The requested file could not be read..." 에러로 신청 자체가 실패하는
+// 사례가 실제 운영 오류 로그에서 확인됐다.
+//
+// 해결책은 파일을 "제출 시점"이 아니라 "선택된 직후"에 한 번 읽어서 완전히
+// 새로운(원본 OS 파일 참조와 무관한) File로 바꿔 상태에 반영해두는 것 -
+// 미리보기는 원본으로 즉시 보여주고, 안전한 버전이 준비되는 대로 조용히
+// 교체한다(같은 이미지라 화면상 차이는 없음). 실패해도 원본이 이미 상태에
+// 들어가 있으므로 폼 작성 자체는 막지 않고, 제출 시점의 기존
+// compressImageIfNeeded 호출이 마지막 안전망 역할을 한다.
+function securePickedFile(file: File, apply: (safeFile: File) => void) {
+  void compressImageIfNeeded(file, { force: true })
+    .then(apply)
+    .catch((error) => {
+      console.error('Eager file read failed', error);
+    });
+}
+
 function useObjectUrl(file?: Blob | null) {
   const [url, setUrl] = useState('');
 
@@ -726,7 +747,7 @@ export default function ProfileFormPage() {
         [compressedIdPhoto, compressedEmploymentProof, compressedProfilePhotos] = await Promise.all([
           compressImageIfNeeded(idPhoto),
           compressImageIfNeeded(employmentProof),
-          Promise.all(profilePhotos.map(compressImageIfNeeded)),
+          Promise.all(profilePhotos.map((photo) => compressImageIfNeeded(photo))),
         ]);
       } catch (error) {
         const message = error instanceof Error ? error.message : '이미지 압축에 실패했습니다.';
@@ -857,6 +878,11 @@ export default function ProfileFormPage() {
       setRepresentativeIndex(0);
       resetRepresentativeAdjustment();
     }
+    files.forEach((file) => {
+      securePickedFile(file, (safeFile) => {
+        setProfilePhotos((current) => current.map((existing) => (existing === file ? safeFile : existing)));
+      });
+    });
   };
 
   const removeProfilePhoto = (index: number) => {
@@ -1145,7 +1171,11 @@ export default function ProfileFormPage() {
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold leading-relaxed text-[#777]">민감한 정보는 가려도 되며 이름과 생년월일만 확인되면 됩니다.</p>
             <UploadBox
               label="본인확인용 신분증 사진 첨부"
-              onFiles={(files) => setIdPhoto(files[0] ?? null)}
+              onFiles={(files) => {
+                const file = files[0] ?? null;
+                setIdPhoto(file);
+                if (file) securePickedFile(file, (safeFile) => setIdPhoto((current) => (current === file ? safeFile : current)));
+              }}
               onRemove={() => setIdPhoto(null)}
               previewUrl={idPreview}
             />
@@ -1245,7 +1275,11 @@ export default function ProfileFormPage() {
             <p className="mb-4 text-fluid-safe text-[13px] font-extrabold text-[#777]">사원증, 명함 등 본인의 재직사실을 증명할 수 있는 사진을 첨부해주세요.</p>
             <UploadBox
               label="재직 증명 사진 첨부"
-              onFiles={(files) => setEmploymentProof(files[0] ?? null)}
+              onFiles={(files) => {
+                const file = files[0] ?? null;
+                setEmploymentProof(file);
+                if (file) securePickedFile(file, (safeFile) => setEmploymentProof((current) => (current === file ? safeFile : current)));
+              }}
               onRemove={() => setEmploymentProof(null)}
               previewUrl={employmentPreview}
             />
