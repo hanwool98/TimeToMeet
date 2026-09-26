@@ -1839,6 +1839,52 @@ export async function restartBonusPhaseForTestSession(eventId: string) {
   return data as { ok: boolean; totalRegularRounds: number };
 }
 
+export interface TestBonus1LayoutRow {
+  tableNumber: number;
+  maleApplicationId: string;
+  maleNickname: string | null;
+  femaleApplicationId: string;
+  femaleNickname: string | null;
+}
+
+// 테스트 행사 전용 - 추가대화1 자리를 관리자가 직접 확인/변경하기 위한
+// 조회. 정규 라운드 완료 -> 휴식 단계(추가대화1 시작 전)에서만 호출
+// 가능하며, 서버가 이 시점에 추가대화1이 아직 없으면 그 자리에서
+// 생성해(이미 있는 기존 멱등 생성 로직 재사용) 보여준다. 실제 행사에서는
+// RPC 자체가 예외를 던진다(하드 서버 가드).
+export async function fetchTestBonus1Layout(eventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_test_bonus1_layout_for_session', {
+    event_id_value: eventId,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw new Error(error.message || '추가대화1 배치를 불러오지 못했습니다.');
+  const row = data as { firstBonusRound: number; rows: TestBonus1LayoutRow[] };
+  return row;
+}
+
+// 여성 자리는 그대로 두고 남성만 테이블 간 재배치한다. 서버가 "현재
+// 추가대화1에 배정된 남성 집합과 완전히 동일한 순열인지"만 검증하므로,
+// 클라이언트는 전체 목록을 그대로 다시 보내면 된다.
+export async function saveTestBonus1Layout(eventId: string, maleAssignments: { tableNumber: number; maleApplicationId: string }[]) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('save_test_bonus1_layout_for_session', {
+    event_id_value: eventId,
+    male_assignments: maleAssignments,
+    session_token: adminSession.token,
+  });
+
+  if (error) throw new Error(error.message || '추가대화1 자리 변경을 저장하지 못했습니다.');
+  return data as { ok: boolean; updatedCount: number };
+}
+
 export function subscribeToSupabaseChanges(onChange: () => void) {
   if (!supabase) return () => undefined;
 

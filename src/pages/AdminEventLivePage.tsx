@@ -24,8 +24,10 @@ import {
   fetchAdminParticipantReports,
   fetchAdminPauseRequests,
   fetchAdminRoundProgress,
+  fetchTestBonus1Layout,
   restartBonusPhaseForTestSession,
   resumeAfterRegularRounds,
+  saveTestBonus1Layout,
   setCurrentRoundForSession,
   startFirstRound,
   subscribeToAdminEventModeChanges,
@@ -43,6 +45,7 @@ import {
   type ParticipantReport,
   type PublicParticipantMediaRow,
   type RoundProgress,
+  type TestBonus1LayoutRow,
 } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 import { INTRO_SLIDE_ASPECT_CLASS } from '../constants/introSlides';
@@ -75,6 +78,7 @@ export default function AdminEventLivePage() {
   const [participantListPanelOpen, setParticipantListPanelOpen] = useState(false);
   const [roundJumpPanelOpen, setRoundJumpPanelOpen] = useState(false);
   const [mutualRatingsPanelOpen, setMutualRatingsPanelOpen] = useState(false);
+  const [bonus1LayoutPanelOpen, setBonus1LayoutPanelOpen] = useState(false);
   const [finalSelectionResults, setFinalSelectionResults] = useState<AdminFinalSelectionResults | null>(null);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -527,12 +531,14 @@ export default function AdminEventLivePage() {
         {isRoundStage ? (
           <RoundProgressSection
             isTestEvent={event.isTestEvent}
+            onOpenBonus1LayoutEditor={() => setBonus1LayoutPanelOpen(true)}
             onOpenMutualRatings={() => setMutualRatingsPanelOpen(true)}
             onOpenFinalSelections={() => navigate(`/admin/content/final-selections/${encodeURIComponent(eventId)}?from=live`)}
             onOpenParticipantList={() => setParticipantListPanelOpen(true)}
             onOpenPauseRequests={() => setPauseRequestsPanelOpen(true)}
             onOpenReports={() => setReportsPanelOpen(true)}
             onOpenRoundJump={() => setRoundJumpPanelOpen(true)}
+            onRestartBonusPhase={() => void handleRestartBonusPhase()}
             onResume={() => void handleResume()}
             onSkipTimer={() => void handleSkipTimer()}
             onToggleTimer={() => void handleToggleRoundTimer()}
@@ -544,7 +550,7 @@ export default function AdminEventLivePage() {
           />
         ) : null}
 
-        {isRoundStage && event.isTestEvent ? (
+        {isRoundStage && progress.stage !== 'round_complete' && event.isTestEvent ? (
           <button
             className="mt-3 h-11 w-full rounded-[14px] bg-white text-[13px] font-black text-[#ef554a] shadow-sm transition active:scale-[0.99] disabled:opacity-50"
             disabled={timerActionPending}
@@ -688,6 +694,14 @@ export default function AdminEventLivePage() {
       {mutualRatingsPanelOpen && eventId ? (
         <MutualRatingsPanel eventId={eventId} onClose={() => setMutualRatingsPanelOpen(false)} />
       ) : null}
+
+      {bonus1LayoutPanelOpen && eventId ? (
+        <TestBonus1LayoutPanel
+          eventId={eventId}
+          onClose={() => setBonus1LayoutPanelOpen(false)}
+          onSaved={() => void roundProgressGuardRef.current.run(() => fetchAdminRoundProgress(eventId), applyRoundProgress)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -771,12 +785,14 @@ function SkipIcon() {
 function RoundProgressSection({
   finalSelectionResults,
   isTestEvent,
+  onOpenBonus1LayoutEditor,
   onOpenFinalSelections,
   onOpenMutualRatings,
   onOpenParticipantList,
   onOpenPauseRequests,
   onOpenReports,
   onOpenRoundJump,
+  onRestartBonusPhase,
   onResume,
   onSkipTimer,
   onToggleTimer,
@@ -787,12 +803,14 @@ function RoundProgressSection({
 }: {
   finalSelectionResults: AdminFinalSelectionResults | null;
   isTestEvent: boolean;
+  onOpenBonus1LayoutEditor: () => void;
   onOpenFinalSelections: () => void;
   onOpenMutualRatings: () => void;
   onOpenParticipantList: () => void;
   onOpenPauseRequests: () => void;
   onOpenReports: () => void;
   onOpenRoundJump: () => void;
+  onRestartBonusPhase: () => void;
   onResume: () => void;
   onSkipTimer: () => void;
   onToggleTimer: () => void;
@@ -841,6 +859,28 @@ function RoundProgressSection({
         <button className="mt-5 text-[13px] font-black text-meet-blue underline" onClick={onOpenRoundJump} type="button">
           라운드 이동
         </button>
+
+        {isTestEvent && hasBonusRounds ? (
+          <div className="mt-5 rounded-[16px] border border-dashed border-[#e5c9c0] bg-[#fffaf7] p-4 text-left">
+            <p className="text-[11px] font-black tracking-wide text-[#b9793a]">🧪 테스트 도구</p>
+            <button
+              className="mt-3 h-11 w-full rounded-[14px] bg-white text-[13px] font-black text-[#ef554a] shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+              disabled={timerActionPending}
+              onClick={onOpenBonus1LayoutEditor}
+              type="button"
+            >
+              🔀 첫 추가대화 자리 변경
+            </button>
+            <button
+              className="mt-2 h-11 w-full rounded-[14px] bg-white text-[13px] font-black text-[#ef554a] shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+              disabled={timerActionPending}
+              onClick={onRestartBonusPhase}
+              type="button"
+            >
+              🧪 추가대화 재시작
+            </button>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -1221,6 +1261,130 @@ function MutualRatingsPanel({ eventId, onClose }: { eventId: string; onClose: ()
               </div>
             ))}
           </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// 테스트 행사 전용 - 추가대화1 자리를 관리자가 직접 확인/변경하는 패널.
+// 여성 자리는 고정하고 남성만 드롭다운으로 재배치한다. 같은 남성이
+// 이미 다른 테이블에 있으면 자동으로 두 테이블의 남성을 맞바꿔서,
+// 로컬 상태가 항상 "현재 배정된 남성 전원의 순열"을 유지하도록
+// 한다(클라이언트 쪽에서부터 중복/누락이 생길 수 없는 구조) - 서버도
+// 저장 시 동일한 순열 여부를 다시 검증한다.
+function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string; onClose: () => void; onSaved: () => void }) {
+  const [rows, setRows] = useState<TestBonus1LayoutRow[] | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetchTestBonus1Layout(eventId)
+      .then((result) => {
+        if (active) setRows(result.rows);
+      })
+      .catch((caughtError) => {
+        if (active) setLoadError(caughtError instanceof Error ? caughtError.message : '추가대화1 배치를 불러오지 못했습니다.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [eventId]);
+
+  const handleMaleChange = (tableNumber: number, newMaleApplicationId: string) => {
+    setRows((current) => {
+      if (!current) return current;
+      const changedRow = current.find((row) => row.tableNumber === tableNumber);
+      const swapRow = current.find((row) => row.maleApplicationId === newMaleApplicationId);
+      if (!changedRow || !swapRow || changedRow.tableNumber === swapRow.tableNumber) return current;
+      const previousMaleId = changedRow.maleApplicationId;
+      const previousMaleNickname = changedRow.maleNickname;
+      return current.map((row) => {
+        if (row.tableNumber === changedRow.tableNumber) {
+          return { ...row, maleApplicationId: swapRow.maleApplicationId, maleNickname: swapRow.maleNickname };
+        }
+        if (row.tableNumber === swapRow.tableNumber) {
+          return { ...row, maleApplicationId: previousMaleId, maleNickname: previousMaleNickname };
+        }
+        return row;
+      });
+    });
+  };
+
+  const handleSave = async () => {
+    if (!rows || saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await saveTestBonus1Layout(
+        eventId,
+        rows.map((row) => ({ tableNumber: row.tableNumber, maleApplicationId: row.maleApplicationId })),
+      );
+      onSaved();
+      onClose();
+    } catch (caughtError) {
+      setSaveError(caughtError instanceof Error ? caughtError.message : '저장하지 못했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5e5e5]" />
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-[18px] font-black">🔀 첫 추가대화 자리 변경</h3>
+          <button className="text-[14px] font-black text-[#999]" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] font-bold text-[#999]">
+          테스트 전용 기능입니다. 여성 자리는 그대로 두고, 남성만 다른 테이블로 옮길 수 있습니다.
+        </p>
+
+        {!rows && !loadError ? <p className="mt-8 text-center text-[13px] font-bold text-[#999]">불러오는 중</p> : null}
+        {loadError ? <p className="mt-8 text-center text-[13px] font-bold text-[#ef554a]">{loadError}</p> : null}
+
+        {rows ? (
+          <div className="mt-4 space-y-2 pb-2">
+            {rows.map((row) => (
+              <div className="flex items-center gap-2 rounded-[14px] border border-[#f0f0f0] px-3 py-3" key={row.tableNumber}>
+                <span className="w-14 shrink-0 text-[11px] font-black text-[#999]">TABLE {row.tableNumber}</span>
+                <select
+                  className="h-9 min-w-0 flex-1 rounded-[10px] border border-[#e5e5e5] px-2 text-[13px] font-black text-[#4f7fd1]"
+                  onChange={(changeEvent) => handleMaleChange(row.tableNumber, changeEvent.target.value)}
+                  value={row.maleApplicationId}
+                >
+                  {rows.map((option) => (
+                    <option key={option.maleApplicationId} value={option.maleApplicationId}>
+                      {option.maleNickname ?? '(닉네임 없음)'}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[12px] font-bold text-[#ccc]">/</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-black text-[#ef7a9a]">{row.femaleNickname ?? '(닉네임 없음)'}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {saveError ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{saveError}</p> : null}
+
+        {rows ? (
+          <button
+            className="mt-4 h-12 w-full rounded-[14px] bg-[#ef4039] text-[15px] font-black text-white disabled:opacity-60"
+            disabled={saving}
+            onClick={() => void handleSave()}
+            type="button"
+          >
+            {saving ? '저장하는 중' : '저장'}
+          </button>
         ) : null}
       </div>
     </div>
