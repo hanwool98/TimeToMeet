@@ -45,7 +45,9 @@ import {
   type ParticipantReport,
   type PublicParticipantMediaRow,
   type RoundProgress,
-  type TestBonus1LayoutRow,
+  type TestBonus1Layout,
+  type TestBonus1LayoutRestingMale,
+  type TestBonus1LayoutTable,
 } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 import { INTRO_SLIDE_ASPECT_CLASS } from '../constants/introSlides';
@@ -1268,13 +1270,18 @@ function MutualRatingsPanel({ eventId, onClose }: { eventId: string; onClose: ()
 }
 
 // 테스트 행사 전용 - 추가대화1 자리를 관리자가 직접 확인/변경하는 패널.
-// 여성 자리는 고정하고 남성만 드롭다운으로 재배치한다. 같은 남성이
-// 이미 다른 테이블에 있으면 자동으로 두 테이블의 남성을 맞바꿔서,
-// 로컬 상태가 항상 "현재 배정된 남성 전원의 순열"을 유지하도록
-// 한다(클라이언트 쪽에서부터 중복/누락이 생길 수 없는 구조) - 서버도
-// 저장 시 동일한 순열 여부를 다시 검증한다.
+// 여성 자리는 event_preround_seats 기준 고정 테이블이고, 남성만
+// 재배치한다. "테이블 슬롯(활성 여성 수만큼) + 그 슬롯을 채우는 남성
+// 풀(활성 남성)"이라는 하나의 모델로 8:8/7:8(남성 부족 - 슬롯 하나가
+// 빔)/8:7(여성 부족 - 남성 한 명이 풀 밖 휴식 목록에 남음)을 전부
+// 표현한다. 남성을 고를 때 그가 이미 다른 테이블에 있으면 그 테이블과
+// 맞바꾸고, 휴식 목록에 있었다면 그를 데려오고 이 테이블의 기존 남성을
+// 휴식 목록으로 보낸다 - 두 경우 모두 "슬롯 수/휴식 인원 수"라는 불변
+// 조건을 자동으로 유지해 클라이언트 쪽에서부터 중복/누락이 생길 수
+// 없다. 서버도 저장 시 동일한 기준(현재 active roster)으로 다시
+// 검증한다.
 function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string; onClose: () => void; onSaved: () => void }) {
-  const [rows, setRows] = useState<TestBonus1LayoutRow[] | null>(null);
+  const [layout, setLayout] = useState<TestBonus1Layout | null>(null);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1283,7 +1290,7 @@ function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string;
     let active = true;
     void fetchTestBonus1Layout(eventId)
       .then((result) => {
-        if (active) setRows(result.rows);
+        if (active) setLayout(result);
       })
       .catch((caughtError) => {
         if (active) setLoadError(caughtError instanceof Error ? caughtError.message : '추가대화1 배치를 불러오지 못했습니다.');
@@ -1293,34 +1300,45 @@ function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string;
     };
   }, [eventId]);
 
-  const handleMaleChange = (tableNumber: number, newMaleApplicationId: string) => {
-    setRows((current) => {
+  const handleAssign = (tableNumber: number, newMaleApplicationId: string) => {
+    setLayout((current) => {
       if (!current) return current;
-      const changedRow = current.find((row) => row.tableNumber === tableNumber);
-      const swapRow = current.find((row) => row.maleApplicationId === newMaleApplicationId);
-      if (!changedRow || !swapRow || changedRow.tableNumber === swapRow.tableNumber) return current;
-      const previousMaleId = changedRow.maleApplicationId;
-      const previousMaleNickname = changedRow.maleNickname;
-      return current.map((row) => {
-        if (row.tableNumber === changedRow.tableNumber) {
-          return { ...row, maleApplicationId: swapRow.maleApplicationId, maleNickname: swapRow.maleNickname };
-        }
-        if (row.tableNumber === swapRow.tableNumber) {
-          return { ...row, maleApplicationId: previousMaleId, maleNickname: previousMaleNickname };
-        }
-        return row;
-      });
+      const targetIndex = current.tables.findIndex((table) => table.tableNumber === tableNumber);
+      if (targetIndex < 0) return current;
+      const target = current.tables[targetIndex];
+      if (target.maleApplicationId === newMaleApplicationId) return current;
+
+      const sourceIndex = current.tables.findIndex((table) => table.maleApplicationId === newMaleApplicationId);
+      if (sourceIndex >= 0) {
+        const tables = current.tables.slice();
+        const previousMaleId = target.maleApplicationId;
+        const previousMaleNickname = target.maleNickname;
+        tables[targetIndex] = { ...target, maleApplicationId: newMaleApplicationId, maleNickname: tables[sourceIndex].maleNickname };
+        tables[sourceIndex] = { ...tables[sourceIndex], maleApplicationId: previousMaleId, maleNickname: previousMaleNickname };
+        return { ...current, tables };
+      }
+
+      const restingIndex = current.restingMales.findIndex((male) => male.maleApplicationId === newMaleApplicationId);
+      if (restingIndex < 0) return current;
+      const tables = current.tables.slice();
+      const previousMaleId = target.maleApplicationId;
+      const previousMaleNickname = target.maleNickname;
+      tables[targetIndex] = { ...target, maleApplicationId: newMaleApplicationId, maleNickname: current.restingMales[restingIndex].maleNickname };
+      const restingMales = current.restingMales.slice();
+      restingMales.splice(restingIndex, 1);
+      if (previousMaleId) restingMales.push({ maleApplicationId: previousMaleId, maleNickname: previousMaleNickname });
+      return { ...current, tables, restingMales };
     });
   };
 
   const handleSave = async () => {
-    if (!rows || saving) return;
+    if (!layout || saving) return;
     setSaving(true);
     setSaveError('');
     try {
       await saveTestBonus1Layout(
         eventId,
-        rows.map((row) => ({ tableNumber: row.tableNumber, maleApplicationId: row.maleApplicationId })),
+        layout.tables.map((table) => ({ tableNumber: table.tableNumber, maleApplicationId: table.maleApplicationId })),
       );
       onSaved();
       onClose();
@@ -1329,6 +1347,14 @@ function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string;
     } finally {
       setSaving(false);
     }
+  };
+
+  const otherMaleOptions = (table: TestBonus1LayoutTable): TestBonus1LayoutRestingMale[] => {
+    if (!layout) return [];
+    const seated = layout.tables
+      .filter((row) => row.maleApplicationId && row.tableNumber !== table.tableNumber)
+      .map((row) => ({ maleApplicationId: row.maleApplicationId as string, maleNickname: row.maleNickname }));
+    return [...seated, ...layout.restingMales];
   };
 
   return (
@@ -1345,38 +1371,62 @@ function TestBonus1LayoutPanel({ eventId, onClose, onSaved }: { eventId: string;
           </button>
         </div>
         <p className="mt-1 text-[12px] font-bold text-[#999]">
-          테스트 전용 기능입니다. 여성 자리는 그대로 두고, 남성만 다른 테이블로 옮길 수 있습니다.
+          테스트 전용 기능입니다. 여성 자리는 그대로 두고, 남성만 다른 테이블/휴식으로 옮길 수 있습니다.
         </p>
 
-        {!rows && !loadError ? <p className="mt-8 text-center text-[13px] font-bold text-[#999]">불러오는 중</p> : null}
+        {!layout && !loadError ? <p className="mt-8 text-center text-[13px] font-bold text-[#999]">불러오는 중</p> : null}
         {loadError ? <p className="mt-8 text-center text-[13px] font-bold text-[#ef554a]">{loadError}</p> : null}
 
-        {rows ? (
+        {layout ? (
           <div className="mt-4 space-y-2 pb-2">
-            {rows.map((row) => (
-              <div className="flex items-center gap-2 rounded-[14px] border border-[#f0f0f0] px-3 py-3" key={row.tableNumber}>
-                <span className="w-14 shrink-0 text-[11px] font-black text-[#999]">TABLE {row.tableNumber}</span>
+            {layout.tables.map((table) => (
+              <div className="flex items-center gap-2 rounded-[14px] border border-[#f0f0f0] px-3 py-3" key={table.tableNumber}>
+                <span className="w-14 shrink-0 text-[11px] font-black text-[#999]">TABLE {table.tableNumber}</span>
                 <select
                   className="h-9 min-w-0 flex-1 rounded-[10px] border border-[#e5e5e5] px-2 text-[13px] font-black text-[#4f7fd1]"
-                  onChange={(changeEvent) => handleMaleChange(row.tableNumber, changeEvent.target.value)}
-                  value={row.maleApplicationId}
+                  onChange={(changeEvent) => handleAssign(table.tableNumber, changeEvent.target.value)}
+                  value={table.maleApplicationId ?? '__RESTING__'}
                 >
-                  {rows.map((option) => (
+                  {table.maleApplicationId ? (
+                    <option value={table.maleApplicationId}>{table.maleNickname ?? '(닉네임 없음)'}</option>
+                  ) : (
+                    <option value="__RESTING__">(휴식)</option>
+                  )}
+                  {otherMaleOptions(table).map((option) => (
                     <option key={option.maleApplicationId} value={option.maleApplicationId}>
                       {option.maleNickname ?? '(닉네임 없음)'}
                     </option>
                   ))}
                 </select>
                 <span className="text-[12px] font-bold text-[#ccc]">/</span>
-                <span className="min-w-0 flex-1 truncate text-[13px] font-black text-[#ef7a9a]">{row.femaleNickname ?? '(닉네임 없음)'}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-black text-[#ef7a9a]">{table.femaleNickname ?? '(닉네임 없음)'}</span>
               </div>
             ))}
+
+            {layout.inactiveFemaleTables.map((table) => (
+              <div
+                className="flex items-center justify-between gap-2 rounded-[14px] border border-dashed border-[#e5e5e5] bg-[#fafafa] px-3 py-3"
+                key={`inactive-${table.tableNumber}`}
+              >
+                <span className="w-14 shrink-0 text-[11px] font-black text-[#bbb]">TABLE {table.tableNumber}</span>
+                <span className="min-w-0 flex-1 text-[13px] font-black text-[#bbb]">여성 불참 · 대화 배치 불가</span>
+              </div>
+            ))}
+
+            {layout.restingMales.length > 0 ? (
+              <div className="mt-3 rounded-[14px] border border-dashed border-[#e5e5e5] bg-[#fafafa] px-3 py-3">
+                <p className="text-[11px] font-black text-[#999]">남성 휴식</p>
+                <p className="mt-1 text-[13px] font-black text-[#4f7fd1]">
+                  {layout.restingMales.map((male) => male.maleNickname ?? '(닉네임 없음)').join(', ')}
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         {saveError ? <p className="mt-3 text-center text-[12px] font-bold text-[#ef554a]">{saveError}</p> : null}
 
-        {rows ? (
+        {layout ? (
           <button
             className="mt-4 h-12 w-full rounded-[14px] bg-[#ef4039] text-[15px] font-black text-white disabled:opacity-60"
             disabled={saving}

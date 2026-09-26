@@ -1839,12 +1839,38 @@ export async function restartBonusPhaseForTestSession(eventId: string) {
   return data as { ok: boolean; totalRegularRounds: number };
 }
 
-export interface TestBonus1LayoutRow {
+// tableNumber/femaleApplicationId는 event_preround_seats(여성 고정 좌석의
+// authoritative source)에서 그대로 가져온 고정값 - maleApplicationId는
+// 현재 bonus1에 배정된 남성이 있으면 그 값, 없으면(=이번 추가대화 휴식)
+// null이다(7:8일 때만 발생).
+export interface TestBonus1LayoutTable {
   tableNumber: number;
-  maleApplicationId: string;
+  maleApplicationId: string | null;
   maleNickname: string | null;
   femaleApplicationId: string;
   femaleNickname: string | null;
+}
+
+export interface TestBonus1LayoutInactiveTable {
+  tableNumber: number;
+  femaleApplicationId: string;
+  femaleNickname: string | null;
+}
+
+export interface TestBonus1LayoutRestingMale {
+  maleApplicationId: string;
+  maleNickname: string | null;
+}
+
+export interface TestBonus1Layout {
+  firstBonusRound: number;
+  tables: TestBonus1LayoutTable[];
+  // 여성이 현재 active(참가확정+체크인+active)가 아닌 테이블 - 표시만
+  // 하고 절대 편집(남성 배치) 대상이 아니다.
+  inactiveFemaleTables: TestBonus1LayoutInactiveTable[];
+  // 현재 active인 남성 중 bonus1 어느 테이블에도 배정되지 않은 사람
+  // (8:7처럼 남성이 남을 때만 채워짐).
+  restingMales: TestBonus1LayoutRestingMale[];
 }
 
 // 테스트 행사 전용 - 추가대화1 자리를 관리자가 직접 확인/변경하기 위한
@@ -1863,14 +1889,14 @@ export async function fetchTestBonus1Layout(eventId: string) {
   });
 
   if (error) throw new Error(error.message || '추가대화1 배치를 불러오지 못했습니다.');
-  const row = data as { firstBonusRound: number; rows: TestBonus1LayoutRow[] };
-  return row;
+  return data as TestBonus1Layout;
 }
 
-// 여성 자리는 그대로 두고 남성만 테이블 간 재배치한다. 서버가 "현재
-// 추가대화1에 배정된 남성 집합과 완전히 동일한 순열인지"만 검증하므로,
-// 클라이언트는 전체 목록을 그대로 다시 보내면 된다.
-export async function saveTestBonus1Layout(eventId: string, maleAssignments: { tableNumber: number; maleApplicationId: string }[]) {
+// 제출 형식은 "현재 active 여성의 테이블 전부"에 대해 tableNumber +
+// maleApplicationId(휴식이면 null)를 하나씩 담은 배열이다 - 휴식 남성은
+// 명시적으로 보낼 필요 없이, 언급되지 않은 active 남성으로 서버가
+// 자동으로 판단한다.
+export async function saveTestBonus1Layout(eventId: string, maleAssignments: { tableNumber: number; maleApplicationId: string | null }[]) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const adminSession = getAdminSession();
   if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
@@ -1882,7 +1908,7 @@ export async function saveTestBonus1Layout(eventId: string, maleAssignments: { t
   });
 
   if (error) throw new Error(error.message || '추가대화1 자리 변경을 저장하지 못했습니다.');
-  return data as { ok: boolean; updatedCount: number };
+  return data as { ok: boolean; insertedCount: number };
 }
 
 export function subscribeToSupabaseChanges(onChange: () => void) {
