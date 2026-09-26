@@ -2106,13 +2106,19 @@ function BonusSeatGuideScreen({
 
   const isFemale = progress.gender === '여성';
   const nextNickname = progress.nextPartnerNickname;
-  const hasNextPartner = Boolean(nextNickname);
   // "다음 상대 없음"은 두 가지 서로 다른 상황을 의미할 수 있다 - (A) 정말
   // 추가대화가 모두 끝나 최종선택으로 넘어가는 경우, (B) 다음 추가대화는
   // 아직 남아있지만 성비 불균형으로 이번엔 나에게만 상대가 없는 경우(순환
-  // 휴식). 서버가 내려주는 hasNextBonusRound로 이 둘을 명확히 구분한다 -
-  // nextPartnerNickname의 유무만으로 최종선택 임박을 추론하지 않는다.
-  const isRestingNextBonusRound = Boolean(progress.hasNextBonusRound) && !hasNextPartner;
+  // 휴식). 이 둘의 판단은 반드시 서버가 명시적으로 계산해 내려주는
+  // hasNextBonusRound/nextBonusIsResting 값을 기준으로 한다 -
+  // nextPartnerNickname은 표시용 데이터일 뿐이라 일시적으로 비어 있어도
+  // (닉네임 조회 지연 등) 상태 판단이 잘못되지 않아야 한다.
+  //   hasNextBonusRound === false             → 다음 추가대화 없음(최종선택 임박)
+  //   hasNextBonusRound && nextBonusIsResting  → 다음 추가대화 휴식
+  //   hasNextBonusRound && !nextBonusIsResting → 다음 추가대화 상대 있음
+  const hasNextBonusRound = Boolean(progress.hasNextBonusRound);
+  const isRestingNextBonusRound = hasNextBonusRound && Boolean(progress.nextBonusIsResting);
+  const hasNextPartner = hasNextBonusRound && !isRestingNextBonusRound;
 
   const phaseDuration = phaseDurationSeconds(progress.roundPhase, progress.isBonusRound, progress.conversationDurationSeconds, hasNextPartner);
   const remaining = Math.max(
