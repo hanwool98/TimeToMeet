@@ -3,6 +3,7 @@ import { toPng } from 'html-to-image';
 import { useNavigate } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
 import ParticipantPhoto from '../components/ParticipantPhoto';
+import { StarRatingPicker } from '../components/StarRating';
 import { deleteEventReview, fetchAdminEventReviews, setReviewRating, type AdminEventReview } from '../services/supabaseApplications';
 
 // 콘텐츠 관리 > 후기 관리. AdminProfileKeywordsPage/AdminConversationTopicsPage와
@@ -138,9 +139,11 @@ export default function AdminReviewsPage() {
                     </div>
                   </div>
                   <div className="mt-2.5 flex items-center gap-2">
-                    <RatingStars
+                    <StarRatingPicker
+                      className="gap-0.5"
                       disabled={savingRatingId === review.id}
                       onChange={(rating) => void changeRating(review, rating)}
+                      starClassName="text-[18px] leading-none"
                       value={review.rating}
                     />
                     <span className="text-[12px] font-black text-[#888]">{review.rating}점</span>
@@ -188,29 +191,6 @@ export default function AdminReviewsPage() {
         </div>
       ) : null}
     </main>
-  );
-}
-
-// #4 관리자 후기 별점 입력/수정 컨트롤. 별을 누르면 그 점수로 저장된다.
-function RatingStars({ disabled, onChange, value }: { disabled?: boolean; onChange: (rating: number) => void; value: number }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          aria-label={`${star}점`}
-          className={[
-            'text-[18px] leading-none transition disabled:opacity-50',
-            star <= value ? 'text-meet-pink' : 'text-[#d6d9dd]',
-          ].join(' ')}
-          disabled={disabled}
-          key={star}
-          onClick={() => onChange(star)}
-          type="button"
-        >
-          ★
-        </button>
-      ))}
-    </div>
   );
 }
 

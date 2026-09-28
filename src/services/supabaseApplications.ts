@@ -3696,7 +3696,7 @@ export async function saveEventReview(
   if (!supabase) throw new Error('Supabase is not configured.');
   const session = getAppSession();
   if (!session?.token) throw new Error('로그인이 필요합니다.');
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('별점을 선택해주세요.');
+  if (rating < 0.5 || rating > 5 || Math.round(rating * 10) % 5 !== 0) throw new Error('별점을 0.5점 단위로 선택해주세요.');
 
   const { data, error } = await supabase.rpc('save_event_review_for_session', {
     content_value: content,
@@ -4881,7 +4881,9 @@ export async function fetchPublicHomeReviews(): Promise<PublicHomeReview[]> {
       content: (row.content as string) ?? '',
       gender: (row.gender as string) ?? '',
       id: row.id as string,
-      rating: Math.min(5, Math.max(1, Math.round(Number(row.rating ?? 5)))),
+      // 0.5점 단위를 유지한 채 안전 범위(0.5~5)로만 clamp한다 - 정수로
+      // 반올림하면 4.5 같은 값이 홈/전체 후기 화면에서 뭉개진다.
+      rating: Math.min(5, Math.max(0.5, Math.round(Number(row.rating ?? 5) * 2) / 2)),
     }));
   } catch {
     return [];

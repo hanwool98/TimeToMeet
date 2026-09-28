@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/PhotoSourceInputs';
 import PrimaryButton from '../components/PrimaryButton';
+import { StarRatingDisplay, StarRatingPicker } from '../components/StarRating';
 import { fetchMyEventReview, fetchMyEventTickets, saveEventReview, uploadEventReviewPhoto } from '../services/supabaseApplications';
 
 const reviewMaxLength = 2000;
@@ -32,8 +33,8 @@ export default function ReviewFormPage() {
   const { eventId } = useParams();
   const [eventTitle, setEventTitle] = useState('');
   const [content, setContent] = useState('');
-  // 별점: 진입 시 선택되지 않은 상태(null). 참가자가 직접 1~5점을 골라야
-  // 제출할 수 있고, 그 값이 event_reviews.rating에 저장된다.
+  // 별점: 진입 시 선택되지 않은 상태(null). 참가자가 직접 0.5~5점(0.5점
+  // 단위)을 골라야 제출할 수 있고, 그 값이 event_reviews.rating에 저장된다.
   const [rating, setRating] = useState<number | null>(null);
   const [submittedAt, setSubmittedAt] = useState<string | undefined>(undefined);
   const [images, setImages] = useState<ReviewImageSlot[]>([]);
@@ -168,14 +169,7 @@ export default function ReviewFormPage() {
               <div className="mb-5">
                 <p className="text-[13px] font-black text-[#666]">별점</p>
                 <div className="mt-2 flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <span
-                      className={`text-[30px] leading-none ${rating != null && star <= rating ? 'text-meet-pink' : 'text-[#d9dde2]'}`}
-                      key={star}
-                    >
-                      ★
-                    </span>
-                  ))}
+                  <StarRatingDisplay className="gap-1.5" rating={rating ?? 0} starClassName="text-[30px] leading-none" />
                   {rating != null ? <span className="ml-1 text-[13px] font-black text-[#888]">{rating}점</span> : null}
                 </div>
               </div>
@@ -218,21 +212,7 @@ export default function ReviewFormPage() {
               <div className="mb-5">
                 <p className="text-[13px] font-black text-[#666]">별점</p>
                 <div className="mt-2 flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      aria-label={`${star}점`}
-                      aria-pressed={rating != null && star <= rating}
-                      className={[
-                        'text-[30px] leading-none transition active:scale-95',
-                        rating != null && star <= rating ? 'text-meet-pink' : 'text-[#d9dde2]',
-                      ].join(' ')}
-                      key={star}
-                      onClick={() => setRating(star)}
-                      type="button"
-                    >
-                      ★
-                    </button>
-                  ))}
+                  <StarRatingPicker className="gap-1.5" onChange={setRating} starClassName="text-[30px] leading-none" value={rating} />
                   {rating != null ? <span className="ml-1 text-[13px] font-black text-[#888]">{rating}점</span> : null}
                 </div>
                 {rating == null ? (

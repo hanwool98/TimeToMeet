@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import HomeCarousel from './HomeCarousel';
+import { StarRatingDisplay } from './StarRating';
 import { fetchPublicHomeReviews, type PublicHomeReview } from '../services/supabaseApplications';
 
 // 관리자 "홈 콘텐츠 관리 > 참가자 후기"에서 고른 후기만 좌우 스와이프로
@@ -69,7 +70,7 @@ export function ReviewCard({ onOpen, review }: { onOpen: () => void; review: Pub
     >
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-[11px] font-black text-meet-pink">{formatWho(review)}</p>
-        <StarRow className="text-[13px]" rating={review.rating} />
+        <StarRatingDisplay className="gap-px text-[13px]" emptyColorClassName="text-[#e2e2e2]" rating={review.rating} />
       </div>
       <p
         className="mt-2 line-clamp-4 whitespace-pre-line text-[12.5px] font-bold leading-relaxed text-[#333]"
@@ -128,7 +129,7 @@ export function ReviewModal({ onClose, review }: { onClose: () => void; review: 
           </svg>
         </button>
         <div className="shrink-0 pr-7">
-          <StarRow className="text-[15px]" rating={review.rating} />
+          <StarRatingDisplay className="gap-px text-[15px]" emptyColorClassName="text-[#e2e2e2]" rating={review.rating} />
           <p className="mt-1.5 text-[12px] font-black text-meet-pink">{formatWho(review)}</p>
         </div>
         <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
@@ -136,18 +137,6 @@ export function ReviewModal({ onClose, review }: { onClose: () => void; review: 
         </div>
       </div>
     </div>
-  );
-}
-
-function StarRow({ className = '', rating }: { className?: string; rating: number }) {
-  return (
-    <span aria-label={`별점 ${rating}점`} className={`flex shrink-0 items-center gap-px leading-none ${className}`}>
-      {[1, 2, 3, 4, 5].map((star) => (
-        <span aria-hidden="true" className={star <= rating ? 'text-meet-pink' : 'text-[#e2e2e2]'} key={star}>
-          ★
-        </span>
-      ))}
-    </span>
   );
 }
 
