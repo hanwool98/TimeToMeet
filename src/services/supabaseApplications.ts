@@ -4174,6 +4174,64 @@ export async function fetchMyFinalSelectionOutcome(eventId: string): Promise<MyF
   };
 }
 
+// ── 받은 마음 한 줄 수락/거절 ──────────────────────────────────────────
+export interface MyReceivedHeartNote {
+  id: string;
+  senderNickname: string;
+  message: string | null;
+  response: 'accepted' | 'rejected' | null;
+  createdAt: string;
+}
+
+// 결과 화면 전용 - 결과가 준비되지 않았으면(행사 종료 전) ready=false와
+// 빈 목록을 반환한다(오류 아님, get_my_final_selection_outcome과 동일한
+// 게이팅).
+export async function fetchMyReceivedHeartNotes(eventId: string): Promise<{ ready: boolean; notes: MyReceivedHeartNote[] }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) return { notes: [], ready: false };
+
+  const { data, error } = await supabase.rpc('get_my_received_heart_notes_for_session', {
+    event_id_value: eventId,
+    session_token: session.token,
+  });
+  if (error) throw error;
+  const row = data as { notes?: MyReceivedHeartNote[]; ok: boolean; ready?: boolean } | null;
+  if (!row?.ok) return { notes: [], ready: false };
+  return { notes: row.notes ?? [], ready: Boolean(row.ready) };
+}
+
+// 수락/거절 둘 다 서버에서 idempotent하게 처리된다(중복 클릭/동시 호출
+// 모두 안전) - 프론트는 버튼 disable만 책임지고 DB 안전성을 여기 기대지
+// 않는다.
+export async function acceptHeartNote(heartNoteId: string): Promise<{ matched: boolean; response: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('accept_heart_note_for_session', {
+    heart_note_id: heartNoteId,
+    session_token: session.token,
+  });
+  if (error) throw new Error(error.message || '수락 처리에 실패했습니다.');
+  const row = data as { matched?: boolean; ok: boolean; response?: string };
+  return { matched: Boolean(row.matched), response: row.response ?? 'accepted' };
+}
+
+export async function rejectHeartNote(heartNoteId: string): Promise<{ response: string }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const session = getAppSession();
+  if (!session?.token) throw new Error('로그인이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('reject_heart_note_for_session', {
+    heart_note_id: heartNoteId,
+    session_token: session.token,
+  });
+  if (error) throw new Error(error.message || '거절 처리에 실패했습니다.');
+  const row = data as { ok: boolean; response?: string };
+  return { response: row.response ?? 'rejected' };
+}
+
 export interface AdminFinalSelectionPerson {
   age: number | null;
   applicationId: string;
