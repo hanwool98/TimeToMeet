@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import BottomTabs from '../components/BottomTabs';
-import { TicketQrDisplay } from '../components/EventTicket';
+import { formatDeadline, formatWon, TicketQrDisplay } from '../components/EventTicket';
 import ParticipantList from '../components/ParticipantList';
 import PrimaryButton from '../components/PrimaryButton';
 import useOperationalData from '../hooks/useOperationalData';
@@ -9,6 +9,7 @@ import {
   fetchMyConfirmedEventVenue,
   fetchMyEventTickets,
   getCachedTestEventPreviewToken,
+  markPaymentInvitationReadByApplication,
   type ConfirmedEventVenue,
   type MyEventTicket,
 } from '../services/supabaseApplications';
@@ -169,6 +170,13 @@ export default function TicketDetailPage() {
           </>
         ) : null}
 
+        {/* 결제대기 상태인 동안에는 결제 안내를 몇 번을 닫고 다시 들어와도
+            항상 다시 확인할 수 있어야 한다 - 그래서 "닫으면 사라지는 모달"이
+            아니라 티켓 상세 화면 자체에 상시 노출한다. 실제 입금자명 입력과
+            "확인했습니다" 제출은 기존 결제 화면(PaymentPendingPage)의 몫으로
+            남겨두고, 여기서는 금액/계좌 정보를 다시 보여주는 용도로만 쓴다. */}
+        {ticket.status === '결제 대기' ? <PaymentInfoReminder ticket={ticket} /> : null}
+
         {isLastVisibleDayForTicket(ticket.eventDate) ? (
           <p className="rounded-[18px] bg-meet-pinkSoft p-4 text-center text-[13px] font-black text-meet-pink">
             이 티켓은 1일 뒤에 사라집니다.
@@ -179,6 +187,76 @@ export default function TicketDetailPage() {
       </div>
       <BottomTabs />
     </main>
+  );
+}
+
+function PaymentInfoReminder({ ticket }: { ticket: MyEventTicket }) {
+  const navigate = useNavigate();
+  const [copied, setCopied] = useState(false);
+  const hasAccountInfo = Boolean(ticket.bankName && ticket.bankAccountNumber && ticket.bankAccountHolder);
+
+  const openPayment = async () => {
+    try {
+      await markPaymentInvitationReadByApplication(ticket.applicationId);
+    } catch {
+      // 안 읽음 배지 처리용 호출이라 실패해도 결제 화면 이동 자체는 막지 않는다.
+    }
+    navigate(`/my-events/payment/${ticket.applicationId}`);
+  };
+
+  const copyAccountNumber = () => {
+    if (!ticket.bankAccountNumber) return;
+    void navigator.clipboard.writeText(ticket.bankAccountNumber).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_500);
+    });
+  };
+
+  return (
+    <section className="space-y-4 rounded-[20px] bg-meet-blueSoft p-5">
+      <p className="w-fit rounded-full bg-white px-3 py-1.5 text-[13px] font-black text-meet-blue">결제 대기 중</p>
+
+      <div>
+        <p className="text-[13px] font-black text-[#777]">결제 금액</p>
+        <p className="mt-1.5 text-[24px] font-black text-black">{formatWon(ticket.paymentAmount)}</p>
+      </div>
+
+      {hasAccountInfo ? (
+        <div className="space-y-2.5">
+          <p className="text-[13px] font-black text-[#777]">입금 계좌</p>
+          <div className="divide-y divide-[#f0f3f6] rounded-[14px] bg-white px-4">
+            <div className="py-3">
+              <p className="text-[16px] font-black text-black">
+                {ticket.bankName} {ticket.bankAccountNumber}
+              </p>
+              <button
+                className="mt-2.5 rounded-[10px] bg-meet-blue px-3 py-2 text-[12px] font-black text-white"
+                onClick={copyAccountNumber}
+                type="button"
+              >
+                {copied ? '복사됨 ✓' : '계좌번호 복사'}
+              </button>
+            </div>
+            <p className="py-3 text-[14px] font-extrabold text-[#555]">예금주: {ticket.bankAccountHolder}</p>
+            {/* PaymentPendingPage의 "확인할 입금자명" 규칙과 동일하게
+                ticket.applicantName을 그대로 쓴다 - 별도 로직 없음. */}
+            <p className="py-3 text-[14px] font-extrabold text-[#555]">입금자명: {ticket.applicantName}</p>
+            {ticket.paymentDeadline ? (
+              <p className="py-3 text-[14px] font-extrabold text-[#555]">입금기한: {formatDeadline(ticket.paymentDeadline)}까지</p>
+            ) : null}
+          </div>
+          <p className="text-[12.5px] font-bold leading-relaxed text-[#666]">
+            {ticket.applicantName} 본인 명의로 입금해주세요. 입금자명이 다르면 확인이 늦어질 수 있어요.
+          </p>
+        </div>
+      ) : (
+        <p className="text-[13px] font-bold leading-relaxed text-[#777]">
+          결제 계좌 정보를 불러오지 못했어요. 아래 버튼으로 결제 안내를 다시 확인해주세요.
+        </p>
+      )}
+
+      <PrimaryButton onClick={() => void openPayment()}>결제 안내 자세히 보기</PrimaryButton>
+    </section>
   );
 }
 
