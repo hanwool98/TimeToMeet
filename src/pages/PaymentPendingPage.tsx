@@ -21,8 +21,12 @@ export default function PaymentPendingPage() {
   const [refundChecked, setRefundChecked] = useState(false);
   const ticket = useMemo(() => tickets.find((item) => item.applicationId === invitationId), [invitationId, tickets]);
   const [depositorName, setDepositorName] = useState('');
+  // paymentDeadline은 화면 안내용 정보로만 쓴다 - 기한이 지났다는 이유로
+  // "확인했습니다" 제출 자체를 막지 않는다(실제 입금 여부의 최종 판단은
+  // 관리자가 한다). 서버(request_bank_transfer_confirmation)도 동일하게
+  // 기한을 하드 constraint로 쓰지 않도록 맞춰져 있다.
   const isExpired = ticket?.paymentDeadline ? new Date(ticket.paymentDeadline).getTime() < Date.now() : false;
-  const canSubmit = Boolean(depositorName.trim()) && refundChecked && !isExpired && !submitting && ticket?.status === '결제 대기';
+  const canSubmit = Boolean(depositorName.trim()) && refundChecked && !submitting && ticket?.status === '결제 대기';
 
   const loadTickets = useCallback(async () => {
     setError('');
@@ -169,7 +173,13 @@ export default function PaymentPendingPage() {
                 {submitting ? '저장 중' : '확인했습니다'}
               </PrimaryButton>
               <p className="text-center text-[13px] font-extrabold leading-relaxed text-[#999]">입금이 확인되면 참가가 최종 확정됩니다.</p>
-              {isExpired ? <p className="text-center text-[13px] font-black text-meet-pink">결제 기한이 지나 입금 확인을 요청할 수 없습니다.</p> : null}
+              {isExpired ? (
+                <p className="text-center text-[13px] font-black text-meet-pink">
+                  결제기한이 지났습니다.
+                  <br />
+                  이미 입금하셨다면 위 ‘확인했습니다’ 버튼을 눌러주세요.
+                </p>
+              ) : null}
             </section>
           )
         ) : (

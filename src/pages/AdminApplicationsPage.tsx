@@ -409,7 +409,6 @@ function ApplicationCard({
           <div className="flex flex-wrap gap-2">
             <button
               className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white disabled:bg-[#d9d9d9]"
-              disabled={application.status !== '결제중' && application.status !== '입금 확인 중'}
               onClick={onPaymentComplete}
               type="button"
             >
