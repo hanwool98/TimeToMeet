@@ -990,6 +990,72 @@ export async function rejectBankTransferInSupabase(application: StoredApplicatio
   if (error) throw error;
 }
 
+export interface AdminMovableEvent {
+  id: string;
+  title: string;
+  shortName: string;
+  eventDate: string;
+  startTime: string;
+  location: string;
+  maleCapacity: number;
+  femaleCapacity: number;
+  maleConfirmed: number;
+  femaleConfirmed: number;
+}
+
+// "행사 이동" 모달의 대상 행사 선택 목록. 기존 get_admin_event_summaries와
+// 반환 컬럼을 공유하지 않는 전용 RPC(삭제/종료/시작된 행사는 서버가 이미
+// 제외하고 돌려준다)로 호출한다.
+export async function fetchAdminMovableEvents(): Promise<AdminMovableEvent[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('get_admin_movable_events_for_session', {
+    session_token: adminSession.token,
+  });
+  if (error) throw error;
+
+  return ((data ?? []) as Array<{
+    id: string;
+    title: string;
+    short_name: string;
+    event_date: string;
+    start_time: string;
+    location: string;
+    male_capacity: number;
+    female_capacity: number;
+    male_confirmed: number;
+    female_confirmed: number;
+  }>).map((row) => ({
+    id: row.id,
+    title: row.title,
+    shortName: row.short_name,
+    eventDate: row.event_date,
+    startTime: row.start_time,
+    location: row.location,
+    maleCapacity: row.male_capacity,
+    femaleCapacity: row.female_capacity,
+    maleConfirmed: row.male_confirmed,
+    femaleConfirmed: row.female_confirmed,
+  }));
+}
+
+export async function moveApplicationToEventForAdmin(application: StoredApplication, targetEventId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');
+  const adminSession = getAdminSession();
+  if (!adminSession) throw new Error('관리자 세션이 필요합니다.');
+
+  const { data, error } = await supabase.rpc('move_participant_to_event_for_admin_session', {
+    p_application_id: application.dbId,
+    session_token: adminSession.token,
+    target_event_id: targetEventId,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; applicationId: string; fromEventId: string; toEventId: string; applicationNo: string };
+}
+
 export async function fetchAdminApplicationFiles(application: StoredApplication) {
   if (!supabase) throw new Error('Supabase is not configured.');
   if (!application.dbId) throw new Error('Supabase 신청서 ID가 없습니다.');

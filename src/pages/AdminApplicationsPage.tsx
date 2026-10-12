@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DataErrorState, DataLoadingState } from '../components/DataState';
+import { formatKoreanDate } from '../components/EventTicket';
 import useOperationalData from '../hooks/useOperationalData';
-import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateAdminApplicationNickname, updateAdminApplicationProfile, updateApplicationReviewInSupabase, type AdminApplicationProfileEdit } from '../services/supabaseApplications';
+import { confirmBankTransferInSupabase, fetchAdminApplicationFiles, fetchAdminMovableEvents, moveApplicationToEventForAdmin, rejectBankTransferInSupabase, resetGuestPinForAdmin, updateAdminApplicationNickname, updateAdminApplicationProfile, updateApplicationReviewInSupabase, type AdminApplicationProfileEdit, type AdminMovableEvent } from '../services/supabaseApplications';
 import type { AdminApplicationFiles, SignedApplicationFile } from '../services/supabaseApplications';
 import type { StoredApplication } from '../utils/adminApplications';
 
@@ -28,6 +29,11 @@ export default function AdminApplicationsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('성별');
   const [reviewingApplication, setReviewingApplication] = useState<StoredApplication | null>(null);
+  // 결제대기/결제중/입금확인중 목록에서 "프로필 보기"로 연 읽기 전용 보기.
+  // reviewingApplication(심사 흐름)과는 완전히 분리된 state라 결제 상태
+  // 변경 로직과 섞이지 않는다.
+  const [viewingProfileApplication, setViewingProfileApplication] = useState<StoredApplication | null>(null);
+  const [movingApplication, setMovingApplication] = useState<StoredApplication | null>(null);
   const [actionError, setActionError] = useState('');
   const [reviewError, setReviewError] = useState('');
 
@@ -268,6 +274,8 @@ export default function AdminApplicationsPage() {
                   setReviewingApplication(application);
                 }}
                 onPaymentComplete={() => void completePayment(application.id)}
+                onViewProfile={() => setViewingProfileApplication(application)}
+                onMoveEvent={() => setMovingApplication(application)}
               />
             ))}
           </div>
@@ -316,6 +324,25 @@ export default function AdminApplicationsPage() {
           }}
         />
       ) : null}
+      {viewingProfileApplication && viewingProfileApplication.profile ? (
+        <ReviewProfileModal
+          application={viewingProfileApplication}
+          isTestEvent={events.find((event) => event.id === viewingProfileApplication.eventId)?.isTestEvent ?? false}
+          onClose={() => setViewingProfileApplication(null)}
+          onDecide={() => undefined}
+          readOnly
+        />
+      ) : null}
+      {movingApplication ? (
+        <MoveEventModal
+          application={movingApplication}
+          onClose={() => setMovingApplication(null)}
+          onMoved={() => {
+            setMovingApplication(null);
+            void reload();
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -348,6 +375,8 @@ function ApplicationCard({
   onPaymentFail,
   onPaymentComplete,
   onReview,
+  onViewProfile,
+  onMoveEvent,
 }: {
   application: StoredApplication;
   highlighted: boolean;
@@ -355,6 +384,8 @@ function ApplicationCard({
   onPaymentFail: () => void;
   onPaymentComplete: () => void;
   onReview: () => void;
+  onViewProfile: () => void;
+  onMoveEvent: () => void;
 }) {
   const isFemale = application.gender === '여성';
 
@@ -408,6 +439,13 @@ function ApplicationCard({
           <DecisionTime application={application} />
           <div className="flex flex-wrap gap-2">
             <button
+              className="h-10 rounded-[12px] border border-meet-blue px-4 text-[13px] font-black text-meet-blue"
+              onClick={onViewProfile}
+              type="button"
+            >
+              프로필 보기
+            </button>
+            <button
               className="h-10 rounded-[12px] bg-meet-blue px-4 text-[13px] font-black text-white disabled:bg-[#d9d9d9]"
               onClick={onPaymentComplete}
               type="button"
@@ -427,16 +465,141 @@ function ApplicationCard({
       ) : (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <DecisionTime application={application} />
-          <button
-            className="h-10 rounded-[12px] border border-meet-blue px-4 text-[13px] font-black text-meet-blue"
-            onClick={onReview}
-            type="button"
-          >
-            프로필 심사
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {application.status === '참가 확정' ? (
+              <button
+                className="h-10 rounded-[12px] border border-[#8a7bd8] px-4 text-[13px] font-black text-[#6a57c9]"
+                onClick={onMoveEvent}
+                type="button"
+              >
+                행사 이동
+              </button>
+            ) : null}
+            <button
+              className="h-10 rounded-[12px] border border-meet-blue px-4 text-[13px] font-black text-meet-blue"
+              onClick={onReview}
+              type="button"
+            >
+              프로필 심사
+            </button>
+          </div>
         </div>
       )}
     </article>
+  );
+}
+
+// 참가확정 참가자를 다른(시작 전) 행사로 옮긴다. 실제 검증(체크인/행사
+// 진행 데이터/정원/중복신청/대상 행사 상태)은 전부 서버 RPC
+// (move_participant_to_event_for_admin_session) 쪽에서 하고, 여기서는
+// 그 결과를 그대로 보여주기만 한다 - 프론트가 임의로 허용/차단 판단을
+// 내리지 않는다.
+function MoveEventModal({
+  application,
+  onClose,
+  onMoved,
+}: {
+  application: StoredApplication;
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const [events, setEvents] = useState<AdminMovableEvent[] | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [targetEventId, setTargetEventId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetchAdminMovableEvents()
+      .then((rows) => {
+        if (!active) return;
+        const options = rows.filter((row) => row.id !== application.eventId);
+        setEvents(options);
+      })
+      .catch((error) => {
+        if (active) setLoadError(error instanceof Error ? error.message : '이동 가능한 행사 목록을 불러오지 못했습니다.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [application.eventId]);
+
+  const targetEvent = events?.find((event) => event.id === targetEventId) ?? null;
+
+  const handleMove = async () => {
+    if (!targetEvent || submitting) return;
+    const confirmed = window.confirm(
+      `${application.profile?.name ?? application.userId} 참가자를\n${application.eventDate} ${application.eventType} 행사에서\n${formatKoreanDate(targetEvent.eventDate)} ${targetEvent.shortName} 행사로 이동하시겠습니까?`,
+    );
+    if (!confirmed) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await moveApplicationToEventForAdmin(application, targetEvent.id);
+      onMoved();
+    } catch (error) {
+      setSubmitError(getActionErrorMessage(error, '행사 이동에 실패했습니다.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-40 grid place-items-center bg-black/35 px-4" onClick={onClose} role="dialog">
+      <section className="w-full max-w-[380px] rounded-[20px] bg-white p-5 shadow-calendar" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-[19px] font-black">행사 이동</h2>
+          <button aria-label="행사 이동 닫기" className="text-[28px] font-light leading-none text-[#888]" onClick={onClose} type="button">×</button>
+        </div>
+        <p className="mt-2 text-[13px] font-extrabold text-[#7a828c]">{application.profile?.name ?? application.userId} · {application.id}</p>
+
+        <div className="mt-4 rounded-[14px] bg-[#f4f2fb] p-4">
+          <p className="text-[12px] font-black text-[#8a7bd8]">현재 행사</p>
+          <p className="mt-1 text-[16px] font-black text-black">{application.eventDate} {application.eventType}</p>
+        </div>
+        <p className="my-2 text-center text-[18px] text-[#8a7bd8]">↓</p>
+        <div className="rounded-[14px] bg-meet-blueSoft p-4">
+          <p className="text-[12px] font-black text-meet-blue">이동할 행사</p>
+          {loadError ? (
+            <p className="mt-2 text-[13px] font-black text-meet-pink">{loadError}</p>
+          ) : !events ? (
+            <p className="mt-2 text-[13px] font-bold text-[#8a929c]">불러오는 중</p>
+          ) : events.length === 0 ? (
+            <p className="mt-2 text-[13px] font-bold text-[#8a929c]">이동 가능한 행사가 없습니다(삭제/종료/이미 시작된 행사는 제외됩니다).</p>
+          ) : (
+            <select
+              className="mt-2 h-11 w-full rounded-[10px] bg-white px-3 text-[14px] font-black outline-none"
+              onChange={(event) => setTargetEventId(event.target.value)}
+              value={targetEventId}
+            >
+              <option value="">행사를 선택해주세요</option>
+              {events.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {formatKoreanDate(event.eventDate)} {event.shortName} (남 {event.maleConfirmed}/{event.maleCapacity} · 여 {event.femaleConfirmed}/{event.femaleCapacity})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {submitError ? <p className="mt-3 text-[13px] font-black leading-relaxed text-meet-pink">{submitError}</p> : null}
+
+        <div className="mt-5 flex gap-2">
+          <button className="h-12 flex-1 rounded-[12px] bg-[#eef0f3] text-[14px] font-black text-[#555]" onClick={onClose} type="button">
+            취소
+          </button>
+          <button
+            className="h-12 flex-1 rounded-[12px] bg-[#6a57c9] text-[14px] font-black text-white disabled:bg-[#d8dee6]"
+            disabled={!targetEvent || submitting}
+            onClick={() => void handleMove()}
+            type="button"
+          >
+            {submitting ? '이동 중' : '이동'}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -482,6 +645,7 @@ export function ReviewProfileModal({
   onDecide,
   onNicknameUpdated,
   onProfileUpdated,
+  readOnly = false,
 }: {
   application: StoredApplication;
   capacityInfo?: { capacity: number; isFull: boolean; occupied: number } | null;
@@ -491,6 +655,11 @@ export function ReviewProfileModal({
   onDecide: (status: '결제 대기' | '참여 보류' | '반려') => void | Promise<void>;
   onNicknameUpdated?: (nickname: string) => void;
   onProfileUpdated?: (edit: AdminApplicationProfileEdit) => void;
+  // 결제대기 목록 등에서 "프로필만 다시 확인"하는 용도로 열 때 true로 전달한다
+  // - 심사/대기 처리, 닉네임·프로필 수정, PIN 초기화 등 쓰기 동작을 전부
+  // 숨기고 순수 조회 전용으로 만든다. 기본값 false라 기존 심사 흐름(review/
+  // waiting/completed 탭)은 한 글자도 동작이 바뀌지 않는다.
+  readOnly?: boolean;
 }) {
   const profile = application.profile;
   const [files, setFiles] = useState<AdminApplicationFiles | null>(null);
@@ -649,7 +818,7 @@ export function ReviewProfileModal({
             </div>
             <p className="mt-2 text-[17px] font-black leading-snug text-[#263149]">{application.eventDate} {application.eventType} 소개팅</p>
             <p className="mt-2 text-[15px] font-extrabold text-[#7a828c]">{application.accountType === 'guest' ? '비회원' : '회원'} {application.userId}</p>
-            {application.accountType === 'guest' && application.userUuid ? (
+            {!readOnly && application.accountType === 'guest' && application.userUuid ? (
               <button
                 className="mt-2 h-9 rounded-[10px] border border-meet-blue px-3 text-[12px] font-black text-meet-blue disabled:opacity-50"
                 disabled={resettingPin}
@@ -779,37 +948,39 @@ export function ReviewProfileModal({
 
               {profileError ? <p className="mt-2 text-[12px] font-black text-meet-pink">{profileError}</p> : null}
 
-              <div className="mt-3 flex gap-2">
-                {profileEditing ? (
-                  <>
+              {!readOnly ? (
+                <div className="mt-3 flex gap-2">
+                  {profileEditing ? (
+                    <>
+                      <button
+                        className="h-9 rounded-[10px] bg-meet-blue px-4 text-[12px] font-black text-white disabled:bg-[#d8dee6]"
+                        disabled={profileSaving}
+                        onClick={() => void saveProfileEdit()}
+                        type="button"
+                      >
+                        {profileSaving ? '저장 중' : '저장'}
+                      </button>
+                      <button
+                        className="h-9 rounded-[10px] bg-[#eef0f3] px-4 text-[12px] font-black text-[#555]"
+                        disabled={profileSaving}
+                        onClick={() => setProfileEditing(false)}
+                        type="button"
+                      >
+                        취소
+                      </button>
+                      <span className="self-center text-[11px] font-bold text-[#9aa4ad]">첫 참여 여부는 수정할 수 없습니다.</span>
+                    </>
+                  ) : (
                     <button
-                      className="h-9 rounded-[10px] bg-meet-blue px-4 text-[12px] font-black text-white disabled:bg-[#d8dee6]"
-                      disabled={profileSaving}
-                      onClick={() => void saveProfileEdit()}
+                      className="text-[12px] font-black text-meet-blue underline underline-offset-2"
+                      onClick={startProfileEdit}
                       type="button"
                     >
-                      {profileSaving ? '저장 중' : '저장'}
+                      정보 수정
                     </button>
-                    <button
-                      className="h-9 rounded-[10px] bg-[#eef0f3] px-4 text-[12px] font-black text-[#555]"
-                      disabled={profileSaving}
-                      onClick={() => setProfileEditing(false)}
-                      type="button"
-                    >
-                      취소
-                    </button>
-                    <span className="self-center text-[11px] font-bold text-[#9aa4ad]">첫 참여 여부는 수정할 수 없습니다.</span>
-                  </>
-                ) : (
-                  <button
-                    className="text-[12px] font-black text-meet-blue underline underline-offset-2"
-                    onClick={startProfileEdit}
-                    type="button"
-                  >
-                    정보 수정
-                  </button>
-                )}
-              </div>
+                  )}
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -896,49 +1067,61 @@ export function ReviewProfileModal({
           </div>
         </div>
 
-        <div className="sticky bottom-0 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
-          {capacityInfo ? (
-            <p className={`col-span-3 text-center text-[12px] font-black ${capacityBlocksApproval ? 'text-meet-pink' : 'text-[#8a929c]'}`}>
-              {application.gender} 정원 {capacityInfo.occupied}/{capacityInfo.capacity}
-              {capacityBlocksApproval ? ' · 정원이 모두 찼습니다' : ''}
-            </p>
-          ) : null}
-          {error ? (
-            <p className="col-span-3 rounded-[12px] bg-meet-pinkSoft p-3 text-center text-[13px] font-black leading-relaxed text-meet-pink">{error}</p>
-          ) : null}
-          <button
-            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-blue px-2 text-[14px] font-black text-white disabled:bg-[#d8dee6]"
-            disabled={!canDecide || capacityBlocksApproval || deciding}
-            onClick={() => void requestDecision('결제 대기')}
-            type="button"
-          >
-            <span className="text-[22px]">✓</span>
-            참가 승인
-          </button>
-          <button
-            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-[#eef0f3] px-2 text-[14px] font-black text-[#4b515a] disabled:opacity-45"
-            disabled={!canDecide || deciding}
-            onClick={() => void requestDecision('참여 보류')}
-            type="button"
-          >
-            <span className="text-[18px]">Ⅱ</span>
-            참가 대기
-          </button>
-          <button
-            className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-pink px-2 text-[14px] font-black text-white disabled:bg-[#f4b6cc]"
-            disabled={!canDecide || deciding}
-            onClick={() => void requestDecision('반려')}
-            type="button"
-          >
-            <span className="text-[24px]">×</span>
-            참가 거부
-          </button>
-          {!filesReady ? (
-            <p className="col-span-3 text-center text-[12px] font-black text-[#8a929c]">
-              심사 자료를 불러온 후 처리할 수 있습니다
-            </p>
-          ) : null}
-        </div>
+        {readOnly ? (
+          <div className="sticky bottom-0 w-full max-w-full min-w-0 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
+            <button
+              className="h-14 w-full rounded-[14px] bg-[#eef0f3] text-[14px] font-black text-[#4b515a]"
+              onClick={onClose}
+              type="button"
+            >
+              닫기
+            </button>
+          </div>
+        ) : (
+          <div className="sticky bottom-0 grid w-full max-w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 border-t border-[#eef1f5] bg-white px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-3">
+            {capacityInfo ? (
+              <p className={`col-span-3 text-center text-[12px] font-black ${capacityBlocksApproval ? 'text-meet-pink' : 'text-[#8a929c]'}`}>
+                {application.gender} 정원 {capacityInfo.occupied}/{capacityInfo.capacity}
+                {capacityBlocksApproval ? ' · 정원이 모두 찼습니다' : ''}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="col-span-3 rounded-[12px] bg-meet-pinkSoft p-3 text-center text-[13px] font-black leading-relaxed text-meet-pink">{error}</p>
+            ) : null}
+            <button
+              className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-blue px-2 text-[14px] font-black text-white disabled:bg-[#d8dee6]"
+              disabled={!canDecide || capacityBlocksApproval || deciding}
+              onClick={() => void requestDecision('결제 대기')}
+              type="button"
+            >
+              <span className="text-[22px]">✓</span>
+              참가 승인
+            </button>
+            <button
+              className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-[#eef0f3] px-2 text-[14px] font-black text-[#4b515a] disabled:opacity-45"
+              disabled={!canDecide || deciding}
+              onClick={() => void requestDecision('참여 보류')}
+              type="button"
+            >
+              <span className="text-[18px]">Ⅱ</span>
+              참가 대기
+            </button>
+            <button
+              className="flex h-14 min-w-0 items-center justify-center gap-2 rounded-[14px] bg-meet-pink px-2 text-[14px] font-black text-white disabled:bg-[#f4b6cc]"
+              disabled={!canDecide || deciding}
+              onClick={() => void requestDecision('반려')}
+              type="button"
+            >
+              <span className="text-[24px]">×</span>
+              참가 거부
+            </button>
+            {!filesReady ? (
+              <p className="col-span-3 text-center text-[12px] font-black text-[#8a929c]">
+                심사 자료를 불러온 후 처리할 수 있습니다
+              </p>
+            ) : null}
+          </div>
+        )}
       </section>
       {expandedPhoto ? (
         <PhotoViewer
