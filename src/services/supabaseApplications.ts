@@ -518,7 +518,49 @@ export async function submitApplicationToSupabase(input: SubmitApplicationInput)
  * `error.context`, the raw Response object. Without reading it, every server
  * failure surfaces to the user as that one opaque SDK message no matter what
  * actually went wrong.
+ *
+ * `resolveEdgeFunctionMessage` is the callSite-agnostic core of this (just
+ * the message, no application-submission `stage`) so any Edge Function
+ * caller can reuse it — not only the application-submission flow below,
+ * which additionally resolves a `stage`. It never logs the session token,
+ * full response body, or other personal data - only the calling site's
+ * label, the HTTP status (if any), and the resolved message, so a failure
+ * is still diagnosable from the console without exposing anything sensitive.
  */
+async function resolveEdgeFunctionMessage(
+  callSite: string,
+  error: unknown,
+  data: { message?: string } | null | undefined,
+  fallback: string,
+): Promise<string> {
+  if (data?.message) return data.message;
+
+  if (error instanceof FunctionsHttpError) {
+    const status = typeof error.context?.status === 'number' ? error.context.status : null;
+    try {
+      const body = await error.context.json();
+      if (body?.message) {
+        const message = String(body.message);
+        console.error(`[${callSite}] Edge Function error`, { status, message });
+        return message;
+      }
+    } catch {
+      // Response body wasn't JSON (e.g. an infra/gateway error page) -
+      // fall through to the generic fallback rather than surface raw HTML.
+    }
+    console.error(`[${callSite}] Edge Function error (unparsed response body)`, { status, message: fallback });
+    return fallback;
+  }
+
+  if (error instanceof FunctionsFetchError) {
+    console.error(`[${callSite}] Edge Function network error`, { message: fallback });
+    return fallback;
+  }
+
+  if (error) console.error(`[${callSite}] Edge Function error`, { message: fallback });
+  return fallback;
+}
+
 async function resolveFunctionError(
   error: unknown,
   data: { message?: string; stage?: string } | null | undefined,
@@ -698,7 +740,10 @@ export async function fetchOwnApplicationForEvent(eventId: string) {
     },
   });
 
-  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '기존 신청 내역 확인에 실패했습니다.');
+  if (error || data?.ok !== true) {
+    const message = await resolveEdgeFunctionMessage('fetchOwnApplicationForEvent', error, data, '기존 신청 내역 확인에 실패했습니다.');
+    throw new Error(message);
+  }
   return data.application ?? null;
 }
 
@@ -715,7 +760,10 @@ export async function fetchApplicationDraft(eventId: string) {
     },
   });
 
-  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '임시저장을 불러오지 못했습니다.');
+  if (error || data?.ok !== true) {
+    const message = await resolveEdgeFunctionMessage('fetchApplicationDraft', error, data, '임시저장을 불러오지 못했습니다.');
+    throw new Error(message);
+  }
   return (data.draft ?? null) as Record<string, unknown> | null;
 }
 
@@ -733,7 +781,10 @@ export async function saveApplicationDraft(eventId: string, draftData: Record<st
     },
   });
 
-  if (error || data?.ok !== true) throw new Error(data?.message || error?.message || '임시저장에 실패했습니다.');
+  if (error || data?.ok !== true) {
+    const message = await resolveEdgeFunctionMessage('saveApplicationDraft', error, data, '임시저장에 실패했습니다.');
+    throw new Error(message);
+  }
 }
 
 async function ensureAccountRow(userId: string, accountType: 'member' | 'guest') {
