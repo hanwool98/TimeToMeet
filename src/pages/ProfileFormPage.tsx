@@ -7,7 +7,7 @@ import PhotoSourceInputs, { type PhotoSourceInputsHandle } from '../components/P
 import PrimaryButton from '../components/PrimaryButton';
 import { RefundPolicyBox } from '../data/refundPolicy';
 import useOperationalData from '../hooks/useOperationalData';
-import { getAppSession } from '../services/appAuth';
+import { clearAppSession, getAppSession } from '../services/appAuth';
 import {
   ApplicationSubmitError,
   fetchApplicationDraft,
@@ -393,6 +393,11 @@ export default function ProfileFormPage() {
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saveAsDefaultProfile, setSaveAsDefaultProfile] = useState(false);
+  // getAppSession()은 state가 아니라 매 렌더마다 localStorage를 직접
+  // 읽으므로, clearAppSession() 자체는 리렌더를 유발하지 않는다 - 번호를
+  // 잘못 입력해 자동 생성된 세션을 지운 뒤 입력란을 다시 풀어주려면 이
+  // 카운터를 증가시켜 강제로 한 번 더 렌더되게 한다.
+  const [, setGuestSessionResetTick] = useState(0);
   const isMemberSession = getAppSession()?.role === 'member';
   const isGuestSession = getAppSession()?.role === 'guest';
   const selectedEvent = events.find((event) => event.id === eventId);
@@ -585,6 +590,18 @@ export default function ProfileFormPage() {
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [phone, birthDate, ageError, existingAccountPhone]);
+
+  // 전화번호를 입력하던 "도중"에 유효한 형식이 되는 순간 위 effect가 조용히
+  // 비회원 계정을 만들어버려, 오타를 고치고 싶어도 이 화면에서는 번호를
+  // 되돌릴 방법이 없었다(사용자 지적). 로컬 세션만 지워 입력란을 다시
+  // 풀어준다 - 서버/DB는 전혀 건드리지 않고, 방금 만들어진 계정은 그냥
+  // 안 쓰인 채로 남아도 무해하다(기존 만료 비회원 계정 정리 대상과 동일).
+  const handleResetGuestPhone = () => {
+    clearAppSession();
+    guestSessionEnsuredRef.current = false;
+    setExistingAccountPhone(null);
+    setGuestSessionResetTick((tick) => tick + 1);
+  };
 
   const isRequiredComplete = Boolean(
     guideConfirmed &&
@@ -1114,9 +1131,18 @@ export default function ProfileFormPage() {
               value={phone}
             />
             {isGuestSession ? (
-              <p className="mt-2 text-fluid-safe text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
-                비회원 로그인에 사용한 번호로 자동 입력되며 수정할 수 없습니다.
-              </p>
+              <div className="mt-2">
+                <p className="text-fluid-safe text-[12px] font-extrabold leading-relaxed text-[#8a8a8a]">
+                  비회원 로그인에 사용한 번호로 자동 입력되며 수정할 수 없습니다.
+                </p>
+                <button
+                  className="mt-1 text-[12px] font-black text-meet-blue underline underline-offset-2"
+                  onClick={handleResetGuestPhone}
+                  type="button"
+                >
+                  번호를 잘못 입력하셨나요? 다시 입력하기
+                </button>
+              </div>
             ) : existingAccountPhone && existingAccountPhone === normalizeKoreanPhone(phone) ? (
               <div className="mt-2 rounded-[14px] bg-meet-pinkSoft px-4 py-3">
                 <p className="text-fluid-safe text-[13px] font-black text-meet-pink">
